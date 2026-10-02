@@ -93,3 +93,48 @@ jobs:
       - uses: actions/checkout@v5
       - run: cp backend/.env.example backend/.env
       - run: docker compose -f infra/docker-compose.yml config --quiet
+
+  e2e:
+    name: browser tests (playwright)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_DB: harak
+          POSTGRES_USER: harak
+          POSTGRES_PASSWORD: harak
+        ports: ["54329:5432"]
+        options: --health-cmd "pg_isready -U harak" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:8.10.2
+        ports: ["6380:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.x"
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync --frozen --python 3.13
+        working-directory: backend
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npx playwright test
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-screenshots
+          path: frontend/e2e/screenshots
+          if-no-files-found: ignore

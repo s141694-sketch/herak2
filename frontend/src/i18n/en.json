@@ -1,0 +1,51 @@
+{
+  "app": {
+    "name": "Harak",
+    "tagline": "Training content lifecycle platform",
+    "loading": "Loading…"
+  },
+  "language": {
+    "switchTo": "العربية",
+    "label": "Language"
+  },
+  "login": {
+    "title": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…"
+  },
+  "organization": {
+    "chooseTitle": "Choose an organization",
+    "chooseHint": "You belong to more than one organization. Choose the one you want to work in now.",
+    "switcher": "Organization",
+    "none": "No organization",
+    "noMembershipTitle": "No membership",
+    "noMembershipHint": "Your account is not linked to any organization yet. Contact your training manager."
+  },
+  "roles": {
+    "admin": "Training manager",
+    "author": "Author",
+    "reviewer": "Reviewer",
+    "approver": "Approver",
+    "pending": "Pending assignment"
+  },
+  "home": {
+    "welcome": "Welcome, {{name}}",
+    "currentOrganization": "Current organization",
+    "yourRole": "Your role",
+    "pendingHint": "Your account has no role in this organization yet. Content will appear once your training manager assigns you one."
+  },
+  "nav": {
+    "logout": "Sign out"
+  },
+  "errors": {
+    "invalid_credentials": "The email or password is incorrect. Check them and try again.",
+    "throttled": "Too many attempts. Wait a minute and try again.",
+    "network": "Could not reach the server. Check your connection and try again.",
+    "not_found": "The item does not exist or you do not have access to it.",
+    "permission_denied": "You do not have permission for this action.",
+    "validation_error": "Check the required fields and try again.",
+    "unknown": "Something unexpected went wrong. Try again, and contact support if it keeps happening."
+  }
+}

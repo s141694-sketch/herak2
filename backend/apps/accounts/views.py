@@ -1,6 +1,8 @@
 from django.contrib.auth import authenticate, login, logout
+from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import exceptions, generics, status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
@@ -42,7 +44,7 @@ class CsrfView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
 
-    @ensure_csrf_cookie
+    @method_decorator(ensure_csrf_cookie)
     def get(self, request):
         return Response({"detail": "ok"})
 
@@ -51,6 +53,11 @@ class LoginView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
+
+    def initial(self, request, *args, **kwargs):
+        # DRF only checks CSRF for authenticated sessions; login must be protected too (login CSRF).
+        SessionAuthentication().enforce_csrf(request)
+        super().initial(request, *args, **kwargs)
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)

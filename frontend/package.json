@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/el-messiri": "5.3.0",
+    "@fontsource/ibm-plex-sans-arabic": "5.3.0",
     "i18next": "26.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -25,6 +27,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "rolldown": "1.2.12",
     "typescript": "7.0.2",
     "vite": "8.3.2",
     "vitest": "5.0.3"

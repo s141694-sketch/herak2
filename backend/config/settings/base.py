@@ -16,6 +16,7 @@ env = environ.Env(
     SENTRY_DSN=(str, ""),
     SENTRY_ENVIRONMENT=(str, "development"),
     SESSION_COOKIE_AGE=(int, 8 * 60 * 60),
+    LOGIN_THROTTLE_RATE=(str, "10/minute"),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -116,7 +117,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.UserRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"user": "600/minute", "anon": "60/minute", "login": "10/minute"},
+    "DEFAULT_THROTTLE_RATES": {"user": "600/minute", "anon": "60/minute", "login": env("LOGIN_THROTTLE_RATE")},
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
 }
 
