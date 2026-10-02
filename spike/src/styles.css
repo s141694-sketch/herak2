@@ -45,3 +45,4 @@ body {
   white-space: nowrap;
   user-select: none;
 }
+.block-label { font-size: 12px; color: #4a4c63; margin-bottom: 4px; }
