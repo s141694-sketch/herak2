@@ -67,3 +67,14 @@ class OrganizationScopedModel(models.Model):
             )
             if related_org != active:
                 raise CrossOrganizationError(f"{type(self).__name__}.{field.name} points outside organization {active}")
+
+
+def scoped_managers(queryset_class: type[models.QuerySet]):
+    """The organization-scoped default manager and the explicit cross-organization one, over one queryset class.
+
+    Usage in a model body: ``objects, all_organizations = scoped_managers(MyQuerySet)``.
+    """
+    return (
+        OrganizationScopedManager.from_queryset(queryset_class)(),
+        models.Manager.from_queryset(queryset_class)(),
+    )

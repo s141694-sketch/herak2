@@ -12,7 +12,7 @@ import apps as project_apps
 from apps.accounts.models import Membership, Organization, Role, User
 from apps.tenancy.context import organization_context
 from apps.tenancy.isolation import EXEMPT_ROUTES, PROBES
-from apps.tenancy.models import OrganizationScopedModel
+from apps.tenancy.models import OrganizationScopedManager, OrganizationScopedModel
 
 # Global tables that cannot carry a single organization (decision D10 in the decisions log).
 GLOBAL_MODELS = {"accounts.User", "accounts.Organization"}
@@ -73,6 +73,8 @@ def test_every_project_table_carries_organization_id():
             continue
         if not issubclass(model, OrganizationScopedModel):
             offenders.append(label)
+        elif not isinstance(model._default_manager, OrganizationScopedManager):
+            offenders.append(f"{label} (default manager is not organization-scoped)")
     assert not offenders, f"tables without organization scoping: {offenders}"
 
 
@@ -118,6 +120,20 @@ def test_route_does_not_leak_other_organizations(route, two_orgs):
 
     own_url = reverse(route, kwargs=probe.url_kwargs(own))
     foreign_url = reverse(route, kwargs=probe.url_kwargs(foreign))
+
+    if probe.kind == "action":
+        for method in ("get", "post", "put", "patch", "delete"):
+            status = getattr(client, method)(foreign_url, {}, format="json").status_code
+            assert status in (403, 404, 405), f"{method.upper()} {route} on a foreign object returned {status}"
+        return
+
+    if probe.kind == "nested":
+        assert client.get(own_url).status_code == 200, "probe sanity: the caller's own collection must be readable"
+        assert client.get(foreign_url).status_code == 404, f"{route} exposes a collection of another organization"
+        status = client.post(foreign_url, {}, format="json").status_code
+        assert status in (403, 404, 405), f"POST {route} under a foreign parent returned {status}"
+        return
+
     assert client.get(own_url).status_code == 200, "probe sanity: the caller's own object must be readable"
     assert client.get(foreign_url).status_code == 404, f"{route} exposes an object of another organization"
     for method in ("put", "patch", "delete"):

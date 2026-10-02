@@ -28,3 +28,12 @@ def role_required(*roles: str):
 
     RoleRequired.__name__ = f"RoleRequired[{','.join(roles)}]"
     return RoleRequired
+
+
+class AdminWritesMembersRead(HasActiveOrganization):
+    """Any active member may read; only the organization's admin may write."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return request.method in permissions.SAFE_METHODS or request.membership.role == Role.ADMIN

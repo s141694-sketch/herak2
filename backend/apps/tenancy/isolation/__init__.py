@@ -20,7 +20,7 @@ EXEMPT_ROUTES: dict[str, str] = {
     "auth-switch-organization": "membership-checked switch; covered by test_auth_api",
 }
 
-ProbeKind = Literal["detail", "list", "current"]
+ProbeKind = Literal["detail", "list", "nested", "action", "current"]
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,9 @@ class Probe:
     detail:  `make(org)` returns an object; `url_kwargs(obj)` builds the route kwargs.
              Reading or changing another organization's object must fail.
     list:    `make(org)` returns an object; its `id` must not appear in another organization's list.
+    nested:  a collection under a parent object built by `make(org)`; a foreign parent gives 404 on GET and
+             the POST that would add to it is refused.
+    action:  a POST-only action on an object built by `make(org)`; a foreign object is refused.
     current: the route describes the active organization itself; it must name the caller's organization.
     """
 
