@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.tenancy",
     "apps.audit",
     "apps.competencies",
+    "apps.structures",
 ]
 
 MIDDLEWARE = [
