@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "apps.core",
     "apps.accounts",
+    "apps.tenancy",
 ]
 
 MIDDLEWARE = [
@@ -43,6 +44,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.tenancy.middleware.OrganizationContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.RequestLoggingMiddleware",

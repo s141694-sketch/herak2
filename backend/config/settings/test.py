@@ -10,6 +10,7 @@ os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 from .base import *  # noqa: E402, F403
 
+INSTALLED_APPS = [*INSTALLED_APPS, "apps.tenancy.tests.testapp"]  # noqa: F405
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 CELERY_TASK_ALWAYS_EAGER = True
 REST_FRAMEWORK = {**REST_FRAMEWORK, "DEFAULT_THROTTLE_CLASSES": []}  # noqa: F405

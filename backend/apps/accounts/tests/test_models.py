@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
 from apps.accounts.models import Membership, Organization, Role, User
+from apps.tenancy.context import organization_context
 
 pytestmark = pytest.mark.django_db
 
@@ -49,26 +50,27 @@ def test_membership_roles_and_uniqueness():
     org = Organization.objects.create(name="A", slug="a")
     assert set(Role.values) == {"admin", "author", "reviewer", "approver", "pending"}
 
-    membership = Membership.objects.create(user=user, organization=org, role=Role.AUTHOR)
-    assert membership.role == "author"
-    with pytest.raises(IntegrityError):
-        Membership.objects.create(user=user, organization=org, role=Role.REVIEWER)
+    with organization_context(org):
+        membership = Membership.objects.create(user=user, role=Role.AUTHOR)
+        assert membership.role == "author"
+        with pytest.raises(IntegrityError):
+            Membership.objects.create(user=user, role=Role.REVIEWER)
 
 
 def test_membership_rejects_unknown_role():
     user = User.objects.create_user(email="u@example.com", password="x" * 12)
     org = Organization.objects.create(name="A", slug="a")
-    with pytest.raises(ValidationError):
-        Membership(user=user, organization=org, role="owner").full_clean()
+    with organization_context(org), pytest.raises(ValidationError):
+        Membership(user=user, role="owner").full_clean()
 
 
 def test_user_can_belong_to_several_organizations():
     user = User.objects.create_user(email="u@example.com", password="x" * 12)
     a = Organization.objects.create(name="A", slug="a")
     b = Organization.objects.create(name="B", slug="b")
-    Membership.objects.create(user=user, organization=a, role=Role.ADMIN)
-    Membership.objects.create(user=user, organization=b, role=Role.PENDING)
-    assert list(user.memberships.order_by("organization__slug").values_list("organization__slug", "role")) == [
-        ("a", "admin"),
-        ("b", "pending"),
-    ]
+    with organization_context(a):
+        Membership.objects.create(user=user, role=Role.ADMIN)
+    with organization_context(b):
+        Membership.objects.create(user=user, role=Role.PENDING)
+    memberships = Membership.all_organizations.filter(user=user).order_by("organization__slug")
+    assert list(memberships.values_list("organization__slug", "role")) == [("a", "admin"), ("b", "pending")]

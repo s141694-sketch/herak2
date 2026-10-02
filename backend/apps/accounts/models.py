@@ -4,6 +4,8 @@ from django.db import models
 from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
+from apps.tenancy.models import OrganizationScopedModel
+
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
@@ -95,11 +97,14 @@ class Role(models.TextChoices):
     PENDING = "pending", _("pending assignment")
 
 
-class Membership(models.Model):
-    """Links a user to an organization with one role. Pending members have no permissions."""
+class Membership(OrganizationScopedModel):
+    """Links a user to an organization with one role. Pending members have no permissions.
+
+    Organization-scoped like every tenant table; the login and switch flows,
+    which run before a context exists, go through `Membership.all_organizations`.
+    """
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="memberships")
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
 
