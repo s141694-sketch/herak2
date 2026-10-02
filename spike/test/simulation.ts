@@ -13,11 +13,12 @@ export interface Client {
   outbox: Map<number, Uint8Array[]>
 }
 
-export function newCluster(size: number, seed: Y.Doc): Client[] {
+export function newCluster(size: number, seed: Y.Doc, clientIds?: number[]): Client[] {
   const snapshot = Y.encodeStateAsUpdate(seed)
   const clients: Client[] = []
   for (let id = 0; id < size; id += 1) {
     const doc = new Y.Doc()
+    if (clientIds) doc.clientID = clientIds[id]
     Y.applyUpdate(doc, snapshot)
     const client: Client = { id, doc, outbox: new Map() }
     doc.on('update', (update: Uint8Array, origin: unknown) => {

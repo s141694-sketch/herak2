@@ -75,20 +75,26 @@ describe('multi-client convergence (task 0.5)', () => {
 
     const rows = expectConverged(clients)
     const text = (rows.blocks[0].content as { content: Array<{ content: Array<{ text: string }> }> }).content[0].content.map((t) => t.text).join('')
+    // Both inserts land after the deleted "يصف " with the same origin, so Yjs orders them
+    // by client id: "يشرحخطوات " or "خطوات يشرح" are both valid, as long as every client agrees.
     expect(text).toContain('خطوات')
+    expect(text).toContain('يشرح')
     expect(text).toContain('بدقة')
-    expect(text.startsWith('يشرح')).toBe(true)
+    expect(text).not.toContain('يصف')
+    expect(text.endsWith('الإجراء بدقة')).toBe(true)
   })
 
   it(`${NUM_RUNS} random sessions of 3-5 clients with partial syncs converge and materialize identically`, () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 3, max: 5 }),
+        fc.uniqueArray(fc.integer({ min: 1, max: 1_000_000 }), { minLength: 5, maxLength: 5 }),
         structureArb(8),
         fc.array(opArb, { minLength: 20, maxLength: 80 }),
         fc.array(fc.tuple(fc.nat(), fc.nat()), { minLength: 0, maxLength: 20 }),
-        (clientCount, structure, ops, syncs) => {
-          const clients = newCluster(clientCount, buildDoc(structure))
+        (clientCount, clientIds, structure, ops, syncs) => {
+          // Client ids decide tie-breaks in Yjs, so they are part of the seeded input.
+          const clients = newCluster(clientCount, buildDoc(structure), clientIds)
           const syncQueue = [...syncs]
           ops.forEach((op: SimOp, i) => {
             applyOp(clients[op.client % clientCount], op)
