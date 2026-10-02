@@ -1,0 +1,47 @@
+body {
+  margin: 0;
+  font-family: 'Noto Naskh Arabic', serif;
+  font-size: 18px;
+  background: #f4efe4;
+  color: #14162e;
+}
+.toolbar {
+  display: flex;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1b1f4b;
+  color: #fff;
+  font-size: 14px;
+}
+.editor {
+  margin: 16px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e3d9c4;
+  border-radius: 12px;
+  min-height: 200px;
+}
+.ProseMirror { outline: none; }
+.ProseMirror p { margin: 0 0 0.5em; }
+.ProseMirror ol, .ProseMirror ul { padding-inline-start: 2em; }
+/* Remote carets rendered by the collaboration caret extension. */
+.collaboration-carets__caret {
+  position: relative;
+  border-left: 1px solid;
+  border-right: 1px solid;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+  word-break: normal;
+}
+.collaboration-carets__label {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #fff;
+  white-space: nowrap;
+  user-select: none;
+}
