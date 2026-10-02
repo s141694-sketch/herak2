@@ -5,7 +5,7 @@ from apps.competencies.models import FrameworkVersion
 from apps.structures.models import TemplateVersion
 from apps.structures.serializers import LevelSerializer
 
-from .models import Block, Node, Program, ProgramCollaborator, ProgramVersion
+from .models import AlignmentLink, Block, Node, Program, ProgramCollaborator, ProgramVersion
 
 
 class VersionSummarySerializer(serializers.ModelSerializer):
@@ -150,3 +150,31 @@ class BlockWriteSerializer(serializers.Serializer):
     type = serializers.CharField(required=False)
     content = serializers.JSONField(required=False)
     order = serializers.IntegerField(required=False, min_value=0)
+
+
+class AlignmentLinkSerializer(serializers.ModelSerializer):
+    source_key = serializers.UUIDField(source="source.block_key", read_only=True)
+    target_block_key = serializers.UUIDField(source="target_block.block_key", read_only=True, default=None)
+    target_competency_code = serializers.CharField(source="target_competency.code", read_only=True, default=None)
+
+    class Meta:
+        model = AlignmentLink
+        fields = [
+            "id",
+            "kind",
+            "source",
+            "source_key",
+            "target_block",
+            "target_block_key",
+            "target_competency",
+            "target_competency_code",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class AlignmentLinkWriteSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=AlignmentLink.Kind.choices)
+    source = serializers.IntegerField()
+    target_block = serializers.IntegerField(required=False, allow_null=True)
+    target_competency = serializers.IntegerField(required=False, allow_null=True)

@@ -7,8 +7,10 @@ from apps.accounts.models import Membership
 from apps.tenancy.permissions import HasActiveOrganization
 
 from . import lifecycle, services
-from .models import Block, Node, Program, ProgramCollaborator, ProgramVersion
+from .models import AlignmentLink, Block, Node, Program, ProgramCollaborator, ProgramVersion
 from .serializers import (
+    AlignmentLinkSerializer,
+    AlignmentLinkWriteSerializer,
     BlockSerializer,
     BlockWriteSerializer,
     CollaboratorSerializer,
@@ -347,3 +349,63 @@ class BlockRestoreView(APIView):
         block = get_object_or_404(Block.objects.select_related("version__program"), pk=pk)
         require_edit(request, block.version.program)
         return Response(BlockSerializer(services.restore_block(block, actor=request.user)).data)
+
+
+class VersionLinksView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def get(self, request, pk):
+        version = get_object_or_404(ProgramVersion.objects, pk=pk)
+        links = version.alignment_links.select_related("source", "target_block", "target_competency")
+        return Response(AlignmentLinkSerializer(links, many=True).data)
+
+    def post(self, request, pk):
+        version = get_object_or_404(ProgramVersion.objects.select_related("program", "framework_version"), pk=pk)
+        require_edit(request, version.program)
+        serializer = AlignmentLinkWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        def block(block_id):
+            if block_id is None:
+                return None
+            found = Block.objects.filter(pk=block_id, version=version).first()
+            if found is None:
+                raise services.ProgramError("both ends must belong to this version", code="link_invalid")
+            return found
+
+        competency = None
+        if data.get("target_competency") is not None:
+            competency = version.framework_version.competencies.filter(pk=data["target_competency"]).first()
+            if competency is None:
+                raise services.ProgramError(
+                    "the competency must belong to this version's framework", code="link_invalid"
+                )
+        created = services.link(
+            version,
+            kind=data["kind"],
+            source=block(data["source"]),
+            target=block(data.get("target_block")),
+            competency=competency,
+            actor=request.user,
+        )
+        return Response(AlignmentLinkSerializer(created).data, status=status.HTTP_201_CREATED)
+
+
+class LinkDetailView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def _get(self, pk) -> AlignmentLink:
+        return get_object_or_404(
+            AlignmentLink.objects.select_related("version__program", "source", "target_block", "target_competency"),
+            pk=pk,
+        )
+
+    def get(self, request, pk):
+        return Response(AlignmentLinkSerializer(self._get(pk)).data)
+
+    def delete(self, request, pk):
+        alignment_link = self._get(pk)
+        require_edit(request, alignment_link.version.program)
+        services.unlink(alignment_link, actor=request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)

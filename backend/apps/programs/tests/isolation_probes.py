@@ -52,3 +52,23 @@ register(Probe(route="program-node-move", kind="action", make=_node))
 register(Probe(route="program-node-restore", kind="action", make=_node))
 register(Probe(route="program-block-detail", kind="detail", make=_block))
 register(Probe(route="program-block-restore", kind="action", make=_block))
+
+
+def _link(org):
+    from apps.programs import services
+    from apps.programs.models import AlignmentLink
+
+    block = _block(org)
+    services.update_block(block, type="objective", actor=block.version.created_by)
+    competency = block.version.framework_version.competencies.first()
+    return services.link(
+        block.version,
+        kind=AlignmentLink.Kind.OBJECTIVE_COMPETENCY,
+        source=block,
+        competency=competency,
+        actor=block.version.created_by,
+    )
+
+
+register(Probe(route="program-version-links", kind="nested", make=_version))
+register(Probe(route="alignment-link-detail", kind="detail", make=_link))

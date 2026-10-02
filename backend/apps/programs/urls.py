@@ -20,4 +20,6 @@ urlpatterns = [
     path("program-nodes/<int:pk>/restore/", views.NodeRestoreView.as_view(), name="program-node-restore"),
     path("program-blocks/<int:pk>/", views.BlockDetailView.as_view(), name="program-block-detail"),
     path("program-blocks/<int:pk>/restore/", views.BlockRestoreView.as_view(), name="program-block-restore"),
+    path("program-versions/<int:pk>/alignment-links/", views.VersionLinksView.as_view(), name="program-version-links"),
+    path("alignment-links/<int:pk>/", views.LinkDetailView.as_view(), name="alignment-link-detail"),
 ]

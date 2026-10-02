@@ -8,7 +8,7 @@ from apps.core.locking import VersionLocked
 from . import content as block_content
 from .copying import create_draft_copy
 from .errors import ProgramError
-from .models import Block, Node, Program, ProgramCollaborator, ProgramTarget, ProgramVersion
+from .models import AlignmentLink, Block, Node, Program, ProgramCollaborator, ProgramTarget, ProgramVersion
 
 EDITING_ROLES = {Role.ADMIN, Role.AUTHOR}
 S = ProgramVersion.Status
@@ -270,3 +270,79 @@ def restore_block(block: Block, *, actor) -> Block:
     block.save()
     record("program_block.restored", actor=actor, target=block.version, payload={"block_key": str(block.block_key)})
     return block
+
+
+# --- Alignment links (task 2.6) ------------------------------------------------------------------
+
+K = AlignmentLink.Kind
+T = Block.Type
+
+
+def _invalid_link(reason: str):
+    raise ProgramError(f"this alignment link is not valid: {reason}", code="link_invalid")
+
+
+def _is_ancestor(candidate: Node, node: Node) -> bool:
+    current = node.parent
+    while current is not None:
+        if current.pk == candidate.pk:
+            return True
+        current = current.parent
+    return False
+
+
+@transaction.atomic
+def link(version: ProgramVersion, *, kind: str, source: Block, actor, target: Block | None = None, competency=None):
+    version = _editable(version)
+    blocks = [b for b in (source, target) if b is not None]
+    if any(b.version_id != version.pk for b in blocks):
+        _invalid_link("both ends must belong to this version")
+    if any(b.deleted for b in blocks):
+        _invalid_link("deleted blocks cannot be linked")
+    if kind == K.OBJECTIVE_COMPETENCY:
+        if source.type != T.OBJECTIVE or competency is None or target is not None:
+            _invalid_link("an objective links to a competency")
+        if not version.framework_version.competencies.filter(pk=competency.pk).exists():
+            _invalid_link("the competency must belong to this version's framework")
+        exists = AlignmentLink.objects.filter(version=version, kind=kind, source=source, target_competency=competency)
+    elif kind == K.ASSESSMENT_OBJECTIVE:
+        if source.type != T.ASSESSMENT or target is None or target.type != T.OBJECTIVE or competency is not None:
+            _invalid_link("an assessment links to an objective")
+        exists = AlignmentLink.objects.filter(version=version, kind=kind, source=source, target_block=target)
+    elif kind == K.OBJECTIVE_PARENT:
+        if source.type != T.OBJECTIVE or target is None or target.type != T.OBJECTIVE or competency is not None:
+            _invalid_link("an objective links to a higher objective")
+        if not _is_ancestor(target.node, source.node):
+            _invalid_link("the higher objective must sit on an ancestor of the objective's node")
+        exists = AlignmentLink.objects.filter(version=version, kind=kind, source=source, target_block=target)
+    else:
+        _invalid_link("unknown kind")
+    if exists.exists():
+        raise ProgramError("this link already exists", code="link_exists")
+    created = AlignmentLink.objects.create(
+        version=version, kind=kind, source=source, target_block=target, target_competency=competency, created_by=actor
+    )
+    record(
+        "alignment_link.added",
+        actor=actor,
+        target=version,
+        payload={
+            "kind": kind,
+            "source": str(source.block_key),
+            "target": str(target.block_key) if target else None,
+            "competency": competency.code if competency else None,
+        },
+    )
+    return created
+
+
+@transaction.atomic
+def unlink(alignment_link: AlignmentLink, *, actor) -> None:
+    _editable(alignment_link.version)
+    record(
+        "alignment_link.removed",
+        actor=actor,
+        target=alignment_link.version,
+        payload={"kind": alignment_link.kind, "source": str(alignment_link.source.block_key)},
+    )
+    alignment_link.delete()

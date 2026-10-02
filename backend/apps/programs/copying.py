@@ -5,7 +5,7 @@ from django.db.models import Max
 from apps.audit.services import record
 
 from .errors import ProgramError
-from .models import Block, Node, ProgramTarget, ProgramVersion
+from .models import AlignmentLink, Block, Node, ProgramTarget, ProgramVersion
 
 
 def create_draft_copy(source: ProgramVersion, *, actor) -> ProgramVersion:
@@ -35,7 +35,7 @@ def create_draft_copy(source: ProgramVersion, *, actor) -> ProgramVersion:
 
 
 def copy_content(source: ProgramVersion, draft: ProgramVersion) -> None:
-    """Copies the tree and blocks, level by level so every parent exists before its children."""
+    """Copies the tree, blocks and alignment links; nodes level by level so every parent exists first."""
     node_ids: dict[int, int] = {}
     nodes = list(source.nodes.order_by("level", "order", "pk"))
     for level in sorted({n.level for n in nodes}):
@@ -54,7 +54,8 @@ def copy_content(source: ProgramVersion, draft: ProgramVersion) -> None:
             for n in batch
         )
         node_ids.update({old.pk: new.pk for old, new in zip(batch, created, strict=True)})
-    Block.objects.bulk_create(
+    blocks = list(source.blocks.all())
+    created_blocks = Block.objects.bulk_create(
         Block(
             version=draft,
             organization_id=draft.organization_id,
@@ -66,5 +67,18 @@ def copy_content(source: ProgramVersion, draft: ProgramVersion) -> None:
             order=b.order,
             deleted=b.deleted,
         )
-        for b in source.blocks.all()
+        for b in blocks
+    )
+    block_ids = {old.pk: new.pk for old, new in zip(blocks, created_blocks, strict=True)}
+    AlignmentLink.objects.bulk_create(
+        AlignmentLink(
+            version=draft,
+            organization_id=draft.organization_id,
+            kind=link.kind,
+            source_id=block_ids[link.source_id],
+            target_block_id=block_ids[link.target_block_id] if link.target_block_id else None,
+            target_competency_id=link.target_competency_id,
+            created_by_id=link.created_by_id,
+        )
+        for link in source.alignment_links.all()
     )

@@ -166,3 +166,53 @@ class Block(VersionedRow, OrganizationScopedModel):
 
     def __str__(self) -> str:
         return f"{self.type} {self.block_key}"
+
+
+class AlignmentLinkQuerySet(VersionedRowQuerySet, OrganizationScopedQuerySet):
+    pass
+
+
+class AlignmentLink(VersionedRow, OrganizationScopedModel):
+    """An explicit alignment set by an author. AI may only suggest these; it never writes them."""
+
+    class Kind(models.TextChoices):
+        OBJECTIVE_COMPETENCY = "objective_competency", "objective_competency"
+        ASSESSMENT_OBJECTIVE = "assessment_objective", "assessment_objective"
+        OBJECTIVE_PARENT = "objective_parent", "objective_parent"
+
+    version = models.ForeignKey(ProgramVersion, on_delete=models.CASCADE, related_name="alignment_links")
+    kind = models.CharField(max_length=30, choices=Kind.choices)
+    source = models.ForeignKey(Block, on_delete=models.PROTECT, related_name="outgoing_links")
+    target_block = models.ForeignKey(
+        Block, on_delete=models.PROTECT, null=True, blank=True, related_name="incoming_links"
+    )
+    target_competency = models.ForeignKey(Competency, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects, all_organizations = scoped_managers(AlignmentLinkQuerySet)
+
+    class Meta:
+        ordering = ["version", "kind", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(kind="objective_competency", target_competency__isnull=False, target_block__isnull=True)
+                    | (~Q(kind="objective_competency") & Q(target_block__isnull=False, target_competency__isnull=True))
+                ),
+                name="programs_link_target_matches_kind",
+            ),
+            models.UniqueConstraint(
+                fields=["version", "kind", "source", "target_competency"],
+                condition=Q(target_competency__isnull=False),
+                name="programs_link_competency_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["version", "kind", "source", "target_block"],
+                condition=Q(target_block__isnull=False),
+                name="programs_link_block_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind}: {self.source_id}"
