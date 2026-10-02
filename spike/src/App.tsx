@@ -6,6 +6,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useMemo, useState } from 'react'
 import * as Y from 'yjs'
 
+import { BidiAuto } from './bidi'
 import { BlockEditor } from './BlockEditor'
 import { blockFragment, blocksMap, createBlock, createNode, listBlocks, nodesMap } from './schema'
 
@@ -57,6 +58,7 @@ export function App() {
     extensions: [
       // History must be handled by Yjs, so the local undo stack is disabled.
       StarterKit.configure({ undoRedo: false }),
+      BidiAuto,
       Collaboration.configure({ document: ydoc }),
       CollaborationCaret.configure({ provider, user: { name: userName, color: pickColor(userName) } }),
     ],
