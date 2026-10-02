@@ -61,7 +61,9 @@ class SwitchOrganizationSerializer(serializers.Serializer):
 def session_payload(request) -> dict:
     """The shape returned by login, me and switch: who you are, where you are, where you could be."""
     memberships = list(
-        Membership.all_organizations.filter(user=request.user).select_related("organization").order_by("organization__name")
+        Membership.all_organizations.filter(user=request.user)
+        .select_related("organization")
+        .order_by("organization__name")
     )
     active = getattr(request, "membership", None)
     return {

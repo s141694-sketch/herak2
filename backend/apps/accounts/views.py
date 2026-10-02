@@ -86,7 +86,8 @@ class SwitchOrganizationView(APIView):
     def post(self, request):
         serializer = SwitchOrganizationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        membership = memberships_of(request.user).filter(organization_id=serializer.validated_data["organization_id"]).first()
+        organization_id = serializer.validated_data["organization_id"]
+        membership = memberships_of(request.user).filter(organization_id=organization_id).first()
         if membership is None:
             raise exceptions.NotFound("no membership in that organization")
         _select_membership(request, membership)
