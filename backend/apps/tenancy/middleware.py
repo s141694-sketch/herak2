@@ -1,6 +1,6 @@
 """Activates the organization chosen in the session for the duration of the request."""
 
-from apps.accounts.models import Membership, Organization
+from apps.accounts.models import Membership
 
 from .context import activate, deactivate
 
@@ -18,9 +18,11 @@ class OrganizationContextMiddleware:
 
     def __call__(self, request):
         request.organization = None
+        request.membership = None
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated:
-            request.organization = self._resolve(request, user)
+            request.membership = self._resolve(request, user)
+            request.organization = request.membership.organization if request.membership else None
         if request.organization is not None:
             activate(request.organization)
         try:
@@ -29,16 +31,16 @@ class OrganizationContextMiddleware:
             deactivate()
 
     @staticmethod
-    def _resolve(request, user) -> Organization | None:
+    def _resolve(request, user) -> Membership | None:
         session = request.session
         memberships = list(memberships_of(user))
         wanted = session.get(SESSION_KEY)
         if wanted is not None:
             for membership in memberships:
                 if membership.organization_id == wanted:
-                    return membership.organization
+                    return membership
             del session[SESSION_KEY]
         if len(memberships) == 1:
             session[SESSION_KEY] = memberships[0].organization_id
-            return memberships[0].organization
+            return memberships[0]
         return None
