@@ -1,19 +1,36 @@
 import { Server } from '@hocuspocus/server'
 
+import { AuthenticationRefused, type Grant, verifyToken } from './auth.js'
+
 export interface CollabServerOptions {
   port: number
-  /** Service name reported by the health endpoint. */
+  tokenSecret: string
   name?: string
 }
 
+export interface ConnectionContext {
+  grant: Grant
+}
+
 /**
- * Creates the collaboration server. Phase 1 only needs it to run and report
- * health; per-document authentication and persistence arrive in phase 3.
+ * The collaboration service. Every connection presents a token issued by Django
+ * for exactly one document; read grants open the connection read-only.
  */
-export function createCollabServer(options: CollabServerOptions): Server {
-  return new Server({
+export function createCollabServer(options: CollabServerOptions): Server<ConnectionContext> {
+  return new Server<ConnectionContext>({
     port: options.port,
     name: options.name ?? 'harak2-collab',
+    quiet: true,
+    async onAuthenticate({ token, documentName, connectionConfig }) {
+      try {
+        const grant = await verifyToken(token, documentName, options.tokenSecret)
+        connectionConfig.readOnly = grant.mode === 'read'
+        return { grant }
+      } catch (error) {
+        if (error instanceof AuthenticationRefused) throw new Error('unauthorized')
+        throw error
+      }
+    },
     onRequest({ request, response }) {
       if (request.url === '/health') {
         response.writeHead(200, { 'Content-Type': 'application/json' })

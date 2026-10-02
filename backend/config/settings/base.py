@@ -17,6 +17,9 @@ env = environ.Env(
     SENTRY_ENVIRONMENT=(str, "development"),
     SESSION_COOKIE_AGE=(int, 8 * 60 * 60),
     LOGIN_THROTTLE_RATE=(str, "10/minute"),
+    COLLAB_TOKEN_TTL_SECONDS=(int, 120),
+    COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
+    COLLAB_TIMEOUT_SECONDS=(float, 10.0),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -40,6 +43,7 @@ INSTALLED_APPS = [
     "apps.competencies",
     "apps.structures",
     "apps.programs",
+    "apps.collab",
 ]
 
 MIDDLEWARE = [
@@ -108,6 +112,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 COMPETENCY_IMPORT_MAX_BYTES = 2 * 1024 * 1024
 COMPETENCY_IMPORT_MAX_ROWS = 2000
 BLOCK_CONTENT_MAX_BYTES = 256 * 1024
+
+# Collaboration service: user tokens are signed with one secret, service-to-service calls carry another.
+COLLAB_TOKEN_SECRET = env("COLLAB_TOKEN_SECRET")
+COLLAB_SERVICE_SECRET = env("COLLAB_SERVICE_SECRET")
+COLLAB_TOKEN_TTL_SECONDS = env("COLLAB_TOKEN_TTL_SECONDS")
+COLLAB_INTERNAL_URL = env("COLLAB_INTERNAL_URL")
+COLLAB_TIMEOUT_SECONDS = env("COLLAB_TIMEOUT_SECONDS")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 AUTH_USER_MODEL = "accounts.User"

@@ -9,6 +9,7 @@ x-backend: &backend
     DJANGO_SETTINGS_MODULE: config.settings.production
     DATABASE_URL: postgres://harak:${POSTGRES_PASSWORD:-harak}@postgres:5432/harak
     REDIS_URL: redis://redis:6379/0
+    COLLAB_INTERNAL_URL: http://collab:1234
   depends_on:
     postgres:
       condition: service_healthy
@@ -77,8 +78,10 @@ services:
     build:
       context: ..
       dockerfile: infra/collab.Dockerfile
+    env_file: ../backend/.env
     environment:
       PORT: "1234"
+      DJANGO_INTERNAL_URL: http://backend:8000
     ports:
       - "1234:1234"
     healthcheck:

@@ -13,6 +13,7 @@
   "dependencies": {
     "@harak2/shared": "0.1.0",
     "@hocuspocus/server": "4.7.0",
+    "jose": "6.2.12",
     "tsx": "4.23.15",
     "yjs": "13.6.33"
   },

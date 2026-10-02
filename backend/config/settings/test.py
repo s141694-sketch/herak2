@@ -8,6 +8,9 @@ os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:6380/1")
 os.environ.setdefault("LOG_JSON", "False")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 
+os.environ.setdefault("COLLAB_TOKEN_SECRET", "test-collab-token-secret-0123456789")
+os.environ.setdefault("COLLAB_SERVICE_SECRET", "test-collab-service-secret-0123456789")
+
 from .base import *  # noqa: E402, F403
 
 INSTALLED_APPS = [*INSTALLED_APPS, "apps.tenancy.tests.testapp"]  # noqa: F405

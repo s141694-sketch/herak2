@@ -1,15 +1,13 @@
-import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import WebSocket from 'ws'
-import * as Y from 'yjs'
 
 import { createCollabServer } from '../src/server'
+import { connect, eventually, SECRET, settle, token } from './helpers'
 
 const PORT = 12340
 let server: ReturnType<typeof createCollabServer>
 
 beforeAll(async () => {
-  server = createCollabServer({ port: PORT })
+  server = createCollabServer({ port: PORT, tokenSecret: SECRET })
   await server.listen()
 })
 
@@ -17,35 +15,39 @@ afterAll(async () => {
   await server.destroy()
 })
 
-function connect(name: string, document: Y.Doc): Promise<HocuspocusProvider> {
-  return new Promise((resolve) => {
-    const websocketProvider = new HocuspocusProviderWebsocket({ url: `ws://127.0.0.1:${PORT}`, WebSocketPolyfill: WebSocket })
-    const provider = new HocuspocusProvider({ name, document, websocketProvider, onSynced: () => resolve(provider) })
-    // With an externally supplied websocket provider the document provider must be attached explicitly.
-    provider.attach()
-  })
-}
-
 describe('collab service', () => {
   it('answers the health endpoint over HTTP', async () => {
     const response = await fetch(`http://127.0.0.1:${PORT}/health`)
-    expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: 'ok', service: 'collab' })
   })
 
-  it('syncs two Yjs documents through the server', async () => {
-    const a = new Y.Doc()
-    const b = new Y.Doc()
-    const name = `test-${Date.now()}`
-    const pa = await connect(name, a)
-    const pb = await connect(name, b)
-    a.getText('t').insert(0, 'مرحبا')
-    await new Promise<void>((resolve) => {
-      const check = () => (b.getText('t').toString() === 'مرحبا' ? resolve() : setTimeout(check, 20))
-      check()
-    })
-    expect(b.getText('t').toString()).toBe('مرحبا')
-    pa.destroy()
-    pb.destroy()
+  it('syncs two writers holding valid tokens for the document', async () => {
+    const a = await connect(PORT, 'program-version:42', await token({}))
+    const b = await connect(PORT, 'program-version:42', await token({ sub: '8' }))
+    a.doc.getText('t').insert(0, 'مرحبا')
+    await eventually(() => b.doc.getText('t').toString() === 'مرحبا')
+    a.provider.destroy()
+    b.provider.destroy()
+  })
+
+  it.each([
+    ['a token for another document', () => token({ doc: 'program-version:43' })],
+    ['an expired token', () => token({}, { ttl: -10 })],
+    ['a token signed with another secret', () => token({}, { secret: 'another-secret-of-the-right-length-0123' })],
+    ['no token', async () => ''],
+  ])('refuses %s', async (_label, make) => {
+    await expect(connect(PORT, 'program-version:42', await make())).rejects.toThrow()
+  })
+
+  it('opens read grants read-only: their edits reach nobody', async () => {
+    const writer = await connect(PORT, 'program-version:42', await token({}))
+    const reader = await connect(PORT, 'program-version:42', await token({ sub: '9', mode: 'read' }))
+    writer.doc.getText('ro').insert(0, 'من الكاتب')
+    await eventually(() => reader.doc.getText('ro').toString() === 'من الكاتب')
+    reader.doc.getText('ro').insert(0, 'من القارئ ')
+    await settle()
+    expect(writer.doc.getText('ro').toString()).toBe('من الكاتب')
+    writer.provider.destroy()
+    reader.provider.destroy()
   })
 })

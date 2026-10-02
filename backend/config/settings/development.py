@@ -9,4 +9,7 @@ os.environ.setdefault("LOG_JSON", "False")
 os.environ.setdefault("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
 os.environ.setdefault("CSRF_TRUSTED_ORIGINS", "http://localhost:5173")
 
+os.environ.setdefault("COLLAB_TOKEN_SECRET", "dev-only-collab-token-secret-change-me")
+os.environ.setdefault("COLLAB_SERVICE_SECRET", "dev-only-collab-service-secret-change-me")
+
 from .base import *  # noqa: E402, F403
