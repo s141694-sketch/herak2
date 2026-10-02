@@ -8,6 +8,21 @@ from apps.structures.serializers import LevelSerializer
 from .models import AlignmentLink, Block, Node, Program, ProgramCollaborator, ProgramVersion
 
 
+def _permissions(serializer, program) -> dict:
+    request = serializer.context.get("request")
+    membership = getattr(request, "membership", None) if request else None
+    if membership is None:
+        return {"edit": False, "manage": False, "collaborate": False}
+    from . import services
+
+    collaborate = services.can_edit(program, request.user, membership.role)
+    return {
+        "edit": collaborate,
+        "manage": services.can_manage(program, request.user, membership.role),
+        "collaborate": collaborate,
+    }
+
+
 class VersionSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = ProgramVersion
@@ -22,6 +37,7 @@ class ProgramSerializer(serializers.ModelSerializer):
         queryset=FrameworkVersion.all_organizations.none(), write_only=True
     )
     targets = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False, default=list)
+    permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = Program
@@ -36,8 +52,12 @@ class ProgramSerializer(serializers.ModelSerializer):
             "targets",
             "created_at",
             "versions",
+            "permissions",
         ]
-        read_only_fields = ["id", "status", "owner", "created_at", "versions"]
+        read_only_fields = ["id", "status", "owner", "created_at", "versions", "permissions"]
+
+    def get_permissions(self, program) -> dict:
+        return _permissions(self, program)
 
     def get_fields(self):
         fields = super().get_fields()
@@ -69,11 +89,13 @@ class VersionDetailSerializer(serializers.ModelSerializer):
     framework = serializers.SerializerMethodField()
     targets = serializers.SerializerMethodField()
     source_version = serializers.IntegerField(source="source_version.number", default=None, read_only=True)
+    permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = ProgramVersion
         fields = [
             "id",
+            "permissions",
             "program",
             "number",
             "status",
@@ -86,6 +108,10 @@ class VersionDetailSerializer(serializers.ModelSerializer):
             "submitted_at",
             "approved_at",
         ]
+
+    def get_permissions(self, version) -> dict:
+        allowed = _permissions(self, version.program)
+        return {**allowed, "edit": allowed["edit"] and version.is_editable}
 
     def get_program(self, version) -> dict:
         return {"id": version.program_id, "title": version.program.title, "owner_id": version.program.owner_id}

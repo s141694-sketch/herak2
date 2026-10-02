@@ -57,7 +57,7 @@ class ProgramListView(generics.ListCreateAPIView):
             framework_version=data["framework_version"],
             target_ids=data.get("targets", []),
         )
-        return Response(ProgramSerializer(program).data, status=status.HTTP_201_CREATED)
+        return Response(ProgramSerializer(program, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 class ProgramDetailView(generics.RetrieveUpdateAPIView):
@@ -76,7 +76,7 @@ class ProgramDetailView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         super().update(request, *args, **kwargs)
-        return Response(ProgramSerializer(self.get_object()).data)
+        return Response(ProgramSerializer(self.get_object(), context={"request": request}).data)
 
 
 class CollaboratorsView(APIView):
@@ -148,7 +148,7 @@ class VersionTargetsView(APIView):
 
     def get(self, request, pk):
         version = get_object_or_404(version_queryset(), pk=pk)
-        return Response(VersionDetailSerializer(version).data["targets"])
+        return Response(VersionDetailSerializer(version, context={"request": request}).data["targets"])
 
     def put(self, request, pk):
         version = get_object_or_404(version_queryset(), pk=pk)

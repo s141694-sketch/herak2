@@ -138,3 +138,23 @@ def test_building_a_tree_through_the_api(world):
     deleted = author.delete(f"/api/program-blocks/{block.json()['id']}/")
     assert deleted.json()["deleted"] is True
     assert author.post(f"/api/program-blocks/{block.json()['id']}/restore/").json()["deleted"] is False
+
+
+def test_responses_say_what_the_caller_may_do(world):
+    author = login("author@example.com")
+    program = create(author, world).json()
+    assert program["permissions"] == {"edit": True, "manage": True, "collaborate": True}
+    version_id = program["versions"][0]["id"]
+    version_permissions = author.get(f"/api/program-versions/{version_id}/").json()["permissions"]
+    assert version_permissions == {"edit": True, "manage": True, "collaborate": True}
+    other = login("other@example.com")
+    assert other.get(f"/api/programs/{program['id']}/").json()["permissions"] == {
+        "edit": False,
+        "manage": False,
+        "collaborate": False,
+    }
+    admin = login("admin@example.com")
+    assert admin.get(f"/api/programs/{program['id']}/").json()["permissions"]["manage"] is True
+    author.post(f"/api/program-versions/{version_id}/submit/")
+    locked = author.get(f"/api/program-versions/{version_id}/").json()["permissions"]
+    assert (locked["edit"], locked["collaborate"]) == (False, True)

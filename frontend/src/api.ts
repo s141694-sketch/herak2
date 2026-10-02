@@ -31,10 +31,9 @@ export class ApiError extends Error {
   }
 }
 
-const KNOWN_CODES = new Set(['invalid_credentials', 'throttled', 'not_found', 'permission_denied', 'validation_error'])
-
+/** The stable code of a failure; the UI looks it up under `errors.*` and falls back to `errors.unknown`. */
 export function errorCode(error: unknown): string {
-  if (error instanceof ApiError) return KNOWN_CODES.has(error.code) ? error.code : error.status === 0 ? 'network' : 'unknown'
+  if (error instanceof ApiError) return error.status === 0 ? 'network' : error.code
   return 'unknown'
 }
 
@@ -73,6 +72,37 @@ export async function request<T>(path: string, init: { method?: string; body?: u
     throw new ApiError(response.status, error.code ?? 'unknown', error.message ?? response.statusText)
   }
   return body as T
+}
+
+async function send<T>(path: string, init: RequestInit): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(path, { credentials: 'same-origin', ...init })
+  } catch {
+    throw new ApiError(0, 'network', 'network error')
+  }
+  if (response.status === 204) return undefined as T
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    const error = body?.error ?? {}
+    throw new ApiError(response.status, error.code ?? 'unknown', error.message ?? response.statusText)
+  }
+  return body as T
+}
+
+export const http = {
+  get: <T>(path: string) => request<T>(path),
+  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
+  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
+  del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  /** Multipart upload of a single file in the `file` field. */
+  upload: async <T>(path: string, file: File): Promise<T> => {
+    await ensureCsrf()
+    const form = new FormData()
+    form.append('file', file)
+    return send<T>(path, { method: 'POST', body: form, headers: { 'X-CSRFToken': csrfToken(), Accept: 'application/json' } })
+  },
 }
 
 export const api = {

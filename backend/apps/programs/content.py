@@ -46,7 +46,13 @@ MARK_ATTRS: dict[str, dict] = {
     "strike": {},
     "code": {},
     "underline": {},
-    "link": {"href": _safe_href, "target": _ANY_STR_OR_NONE, "rel": _ANY_STR_OR_NONE, "class": _ANY_STR_OR_NONE},
+    "link": {
+        "href": _safe_href,
+        "target": _ANY_STR_OR_NONE,
+        "rel": _ANY_STR_OR_NONE,
+        "class": _ANY_STR_OR_NONE,
+        "title": _ANY_STR_OR_NONE,
+    },
 }
 
 MAX_DEPTH = 30

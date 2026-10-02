@@ -122,3 +122,68 @@ h1, h2, .brand, .brand-title { font-family: var(--font-heading); color: var(--co
   cursor: pointer;
 }
 .primary:disabled { opacity: 0.6; cursor: progress; }
+
+/* --- Phase 2 screens --- */
+a { color: var(--color-secondary); }
+.topbar a { color: #fff; text-decoration: none; }
+.topbar .brand { text-decoration: none; }
+.main-nav { display: flex; gap: calc(var(--space) * 2); }
+.main-nav a.active { color: var(--color-accent); }
+.content { max-width: 1100px; }
+.card + .card { margin-block-start: calc(var(--space) * 2); }
+.stack { display: grid; gap: var(--space); margin-block-start: calc(var(--space) * 3); }
+.row { display: flex; flex-wrap: wrap; gap: var(--space); align-items: center; margin-block: var(--space); }
+.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.table { width: 100%; border-collapse: collapse; margin-block: var(--space); }
+.table th, .table td { padding: 6px var(--space); border-block-end: 1px solid var(--color-line); text-align: start; }
+.table th { color: var(--color-muted); font-weight: 600; }
+.row-error td { background: #fbeaea; }
+input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(--color-line); border-radius: 6px; background: #fff; }
+.secondary {
+  font: inherit; padding: 4px calc(var(--space) * 1.5); border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--color-secondary); background: #fff; color: var(--color-secondary);
+}
+.primary-inline {
+  font: inherit; font-weight: 600; padding: 6px calc(var(--space) * 2); border: 0; border-radius: 6px;
+  background: var(--color-action); color: #fff; cursor: pointer; justify-self: start;
+}
+.primary-inline:disabled, .secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.badge {
+  display: inline-block; padding: 0 var(--space); border-radius: 999px; font-size: 0.8rem;
+  background: var(--color-bg); border: 1px solid var(--color-line); color: var(--color-muted);
+}
+.badge-draft { background: #fff7e0; }
+.badge-published, .badge-approved, .badge-applied { background: #e4f3ea; color: #1e7a4c; }
+.badge-submitted, .badge-in_stage, .badge-in_review { background: #e7e9f6; color: var(--color-secondary); }
+.badge-withdrawn, .badge-returned, .badge-cancelled { background: #f6e7e7; color: var(--color-danger); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-block-end: 1px solid var(--color-line); margin-block: var(--space); }
+.tab { font: inherit; background: none; border: 0; padding: var(--space); cursor: pointer; border-block-end: 3px solid transparent; }
+.tab.active { border-block-end-color: var(--color-accent); font-weight: 600; }
+.levels-editor { display: grid; gap: var(--space); }
+.level-row { display: grid; grid-template-columns: 7rem 1fr 1fr auto; gap: var(--space); align-items: center; }
+.checks { display: grid; gap: 4px; border: 1px solid var(--color-line); border-radius: 8px; padding: var(--space); }
+.panel { border: 1px dashed var(--color-line); border-radius: var(--radius); padding: calc(var(--space) * 2); margin-block: calc(var(--space) * 2); }
+.tree { display: grid; gap: var(--space); }
+.node { border-inline-start: 3px solid var(--color-line); padding-inline-start: calc(var(--space) * 2); margin-block: var(--space); }
+.node[data-level='0'] { border-inline-start-color: var(--color-primary); }
+.node[data-level='1'] { border-inline-start-color: var(--color-secondary); }
+.node[data-level='2'] { border-inline-start-color: var(--color-accent); }
+.node.deleted, .block.deleted { opacity: 0.55; }
+.node-header, .block-header { display: flex; flex-wrap: wrap; gap: var(--space); align-items: center; }
+.node-actions { display: inline-flex; gap: var(--space); align-items: center; font-size: 0.9rem; }
+.block { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 8px; padding: var(--space); margin-block: var(--space); }
+.block-editor { min-height: 2.5rem; padding: 4px var(--space); border-radius: 6px; outline: 1px solid transparent; }
+.block-editor:focus { outline-color: var(--color-accent); }
+.block-editor p { margin: 0 0 0.4em; }
+.save-state { font-size: 0.8rem; }
+.badge-objective { background: #e7e9f6; }
+.badge-assessment { background: #f6efe0; }
+.alignment { font-size: 0.9rem; border-block-start: 1px dashed var(--color-line); margin-block-start: var(--space); }
+.chip { display: inline-flex; gap: 4px; align-items: center; background: var(--color-bg); border-radius: 999px; padding: 0 var(--space); }
+.change-added { color: #1e7a4c; }
+.change-removed { color: var(--color-danger); }
+.change-modified, .change-moved { color: var(--color-secondary); }
+.diff-text p { margin: 2px 0; }
+.removed-text { text-decoration: line-through; color: var(--color-danger); }
+.added-text { color: #1e7a4c; }
+.quick-links { margin-block-start: calc(var(--space) * 2); }

@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
+import { Link } from 'react-router'
+
 import { useAuth } from '../auth'
 
 export function HomePage() {
@@ -17,7 +19,21 @@ export function HomePage() {
         <dt>{t('home.yourRole')}</dt>
         <dd data-testid="current-role">{t(`roles.${organization.role}`)}</dd>
       </dl>
-      {organization.role === 'pending' && <p className="notice">{t('home.pendingHint')}</p>}
+      {organization.role === 'pending' ? (
+        <p className="notice">{t('home.pendingHint')}</p>
+      ) : (
+        <ul className="plain quick-links">
+          <li>
+            <Link to="/programs">{t('nav.programs')}</Link>
+          </li>
+          <li>
+            <Link to="/competencies">{t('nav.competencies')}</Link>
+          </li>
+          <li>
+            <Link to="/templates">{t('nav.templates')}</Link>
+          </li>
+        </ul>
+      )}
     </section>
   )
 }

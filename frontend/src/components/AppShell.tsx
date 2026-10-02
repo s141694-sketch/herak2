@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router'
+import { NavLink, useNavigate } from 'react-router'
 
 import { useAuth } from '../auth'
 import { LanguageToggle } from './LanguageToggle'
@@ -14,7 +14,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="shell">
       <header className="topbar">
-        <span className="brand">{t('app.name')}</span>
+        <NavLink to="/" className="brand">
+          {t('app.name')}
+        </NavLink>
+        {session.organization && session.organization.role !== 'pending' && (
+          <nav className="main-nav">
+            <NavLink to="/programs" data-testid="nav-programs">
+              {t('nav.programs')}
+            </NavLink>
+            <NavLink to="/competencies" data-testid="nav-competencies">
+              {t('nav.competencies')}
+            </NavLink>
+            <NavLink to="/templates" data-testid="nav-templates">
+              {t('nav.templates')}
+            </NavLink>
+          </nav>
+        )}
         {session.memberships.length > 1 && (
           <label className="switcher">
             <span>{t('organization.switcher')}</span>
