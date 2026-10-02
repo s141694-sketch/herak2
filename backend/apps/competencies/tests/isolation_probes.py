@@ -28,3 +28,13 @@ register(Probe(route="framework-version-detail", kind="detail", make=_version))
 register(Probe(route="framework-version-publish", kind="action", make=_version))
 register(Probe(route="framework-version-competencies", kind="nested", make=_version))
 register(Probe(route="competency-detail", kind="detail", make=_competency))
+
+
+def _import(org):
+    version = _framework(org).versions.get()
+    return services.preview_import(version, file_name="c.csv", data=b"code,title\nA,b\n", actor=_actor(org))
+
+
+register(Probe(route="framework-version-imports", kind="nested", make=_version))
+register(Probe(route="competency-import-detail", kind="detail", make=_import))
+register(Probe(route="competency-import-confirm", kind="action", make=_import))

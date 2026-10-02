@@ -1,13 +1,18 @@
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.tenancy.permissions import AdminWritesMembersRead
 
 from . import services
-from .models import Competency, CompetencyFramework, FrameworkVersion
+from .models import Competency, CompetencyFramework, CompetencyImport, FrameworkVersion
 from .serializers import (
+    CompetencyImportSerializer,
+    CompetencyImportSummarySerializer,
     CompetencySerializer,
     FrameworkSerializer,
     FrameworkVersionDetailSerializer,
@@ -96,3 +101,38 @@ class CompetencyDetailView(generics.RetrieveUpdateDestroyAPIView):
         if "pk" in self.kwargs:
             context["version"] = self.get_object().version
         return context
+
+
+class VersionImportsView(APIView):
+    permission_classes = [AdminWritesMembersRead]
+    parser_classes = [MultiPartParser, JSONParser]
+
+    def get(self, request, pk):
+        version = get_object_or_404(FrameworkVersion.objects, pk=pk)
+        return Response(CompetencyImportSummarySerializer(version.imports.all(), many=True).data)
+
+    def post(self, request, pk):
+        version = get_object_or_404(FrameworkVersion.objects, pk=pk)
+        upload = request.FILES.get("file")
+        if upload is None:
+            raise ValidationError("attach the file in the 'file' field", code="missing_file")
+        data = upload.read(settings.COMPETENCY_IMPORT_MAX_BYTES + 1)
+        batch = services.preview_import(version, file_name=upload.name, data=data, actor=request.user)
+        return Response(CompetencyImportSerializer(batch).data, status=status.HTTP_201_CREATED)
+
+
+class ImportDetailView(generics.RetrieveAPIView):
+    permission_classes = [AdminWritesMembersRead]
+    serializer_class = CompetencyImportSerializer
+
+    def get_queryset(self):
+        return CompetencyImport.objects.all()
+
+
+class ConfirmImportView(APIView):
+    permission_classes = [AdminWritesMembersRead]
+
+    def post(self, request, pk):
+        batch = get_object_or_404(CompetencyImport.objects, pk=pk)
+        batch = services.confirm_import(batch, actor=request.user)
+        return Response(CompetencyImportSerializer(batch).data)

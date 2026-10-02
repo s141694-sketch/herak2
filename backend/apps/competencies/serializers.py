@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Competency, CompetencyFramework, FrameworkVersion
+from .models import Competency, CompetencyFramework, CompetencyImport, FrameworkVersion
 
 
 class CompetencySerializer(serializers.ModelSerializer):
@@ -48,3 +48,15 @@ class FrameworkVersionDetailSerializer(serializers.ModelSerializer):
 
     def get_framework(self, version) -> dict:
         return {"id": version.framework_id, "name": version.framework.name}
+
+
+class CompetencyImportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompetencyImport
+        fields = ["id", "version", "file_name", "status", "summary", "rows", "created_at", "applied_at"]
+
+
+class CompetencyImportSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompetencyImport
+        fields = ["id", "version", "file_name", "status", "summary", "created_at", "applied_at"]

@@ -6,9 +6,10 @@ from django.utils import timezone
 
 from apps.audit.services import record
 from apps.core.errors import Conflict
-from apps.core.locking import lifecycle_write
+from apps.core.locking import VersionLocked, lifecycle_write
 
-from .models import Competency, CompetencyFramework, FrameworkVersion
+from . import importing
+from .models import Competency, CompetencyFramework, CompetencyImport, FrameworkVersion
 
 
 class FrameworkError(Conflict):
@@ -81,3 +82,51 @@ def new_version(framework: CompetencyFramework, *, actor) -> FrameworkVersion:
         payload={"framework_id": framework.pk, "number": number, "from": source.number if source else None},
     )
     return version
+
+
+def _existing_values(version: FrameworkVersion) -> dict[str, dict[str, str]]:
+    return {c["code"]: {k: c[k] for k in importing.COLUMNS} for c in version.competencies.values(*importing.COLUMNS)}
+
+
+def preview_import(version: FrameworkVersion, *, file_name: str, data: bytes, actor) -> CompetencyImport:
+    if not version.is_editable:
+        raise VersionLocked()
+    rows = importing.validate(importing.parse(file_name, data), _existing_values(version))
+    return CompetencyImport.objects.create(
+        version=version,
+        file_name=file_name[:255],
+        rows=[{"row": r.row, "values": r.values, "errors": r.errors, "action": r.action} for r in rows],
+        summary=importing.summarize(rows),
+        uploaded_by=actor,
+    )
+
+
+@transaction.atomic
+def confirm_import(batch: CompetencyImport, *, actor) -> CompetencyImport:
+    batch = CompetencyImport.objects.select_for_update().get(pk=batch.pk)
+    if batch.status != CompetencyImport.Status.PREVIEWED:
+        raise FrameworkError("this import was already applied", code="import_not_pending")
+    version = FrameworkVersion.objects.select_for_update().get(pk=batch.version_id)
+    if not version.is_editable:
+        raise VersionLocked()
+    # Re-validate against the version as it is now: it may have changed since the preview.
+    rows = [importing.ParsedRow(row=r["row"], values=dict(r["values"])) for r in batch.rows]
+    rows = importing.validate(rows, _existing_values(version))
+    summary = importing.summarize(rows)
+    if summary["errors"]:
+        raise FrameworkError("fix the rows with errors and upload the file again", code="import_has_errors")
+    by_code = {c.code: c for c in version.competencies.all()}
+    for row in rows:
+        if row.action == "create":
+            add_competency(version, **row.values)
+        elif row.action == "update":
+            competency = by_code[row.values["code"]]
+            for column, value in row.values.items():
+                setattr(competency, column, value)
+            competency.save()
+    batch.status = CompetencyImport.Status.APPLIED
+    batch.summary = summary
+    batch.applied_at = timezone.now()
+    batch.save()
+    record("competency_framework.imported", actor=actor, target=version, payload={"file": batch.file_name, **summary})
+    return batch

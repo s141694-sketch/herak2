@@ -18,4 +18,7 @@ urlpatterns = [
         name="framework-version-competencies",
     ),
     path("competencies/<int:pk>/", views.CompetencyDetailView.as_view(), name="competency-detail"),
+    path("framework-versions/<int:pk>/imports/", views.VersionImportsView.as_view(), name="framework-version-imports"),
+    path("competency-imports/<int:pk>/", views.ImportDetailView.as_view(), name="competency-import-detail"),
+    path("competency-imports/<int:pk>/confirm/", views.ConfirmImportView.as_view(), name="competency-import-confirm"),
 ]

@@ -93,3 +93,26 @@ class Competency(VersionedRow, OrganizationScopedModel):
 
     def __str__(self) -> str:
         return f"{self.code} {self.title}"
+
+
+class CompetencyImport(OrganizationScopedModel):
+    """A previewed file. Rows are applied to the draft version only on confirmation."""
+
+    class Status(models.TextChoices):
+        PREVIEWED = "previewed", "previewed"
+        APPLIED = "applied", "applied"
+
+    version = models.ForeignKey(FrameworkVersion, on_delete=models.CASCADE, related_name="imports")
+    file_name = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PREVIEWED)
+    rows = models.JSONField(default=list)
+    summary = models.JSONField(default=dict)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.file_name} ({self.status})"
