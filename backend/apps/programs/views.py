@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from apps.accounts.models import Membership
 from apps.tenancy.permissions import HasActiveOrganization
 
-from . import lifecycle, services
+from . import diff, lifecycle, services
 from .models import AlignmentLink, Block, Node, Program, ProgramCollaborator, ProgramVersion
 from .serializers import (
     AlignmentLinkSerializer,
@@ -409,3 +409,12 @@ class LinkDetailView(APIView):
         require_edit(request, alignment_link.version.program)
         services.unlink(alignment_link, actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class VersionDiffView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def get(self, request, pk, other):
+        before = get_object_or_404(ProgramVersion.objects, pk=pk)
+        after = get_object_or_404(ProgramVersion.objects, pk=other)
+        return Response(diff.diff_versions(before, after))

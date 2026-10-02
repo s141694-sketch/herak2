@@ -72,3 +72,12 @@ def _link(org):
 
 register(Probe(route="program-version-links", kind="nested", make=_version))
 register(Probe(route="alignment-link-detail", kind="detail", make=_link))
+
+register(
+    Probe(
+        route="program-version-diff",
+        kind="nested",
+        make=_version,
+        url_kwargs=lambda version: {"pk": version.pk, "other": version.pk},
+    )
+)

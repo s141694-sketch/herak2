@@ -122,3 +122,34 @@ def content_hash(content) -> str:
 
 
 EMPTY_DOC = {"type": "doc", "content": [{"type": "paragraph"}]}
+
+
+_BLOCK_NODES = {"paragraph", "heading", "listItem", "blockquote", "codeBlock"}
+
+
+def plain_text(content) -> str:
+    """Readable text of a block: paragraphs and list items on their own lines, marks dropped."""
+    lines: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            lines.append("".join(current).strip())
+            current.clear()
+
+    def walk(node) -> None:
+        if not isinstance(node, dict):
+            return
+        kind = node.get("type")
+        if kind == "text":
+            current.append(node.get("text", ""))
+        elif kind == "hardBreak":
+            current.append("\n")
+        for child in node.get("content", []) or []:
+            walk(child)
+        if kind in _BLOCK_NODES:
+            flush()
+
+    walk(content)
+    flush()
+    return "\n".join(line for line in lines if line)

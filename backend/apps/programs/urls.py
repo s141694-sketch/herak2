@@ -22,4 +22,5 @@ urlpatterns = [
     path("program-blocks/<int:pk>/restore/", views.BlockRestoreView.as_view(), name="program-block-restore"),
     path("program-versions/<int:pk>/alignment-links/", views.VersionLinksView.as_view(), name="program-version-links"),
     path("alignment-links/<int:pk>/", views.LinkDetailView.as_view(), name="alignment-link-detail"),
+    path("program-versions/<int:pk>/diff/<int:other>/", views.VersionDiffView.as_view(), name="program-version-diff"),
 ]
