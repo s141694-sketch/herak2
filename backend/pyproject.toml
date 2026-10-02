@@ -1,0 +1,37 @@
+[project]
+name = "harak2-backend"
+version = "0.1.0"
+description = "Harak 2 backend: Django REST API, Celery workers and the quality engine."
+requires-python = ">=3.13"
+dependencies = [
+    "django==6.1.1",
+    "djangorestframework==3.18.1",
+    "celery==5.6.3",
+    "redis==8.1.0",
+    "psycopg[binary]==3.3.6",
+    "django-environ==0.14.0",
+    "structlog==26.1.0",
+    "sentry-sdk==2.71.0",
+    "gunicorn==26.2.0",
+    "django-cors-headers==4.9.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-django==4.14.0",
+    "ruff==0.16.10",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["apps", "config"]
+addopts = "-q --reuse-db"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ"]
