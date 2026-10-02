@@ -131,14 +131,30 @@ function childrenOf(doc: Y.Doc, parent: string): string[] {
   return out
 }
 
-function setSubtreeLevels(doc: Y.Doc, key: string, level: number): void {
+function setSubtreeLevels(doc: Y.Doc, key: string, level: number, seen = new Set<string>()): void {
+  // The guard protects against cycles that concurrent moves may already have produced.
+  if (seen.has(key)) return
+  seen.add(key)
   requireNode(doc, key).set('level', level)
-  for (const child of childrenOf(doc, key)) setSubtreeLevels(doc, child, level + 1)
+  for (const child of childrenOf(doc, key)) setSubtreeLevels(doc, child, level + 1, seen)
+}
+
+/** True when `maybeAncestor` is `key` itself or one of its ancestors in this replica's view. */
+export function isSelfOrDescendant(doc: Y.Doc, key: string, candidate: string | null): boolean {
+  const seen = new Set<string>()
+  let current = candidate
+  while (current !== null && !seen.has(current)) {
+    if (current === key) return true
+    seen.add(current)
+    current = (nodesMap(doc).get(current)?.get('parent') as string | null) ?? null
+  }
+  return false
 }
 
 export function moveNode(doc: Y.Doc, key: string, target: { parent: string | null; order: number }): void {
   const node = requireNode(doc, key)
-  if (target.parent === key) throw new Error('a node cannot be its own parent')
+  // Local guard, as the UI would enforce. Concurrent moves can still form a cycle after sync.
+  if (isSelfOrDescendant(doc, key, target.parent)) throw new Error('a node cannot be moved under itself or its descendants')
   doc.transact(() => {
     node.set('parent', target.parent)
     node.set('order', target.order)
