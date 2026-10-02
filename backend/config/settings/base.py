@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "apps.core",
+    "apps.accounts",
 ]
 
 MIDDLEWARE = [
@@ -96,6 +97,7 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+AUTH_USER_MODEL = "accounts.User"
 
 SESSION_COOKIE_AGE = env("SESSION_COOKIE_AGE")
 SESSION_COOKIE_HTTPONLY = True
