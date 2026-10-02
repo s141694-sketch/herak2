@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
@@ -108,3 +110,59 @@ class ProgramTarget(VersionedRow, OrganizationScopedModel):
 
     def __str__(self) -> str:
         return f"{self.version} -> {self.competency}"
+
+
+class NodeQuerySet(VersionedRowQuerySet, OrganizationScopedQuerySet):
+    pass
+
+
+class Node(VersionedRow, OrganizationScopedModel):
+    """A node of a version's tree. node_key is stable across versions; level is the depth (0 = root)."""
+
+    version = models.ForeignKey(ProgramVersion, on_delete=models.CASCADE, related_name="nodes")
+    node_key = models.UUIDField(default=uuid.uuid4, editable=False)
+    parent = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="children")
+    level = models.PositiveSmallIntegerField()
+    order = models.PositiveIntegerField(default=0)
+    title = models.CharField(max_length=500)
+    deleted = models.BooleanField(default=False)
+
+    objects, all_organizations = scoped_managers(NodeQuerySet)
+
+    class Meta:
+        ordering = ["version", "level", "order", "id"]
+        constraints = [models.UniqueConstraint(fields=["version", "node_key"], name="programs_node_key_unique")]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class BlockQuerySet(VersionedRowQuerySet, OrganizationScopedQuerySet):
+    pass
+
+
+class Block(VersionedRow, OrganizationScopedModel):
+    class Type(models.TextChoices):
+        OBJECTIVE = "objective", "objective"
+        CONTENT = "content", "content"
+        ACTIVITY = "activity", "activity"
+        ASSESSMENT = "assessment", "assessment"
+        REFERENCE = "reference", "reference"
+
+    version = models.ForeignKey(ProgramVersion, on_delete=models.CASCADE, related_name="blocks")
+    node = models.ForeignKey(Node, on_delete=models.PROTECT, related_name="blocks")
+    block_key = models.UUIDField(default=uuid.uuid4, editable=False)
+    type = models.CharField(max_length=20, choices=Type.choices)
+    content = models.JSONField()
+    content_hash = models.CharField(max_length=64)
+    order = models.PositiveIntegerField(default=0)
+    deleted = models.BooleanField(default=False)
+
+    objects, all_organizations = scoped_managers(BlockQuerySet)
+
+    class Meta:
+        ordering = ["version", "node", "order", "id"]
+        constraints = [models.UniqueConstraint(fields=["version", "block_key"], name="programs_block_key_unique")]
+
+    def __str__(self) -> str:
+        return f"{self.type} {self.block_key}"

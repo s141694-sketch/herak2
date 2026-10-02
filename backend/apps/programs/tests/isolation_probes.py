@@ -28,3 +28,27 @@ register(Probe(route="program-version-detail", kind="detail", make=_version))
 register(Probe(route="program-version-targets", kind="nested", make=_version))
 register(Probe(route="program-version-submit", kind="action", make=_version))
 register(Probe(route="program-version-withdraw", kind="action", make=_version))
+
+
+def _node(org):
+    from apps.programs import services
+
+    version = _version(org)
+    return services.add_node(version, title="n", actor=version.created_by)
+
+
+def _block(org):
+    from apps.programs import services
+
+    node = _node(org)
+    return services.add_block(node.version, node=node, type="content", actor=node.version.created_by)
+
+
+register(Probe(route="program-version-tree", kind="nested", make=_version))
+register(Probe(route="program-version-nodes", kind="nested", make=_version))
+register(Probe(route="program-version-blocks", kind="nested", make=_version))
+register(Probe(route="program-node-detail", kind="detail", make=_node))
+register(Probe(route="program-node-move", kind="action", make=_node))
+register(Probe(route="program-node-restore", kind="action", make=_node))
+register(Probe(route="program-block-detail", kind="detail", make=_block))
+register(Probe(route="program-block-restore", kind="action", make=_block))

@@ -104,3 +104,37 @@ def test_creating_with_an_unpublished_template_is_a_clear_error(world):
     response = create(admin, world, template_version=template["versions"][0]["id"])
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "template_not_published"
+
+
+def test_building_a_tree_through_the_api(world):
+    author = login("author@example.com")
+    version_id = create(author, world).json()["versions"][0]["id"]
+    root = author.post(f"/api/program-versions/{version_id}/nodes/", {"title": "البرنامج"}, format="json").json()
+    module = author.post(
+        f"/api/program-versions/{version_id}/nodes/", {"title": "الوحدة", "parent": root["id"]}, format="json"
+    )
+    assert module.status_code == 201 and module.json()["level"] == 1
+    content = {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "يصف المتدرب"}]}]}
+    block = author.post(
+        f"/api/program-versions/{version_id}/blocks/",
+        {"node": module.json()["id"], "type": "objective", "content": content},
+        format="json",
+    )
+    assert block.status_code == 201, block.content
+    bad = author.patch(
+        f"/api/program-blocks/{block.json()['id']}/",
+        {"content": {"type": "doc", "content": [{"type": "iframe"}]}},
+        format="json",
+    )
+    assert bad.status_code == 409 and bad.json()["error"]["code"] == "content_invalid"
+
+    tree = author.get(f"/api/program-versions/{version_id}/tree/").json()
+    assert [n["title"] for n in tree["nodes"]] == ["البرنامج", "الوحدة"]
+    assert tree["blocks"][0]["content"] == content
+
+    other = login("other@example.com")
+    assert other.post(f"/api/program-versions/{version_id}/nodes/", {"title": "x"}, format="json").status_code == 403
+    assert other.delete(f"/api/program-blocks/{block.json()['id']}/").status_code == 403
+    deleted = author.delete(f"/api/program-blocks/{block.json()['id']}/")
+    assert deleted.json()["deleted"] is True
+    assert author.post(f"/api/program-blocks/{block.json()['id']}/restore/").json()["deleted"] is False

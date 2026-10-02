@@ -7,9 +7,14 @@ from apps.accounts.models import Membership
 from apps.tenancy.permissions import HasActiveOrganization
 
 from . import lifecycle, services
-from .models import Program, ProgramCollaborator, ProgramVersion
+from .models import Block, Node, Program, ProgramCollaborator, ProgramVersion
 from .serializers import (
+    BlockSerializer,
+    BlockWriteSerializer,
     CollaboratorSerializer,
+    NodeMoveSerializer,
+    NodeSerializer,
+    NodeWriteSerializer,
     ProgramSerializer,
     ProgramUpdateSerializer,
     VersionDetailSerializer,
@@ -169,3 +174,176 @@ class SubmitVersionView(_TransitionView):
 
 class WithdrawVersionView(_TransitionView):
     target_status = S.WITHDRAWN
+
+
+# --- Tree, nodes and blocks (task 2.5) ---------------------------------------------------------
+
+
+def _node_in(version, node_id) -> Node | None:
+    if node_id is None:
+        return None
+    node = Node.objects.filter(pk=node_id, version=version).first()
+    if node is None:
+        raise services.ProgramError("the node must belong to the same version", code="node_parent_invalid")
+    return node
+
+
+class VersionTreeView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def get(self, request, pk):
+        version = get_object_or_404(ProgramVersion.objects, pk=pk)
+        nodes = version.nodes.select_related("parent").order_by("level", "order", "pk")
+        blocks = version.blocks.select_related("node").order_by("node_id", "order", "pk")
+        return Response(
+            {
+                "version": VersionSummarySerializer(version).data,
+                "nodes": NodeSerializer(nodes, many=True).data,
+                "blocks": BlockSerializer(blocks, many=True).data,
+            }
+        )
+
+
+class VersionNodesView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def get(self, request, pk):
+        version = get_object_or_404(ProgramVersion.objects, pk=pk)
+        return Response(NodeSerializer(version.nodes.select_related("parent"), many=True).data)
+
+    def post(self, request, pk):
+        version = get_object_or_404(ProgramVersion.objects.select_related("program"), pk=pk)
+        require_edit(request, version.program)
+        serializer = NodeWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        node = services.add_node(
+            version,
+            title=data["title"],
+            parent=_node_in(version, data.get("parent")),
+            order=data.get("order"),
+            actor=request.user,
+        )
+        return Response(NodeSerializer(node).data, status=status.HTTP_201_CREATED)
+
+
+class NodeDetailView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def _get(self, pk) -> Node:
+        return get_object_or_404(Node.objects.select_related("version__program", "parent"), pk=pk)
+
+    def get(self, request, pk):
+        return Response(NodeSerializer(self._get(pk)).data)
+
+    def patch(self, request, pk):
+        node = self._get(pk)
+        require_edit(request, node.version.program)
+        serializer = NodeWriteSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        if "title" in serializer.validated_data:
+            services.update_node(node, title=serializer.validated_data["title"], actor=request.user)
+        return Response(NodeSerializer(self._get(pk)).data)
+
+    def delete(self, request, pk):
+        node = self._get(pk)
+        require_edit(request, node.version.program)
+        services.soft_delete_node(node, actor=request.user)
+        return Response(NodeSerializer(self._get(pk)).data)
+
+
+class NodeMoveView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def post(self, request, pk):
+        node = get_object_or_404(Node.objects.select_related("version__program"), pk=pk)
+        require_edit(request, node.version.program)
+        serializer = NodeMoveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        parent = _node_in(node.version, serializer.validated_data["parent"])
+        node = services.move_node(node, parent=parent, order=serializer.validated_data["order"], actor=request.user)
+        return Response(NodeSerializer(node).data)
+
+
+class NodeRestoreView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def post(self, request, pk):
+        node = get_object_or_404(Node.objects.select_related("version__program"), pk=pk)
+        require_edit(request, node.version.program)
+        return Response(NodeSerializer(services.restore_node(node, actor=request.user)).data)
+
+
+class VersionBlocksView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def get(self, request, pk):
+        version = get_object_or_404(ProgramVersion.objects, pk=pk)
+        return Response(BlockSerializer(version.blocks.select_related("node"), many=True).data)
+
+    def post(self, request, pk):
+        version = get_object_or_404(ProgramVersion.objects.select_related("program"), pk=pk)
+        require_edit(request, version.program)
+        serializer = BlockWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if "node" not in data or "type" not in data:
+            raise exceptions.ValidationError("node and type are required")
+        node = Node.objects.filter(pk=data["node"], version=version).first()
+        if node is None:
+            raise services.ProgramError("the node must belong to the same version", code="block_node_invalid")
+        block = services.add_block(
+            version,
+            node=node,
+            type=data["type"],
+            content=data.get("content"),
+            order=data.get("order"),
+            actor=request.user,
+        )
+        return Response(BlockSerializer(block).data, status=status.HTTP_201_CREATED)
+
+
+class BlockDetailView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def _get(self, pk) -> Block:
+        return get_object_or_404(Block.objects.select_related("version__program", "node"), pk=pk)
+
+    def get(self, request, pk):
+        return Response(BlockSerializer(self._get(pk)).data)
+
+    def patch(self, request, pk):
+        block = self._get(pk)
+        require_edit(request, block.version.program)
+        serializer = BlockWriteSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        node = None
+        if "node" in data:
+            node = Node.objects.filter(pk=data["node"], version=block.version).first()
+            if node is None:
+                raise services.ProgramError("the node must belong to the same version", code="block_node_invalid")
+        services.update_block(
+            block,
+            content=data.get("content"),
+            type=data.get("type"),
+            node=node,
+            order=data.get("order"),
+            actor=request.user,
+        )
+        return Response(BlockSerializer(self._get(pk)).data)
+
+    def delete(self, request, pk):
+        block = self._get(pk)
+        require_edit(request, block.version.program)
+        services.soft_delete_block(block, actor=request.user)
+        return Response(BlockSerializer(self._get(pk)).data)
+
+
+class BlockRestoreView(APIView):
+    permission_classes = [HasActiveOrganization]
+
+    def post(self, request, pk):
+        block = get_object_or_404(Block.objects.select_related("version__program"), pk=pk)
+        require_edit(request, block.version.program)
+        return Response(BlockSerializer(services.restore_block(block, actor=request.user)).data)

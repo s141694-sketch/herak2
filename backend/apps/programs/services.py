@@ -1,12 +1,14 @@
 from django.db import transaction
+from django.db.models import Max
 
 from apps.accounts.models import Membership, Role
 from apps.audit.services import record
 from apps.core.locking import VersionLocked
 
+from . import content as block_content
 from .copying import create_draft_copy
 from .errors import ProgramError
-from .models import Program, ProgramCollaborator, ProgramTarget, ProgramVersion
+from .models import Block, Node, Program, ProgramCollaborator, ProgramTarget, ProgramVersion
 
 EDITING_ROLES = {Role.ADMIN, Role.AUTHOR}
 S = ProgramVersion.Status
@@ -104,3 +106,167 @@ def start_new_version(program: Program, *, actor) -> ProgramVersion:
     program.status = Program.Status.DRAFT
     program.save(update_fields=["status"])
     return draft
+
+
+# --- Tree and blocks (task 2.5) ---------------------------------------------------------------
+
+
+def _editable(version: ProgramVersion) -> ProgramVersion:
+    version = ProgramVersion.objects.select_for_update().get(pk=version.pk)
+    if not version.is_editable:
+        raise VersionLocked()
+    return version
+
+
+def _level_count(version: ProgramVersion) -> int:
+    return version.program.template_version.levels.count()
+
+
+def _next_order(queryset) -> int:
+    return (queryset.aggregate(m=Max("order"))["m"] or 0) + 1
+
+
+def _subtree(node: Node) -> list[Node]:
+    found, frontier = [], [node]
+    while frontier:
+        current = frontier.pop()
+        found.append(current)
+        frontier.extend(Node.objects.filter(parent=current))
+    return found
+
+
+@transaction.atomic
+def add_node(
+    version: ProgramVersion, *, title: str, actor, parent: Node | None = None, order: int | None = None
+) -> Node:
+    version = _editable(version)
+    if parent is not None and parent.version_id != version.pk:
+        raise ProgramError("the parent must belong to the same version", code="node_parent_invalid")
+    level = 0 if parent is None else parent.level + 1
+    if level >= _level_count(version):
+        raise ProgramError("the structure template has no level this deep", code="node_level_exceeds_template")
+    siblings = Node.objects.filter(version=version, parent=parent)
+    node = Node.objects.create(
+        version=version,
+        parent=parent,
+        level=level,
+        order=order if order is not None else _next_order(siblings),
+        title=title.strip(),
+    )
+    record(
+        "program_node.added", actor=actor, target=version, payload={"node_key": str(node.node_key), "title": node.title}
+    )
+    return node
+
+
+@transaction.atomic
+def update_node(node: Node, *, title: str, actor) -> Node:
+    _editable(node.version)
+    node.title = title.strip()
+    node.save()
+    return node
+
+
+@transaction.atomic
+def move_node(node: Node, *, parent: Node | None, order: int, actor) -> Node:
+    version = _editable(node.version)
+    if parent is not None and parent.version_id != version.pk:
+        raise ProgramError("the parent must belong to the same version", code="node_parent_invalid")
+    subtree = _subtree(node)
+    if parent is not None and parent.pk in {n.pk for n in subtree}:
+        raise ProgramError("a node cannot move under itself", code="node_move_cycle")
+    new_level = 0 if parent is None else parent.level + 1
+    shift = new_level - node.level
+    if max(n.level for n in subtree) + shift >= _level_count(version):
+        raise ProgramError("the moved branch would be deeper than the template", code="node_level_exceeds_template")
+    for member in subtree:
+        member.level += shift
+        if member.pk == node.pk:
+            member.parent = parent
+            member.order = order
+        member.save()
+    record("program_node.moved", actor=actor, target=version, payload={"node_key": str(node.node_key)})
+    node.refresh_from_db()
+    return node
+
+
+@transaction.atomic
+def soft_delete_node(node: Node, *, actor) -> Node:
+    _editable(node.version)
+    node.deleted = True
+    node.save()
+    record("program_node.deleted", actor=actor, target=node.version, payload={"node_key": str(node.node_key)})
+    return node
+
+
+@transaction.atomic
+def restore_node(node: Node, *, actor) -> Node:
+    _editable(node.version)
+    node.deleted = False
+    node.save()
+    record("program_node.restored", actor=actor, target=node.version, payload={"node_key": str(node.node_key)})
+    return node
+
+
+@transaction.atomic
+def add_block(
+    version: ProgramVersion, *, node: Node, type: str, actor, content=None, order: int | None = None
+) -> Block:
+    version = _editable(version)
+    if node.version_id != version.pk:
+        raise ProgramError("the node must belong to the same version", code="block_node_invalid")
+    if type not in Block.Type.values:
+        raise ProgramError("unknown block type", code="block_type_invalid")
+    body = block_content.validate(content if content is not None else block_content.EMPTY_DOC)
+    block = Block.objects.create(
+        version=version,
+        node=node,
+        type=type,
+        content=body,
+        content_hash=block_content.content_hash(body),
+        order=order if order is not None else _next_order(Block.objects.filter(version=version, node=node)),
+    )
+    record(
+        "program_block.added", actor=actor, target=version, payload={"block_key": str(block.block_key), "type": type}
+    )
+    return block
+
+
+@transaction.atomic
+def update_block(
+    block: Block, *, actor, content=None, type: str | None = None, node: Node | None = None, order: int | None = None
+) -> Block:
+    version = _editable(block.version)
+    if content is not None:
+        block.content = block_content.validate(content)
+        block.content_hash = block_content.content_hash(block.content)
+    if type is not None:
+        if type not in Block.Type.values:
+            raise ProgramError("unknown block type", code="block_type_invalid")
+        block.type = type
+    if node is not None:
+        if node.version_id != version.pk:
+            raise ProgramError("the node must belong to the same version", code="block_node_invalid")
+        block.node = node
+    if order is not None:
+        block.order = order
+    block.save()
+    return block
+
+
+@transaction.atomic
+def soft_delete_block(block: Block, *, actor) -> Block:
+    _editable(block.version)
+    block.deleted = True
+    block.save()
+    record("program_block.deleted", actor=actor, target=block.version, payload={"block_key": str(block.block_key)})
+    return block
+
+
+@transaction.atomic
+def restore_block(block: Block, *, actor) -> Block:
+    _editable(block.version)
+    block.deleted = False
+    block.save()
+    record("program_block.restored", actor=actor, target=block.version, payload={"block_key": str(block.block_key)})
+    return block

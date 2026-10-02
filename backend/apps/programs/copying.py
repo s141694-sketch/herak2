@@ -5,7 +5,7 @@ from django.db.models import Max
 from apps.audit.services import record
 
 from .errors import ProgramError
-from .models import ProgramTarget, ProgramVersion
+from .models import Block, Node, ProgramTarget, ProgramVersion
 
 
 def create_draft_copy(source: ProgramVersion, *, actor) -> ProgramVersion:
@@ -35,4 +35,36 @@ def create_draft_copy(source: ProgramVersion, *, actor) -> ProgramVersion:
 
 
 def copy_content(source: ProgramVersion, draft: ProgramVersion) -> None:
-    """Copies the tree, blocks and alignment links. Filled in by tasks 2.5 and 2.6."""
+    """Copies the tree and blocks, level by level so every parent exists before its children."""
+    node_ids: dict[int, int] = {}
+    nodes = list(source.nodes.order_by("level", "order", "pk"))
+    for level in sorted({n.level for n in nodes}):
+        batch = [n for n in nodes if n.level == level]
+        created = Node.objects.bulk_create(
+            Node(
+                version=draft,
+                organization_id=draft.organization_id,
+                node_key=n.node_key,
+                parent_id=node_ids[n.parent_id] if n.parent_id else None,
+                level=n.level,
+                order=n.order,
+                title=n.title,
+                deleted=n.deleted,
+            )
+            for n in batch
+        )
+        node_ids.update({old.pk: new.pk for old, new in zip(batch, created, strict=True)})
+    Block.objects.bulk_create(
+        Block(
+            version=draft,
+            organization_id=draft.organization_id,
+            node_id=node_ids[b.node_id],
+            block_key=b.block_key,
+            type=b.type,
+            content=b.content,
+            content_hash=b.content_hash,
+            order=b.order,
+            deleted=b.deleted,
+        )
+        for b in source.blocks.all()
+    )

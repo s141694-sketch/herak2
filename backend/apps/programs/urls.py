@@ -12,4 +12,12 @@ urlpatterns = [
     path("program-versions/<int:pk>/targets/", views.VersionTargetsView.as_view(), name="program-version-targets"),
     path("program-versions/<int:pk>/submit/", views.SubmitVersionView.as_view(), name="program-version-submit"),
     path("program-versions/<int:pk>/withdraw/", views.WithdrawVersionView.as_view(), name="program-version-withdraw"),
+    path("program-versions/<int:pk>/tree/", views.VersionTreeView.as_view(), name="program-version-tree"),
+    path("program-versions/<int:pk>/nodes/", views.VersionNodesView.as_view(), name="program-version-nodes"),
+    path("program-versions/<int:pk>/blocks/", views.VersionBlocksView.as_view(), name="program-version-blocks"),
+    path("program-nodes/<int:pk>/", views.NodeDetailView.as_view(), name="program-node-detail"),
+    path("program-nodes/<int:pk>/move/", views.NodeMoveView.as_view(), name="program-node-move"),
+    path("program-nodes/<int:pk>/restore/", views.NodeRestoreView.as_view(), name="program-node-restore"),
+    path("program-blocks/<int:pk>/", views.BlockDetailView.as_view(), name="program-block-detail"),
+    path("program-blocks/<int:pk>/restore/", views.BlockRestoreView.as_view(), name="program-block-restore"),
 ]

@@ -5,7 +5,7 @@ from apps.competencies.models import FrameworkVersion
 from apps.structures.models import TemplateVersion
 from apps.structures.serializers import LevelSerializer
 
-from .models import Program, ProgramCollaborator, ProgramVersion
+from .models import Block, Node, Program, ProgramCollaborator, ProgramVersion
 
 
 class VersionSummarySerializer(serializers.ModelSerializer):
@@ -113,3 +113,40 @@ class VersionDetailSerializer(serializers.ModelSerializer):
             }
             for t in version.targets.select_related("competency")
         ]
+
+
+class NodeSerializer(serializers.ModelSerializer):
+    parent = serializers.PrimaryKeyRelatedField(read_only=True)
+    parent_key = serializers.UUIDField(source="parent.node_key", read_only=True, default=None)
+
+    class Meta:
+        model = Node
+        fields = ["id", "node_key", "parent", "parent_key", "level", "order", "title", "deleted"]
+        read_only_fields = fields
+
+
+class BlockSerializer(serializers.ModelSerializer):
+    node_key = serializers.UUIDField(source="node.node_key", read_only=True)
+
+    class Meta:
+        model = Block
+        fields = ["id", "block_key", "node", "node_key", "type", "content", "content_hash", "order", "deleted"]
+        read_only_fields = fields
+
+
+class NodeWriteSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=500)
+    parent = serializers.IntegerField(required=False, allow_null=True)
+    order = serializers.IntegerField(required=False, min_value=0)
+
+
+class NodeMoveSerializer(serializers.Serializer):
+    parent = serializers.IntegerField(allow_null=True)
+    order = serializers.IntegerField(min_value=0)
+
+
+class BlockWriteSerializer(serializers.Serializer):
+    node = serializers.IntegerField(required=False)
+    type = serializers.CharField(required=False)
+    content = serializers.JSONField(required=False)
+    order = serializers.IntegerField(required=False, min_value=0)
