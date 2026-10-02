@@ -11,14 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@harak2/shared": "0.1.0",
     "@hocuspocus/server": "4.7.0",
+    "tsx": "4.23.15",
     "yjs": "13.6.33"
   },
   "devDependencies": {
     "@hocuspocus/provider": "4.7.0",
     "@types/node": "26.6.4",
     "@types/ws": "8.18.2",
-    "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vitest": "5.0.3",
     "ws": "8.22.0"

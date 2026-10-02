@@ -1,0 +1,14 @@
+{
+  "name": "harak2",
+  "private": true,
+  "description": "Harak 2 JavaScript workspace: one install so yjs exists exactly once across shared, collab and frontend.",
+  "workspaces": [
+    "shared",
+    "collab",
+    "frontend"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

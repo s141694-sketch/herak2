@@ -1,0 +1,28 @@
+{
+  "name": "@harak2/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The live draft document shared by the collaboration service and the web client: Yjs schema, editor schema, conversion to rows and back, comment anchors.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "@tiptap/y-tiptap": "3.0.9",
+    "lib0": "0.2.119",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "fast-check": "4.10.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
