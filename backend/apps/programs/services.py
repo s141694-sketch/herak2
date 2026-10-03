@@ -112,9 +112,14 @@ def start_new_version(program: Program, *, actor) -> ProgramVersion:
 
 
 def _editable(version: ProgramVersion) -> ProgramVersion:
+    """A draft whose content may still be written through the REST API."""
+    from apps.collab.models import DraftDocument
+
     version = ProgramVersion.objects.select_for_update().get(pk=version.pk)
     if not version.is_editable:
         raise VersionLocked()
+    if DraftDocument.objects.filter(version=version).exists():
+        raise ProgramError("this draft is edited live; change it in the editor", code="draft_is_live")
     return version
 
 
@@ -291,32 +296,41 @@ def _is_ancestor(candidate: Node, node: Node) -> bool:
     return False
 
 
+def link_problem(version: ProgramVersion, kind: str, source: Block, target: Block | None, competency) -> str | None:
+    """Why a link would be invalid, or None. Shared by the REST service and live-document materialization."""
+    blocks = [b for b in (source, target) if b is not None]
+    if any(b.version_id != version.pk for b in blocks):
+        return "both ends must belong to this version"
+    if any(b.deleted for b in blocks):
+        return "deleted blocks cannot be linked"
+    if kind == K.OBJECTIVE_COMPETENCY:
+        if source.type != T.OBJECTIVE or competency is None or target is not None:
+            return "an objective links to a competency"
+        if competency.version_id != version.framework_version_id:
+            return "the competency must belong to this version's framework"
+    elif kind == K.ASSESSMENT_OBJECTIVE:
+        if source.type != T.ASSESSMENT or target is None or target.type != T.OBJECTIVE or competency is not None:
+            return "an assessment links to an objective"
+    elif kind == K.OBJECTIVE_PARENT:
+        if source.type != T.OBJECTIVE or target is None or target.type != T.OBJECTIVE or competency is not None:
+            return "an objective links to a higher objective"
+        if not _is_ancestor(target.node, source.node):
+            return "the higher objective must sit on an ancestor of the objective's node"
+    else:
+        return "unknown kind"
+    return None
+
+
 @transaction.atomic
 def link(version: ProgramVersion, *, kind: str, source: Block, actor, target: Block | None = None, competency=None):
     version = _editable(version)
-    blocks = [b for b in (source, target) if b is not None]
-    if any(b.version_id != version.pk for b in blocks):
-        _invalid_link("both ends must belong to this version")
-    if any(b.deleted for b in blocks):
-        _invalid_link("deleted blocks cannot be linked")
+    problem = link_problem(version, kind, source, target, competency)
+    if problem:
+        _invalid_link(problem)
     if kind == K.OBJECTIVE_COMPETENCY:
-        if source.type != T.OBJECTIVE or competency is None or target is not None:
-            _invalid_link("an objective links to a competency")
-        if not version.framework_version.competencies.filter(pk=competency.pk).exists():
-            _invalid_link("the competency must belong to this version's framework")
         exists = AlignmentLink.objects.filter(version=version, kind=kind, source=source, target_competency=competency)
-    elif kind == K.ASSESSMENT_OBJECTIVE:
-        if source.type != T.ASSESSMENT or target is None or target.type != T.OBJECTIVE or competency is not None:
-            _invalid_link("an assessment links to an objective")
-        exists = AlignmentLink.objects.filter(version=version, kind=kind, source=source, target_block=target)
-    elif kind == K.OBJECTIVE_PARENT:
-        if source.type != T.OBJECTIVE or target is None or target.type != T.OBJECTIVE or competency is not None:
-            _invalid_link("an objective links to a higher objective")
-        if not _is_ancestor(target.node, source.node):
-            _invalid_link("the higher objective must sit on an ancestor of the objective's node")
-        exists = AlignmentLink.objects.filter(version=version, kind=kind, source=source, target_block=target)
     else:
-        _invalid_link("unknown kind")
+        exists = AlignmentLink.objects.filter(version=version, kind=kind, source=source, target_block=target)
     if exists.exists():
         raise ProgramError("this link already exists", code="link_exists")
     created = AlignmentLink.objects.create(

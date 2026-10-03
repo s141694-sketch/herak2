@@ -181,6 +181,7 @@ class AlignmentLink(VersionedRow, OrganizationScopedModel):
         OBJECTIVE_PARENT = "objective_parent", "objective_parent"
 
     version = models.ForeignKey(ProgramVersion, on_delete=models.CASCADE, related_name="alignment_links")
+    link_key = models.UUIDField(default=uuid.uuid4, editable=False)
     kind = models.CharField(max_length=30, choices=Kind.choices)
     source = models.ForeignKey(Block, on_delete=models.PROTECT, related_name="outgoing_links")
     target_block = models.ForeignKey(
@@ -202,6 +203,7 @@ class AlignmentLink(VersionedRow, OrganizationScopedModel):
                 ),
                 name="programs_link_target_matches_kind",
             ),
+            models.UniqueConstraint(fields=["version", "link_key"], name="programs_link_key_unique"),
             models.UniqueConstraint(
                 fields=["version", "kind", "source", "target_competency"],
                 condition=Q(target_competency__isnull=False),

@@ -18,6 +18,8 @@ EXEMPT_ROUTES: dict[str, str] = {
     "auth-logout": "ends the caller's session",
     "auth-me": "returns the caller and the caller's own memberships",
     "auth-switch-organization": "membership-checked switch; covered by test_auth_api",
+    "internal-collab-document": "collab service only (service secret); organization taken from the version",
+    "internal-collab-document-failure": "collab service only (service secret); organization taken from the version",
 }
 
 ProbeKind = Literal["detail", "list", "nested", "action", "current"]

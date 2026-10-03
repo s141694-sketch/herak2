@@ -25,6 +25,7 @@ def create_draft_copy(source: ProgramVersion, *, actor) -> ProgramVersion:
         for t in source.targets.all()
     )
     copy_content(source, draft)
+    copy_live_state(source, draft)
     record(
         "program_version.created",
         actor=actor,
@@ -74,6 +75,7 @@ def copy_content(source: ProgramVersion, draft: ProgramVersion) -> None:
         AlignmentLink(
             version=draft,
             organization_id=draft.organization_id,
+            link_key=link.link_key,
             kind=link.kind,
             source_id=block_ids[link.source_id],
             target_block_id=block_ids[link.target_block_id] if link.target_block_id else None,
@@ -82,3 +84,12 @@ def copy_content(source: ProgramVersion, draft: ProgramVersion) -> None:
         )
         for link in source.alignment_links.all()
     )
+
+
+def copy_live_state(source: ProgramVersion, draft: ProgramVersion) -> None:
+    """The new draft starts from the source's Yjs state, so comment anchors stay valid (decision D2)."""
+    from apps.collab.models import DraftDocument
+
+    live = DraftDocument.objects.filter(version=source).first()
+    if live is not None:
+        DraftDocument.objects.create(version=draft, state=bytes(live.state), state_hash=live.state_hash)
