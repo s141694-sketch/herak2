@@ -120,7 +120,7 @@ export interface Collaborator {
 export interface ProgramVersionDetail {
   id: number
   permissions: Permissions
-  live: { is_live: boolean; materialized_at: string | null; last_error: string | null; issues: unknown[] }
+  live: { is_live: boolean; materialized_at: string | null; last_error: string | null; last_error_code: string | null; issues: unknown[] }
   program: { id: number; title: string; owner_id: number }
   number: number
   status: VersionStatus

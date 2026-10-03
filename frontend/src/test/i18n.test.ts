@@ -5,6 +5,7 @@ import { parseAst } from 'rolldown/parseAst'
 import { describe, expect, it } from 'vitest'
 
 import ar from '../i18n/ar.json'
+import { SAVE_ERROR_CODES } from '../live/useLiveDocument'
 import en from '../i18n/en.json'
 
 type Tree = { [key: string]: string | Tree }
@@ -63,6 +64,17 @@ describe('translations', () => {
     for (const code of ['invalid_credentials', 'throttled', 'network', 'not_found', 'permission_denied', 'validation_error', 'unknown']) {
       expect(lookup(ar as Tree, `errors.${code}`), code).toBeDefined()
     }
+  })
+
+  it('every rule the live document enforces has a translated error', () => {
+    const shared = readFileSync(join(SRC, '..', '..', 'shared', 'src', 'operations.ts'), 'utf8')
+    const codes = [...shared.matchAll(/DocumentRuleError\(\s*'([a-z_]+)'/g)].map((m) => m[1])
+    expect(codes.length).toBeGreaterThan(5)
+    for (const code of codes) expect(lookup(ar as Tree, `errors.${code}`), code).toBeDefined()
+  })
+
+  it('every reason a live save can fail for has a translated explanation', () => {
+    for (const code of SAVE_ERROR_CODES) expect(lookup(ar as Tree, `live.saveErrors.${code}`), code).toBeDefined()
   })
 })
 

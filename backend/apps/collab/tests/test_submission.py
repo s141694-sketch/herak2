@@ -234,7 +234,9 @@ def test_a_snapshot_that_applies_clears_an_earlier_error(world, django_capture_o
 def test_the_api_reports_the_reason_and_the_draft_status(world):
     make_live(world)
     with organization_context(world["org"]):
-        DraftDocument.objects.filter(version=world["version"]).update(last_error="block y: content invalid")
+        DraftDocument.objects.filter(version=world["version"]).update(
+            last_error="block y: content invalid", last_error_code="block_content_invalid"
+        )
     client = APIClient()
     client.post("/api/auth/login/", {"email": "owner@example.com", "password": "x" * 12}, format="json")
     response = client.post(f"/api/program-versions/{world['version'].pk}/submit/")
@@ -242,6 +244,7 @@ def test_the_api_reports_the_reason_and_the_draft_status(world):
     assert response.json()["error"]["code"] == "materialization_failed"
     live = client.get(f"/api/program-versions/{world['version'].pk}/").json()["live"]
     assert live["is_live"] is True and live["last_error"] == "block y: content invalid"
+    assert live["last_error_code"] == "block_content_invalid", "the page translates the code, not the message"
 
 
 def test_the_comparison_reads_a_snapshot_of_an_open_draft_without_freezing_it(world):

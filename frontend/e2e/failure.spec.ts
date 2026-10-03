@@ -33,6 +33,9 @@ test('a document the server rejects keeps the last good rows and blocks submissi
   )
   await expect(admin.getByTestId('live-save-error')).toBeVisible({ timeout: 20_000 })
   await expect(admin.getByTestId('live-save-error')).toContainText('تعذّر حفظ آخر التغييرات')
+  // The reason is translated from its code; the server's technical message stays out of the page.
+  await expect(admin.getByTestId('live-save-error')).toContainText('محتوى إحدى الكتل')
+  await expect(admin.getByTestId('live-save-error')).not.toContainText('block')
   await admin.screenshot({ path: 'e2e/screenshots/50-save-failed-ar.png', fullPage: true })
 
   const kept = await api<Tree>(admin, 'GET', `/api/program-versions/${versionId}/tree/`)

@@ -4,6 +4,7 @@ import {
   addNode,
   blockFragment,
   DocumentRuleError,
+  MAX_TITLE_LENGTH,
   moveNode,
   removeLink,
   renameNode,
@@ -79,14 +80,20 @@ export function LiveVersionPage({
   }, [])
   const action = useAction()
   const [ruleError, setRuleError] = useState<string | null>(null)
+  const [showResolved, setShowResolved] = useState(false)
 
   const levels = version.template.levels
   const editable = Boolean(live && !live.locked && !live.frozen && live.mode === 'write' && live.status === 'connected' && live.synced)
+  // Submitting while this editor holds changes the service has not confirmed could leave them out.
+  const caughtUp = Boolean(live && live.status === 'connected' && live.synced && live.unsynced === 0 && !live.frozen)
   const role = session?.organization?.role
+  // A version shows the comments made on it and on earlier versions, never those of a later one.
+  const ownComments = (comments.data ?? []).filter((c) => c.version_number <= version.number)
+  const resolvedCount = ownComments.filter((c) => c.status === 'resolved').length
   const commentContext: CommentContext | null = live && {
     programId: version.program.id,
     versionId: version.id,
-    comments: comments.data ?? [],
+    comments: ownComments.filter((c) => c.status === 'open' || showResolved),
     reload: () => {
       comments.reload()
       announceCommentsChanged(live.provider)
@@ -102,7 +109,7 @@ export function LiveVersionPage({
       }
     },
     doc: live.doc,
-    liveBlocks: new Set(snapshot.blocks.filter((b) => !b.deleted).map((b) => b.key)),
+    liveBlocks: shownBlocks(snapshot),
   }
   const ctx: Ctx | null = live && me && commentContext && {
     comments: commentContext,
@@ -163,16 +170,24 @@ export function LiveVersionPage({
       {version.permissions.collaborate && (
         <div className="row">
           {version.status === 'draft' && (
-            <button type="button" className="primary-inline" data-testid="submit-version" disabled={action.busy} onClick={() => void submit()}>
+            <button type="button" className="primary-inline" data-testid="submit-version" disabled={action.busy || !caughtUp} onClick={() => void submit()}>
               {t('programs.submit')}
             </button>
           )}
+          {version.status === 'draft' && !caughtUp && <span className="muted">{t('live.submitWaits')}</span>}
           {(version.status === 'submitted' || version.status === 'in_stage') && (
             <button type="button" className="secondary" data-testid="withdraw-version" disabled={action.busy} onClick={() => void withdraw()}>
               {t('programs.withdraw')}
             </button>
           )}
         </div>
+      )}
+      {resolvedCount > 0 && (
+        <p>
+          <button type="button" className="link-button" data-testid="toggle-resolved" onClick={() => setShowResolved((shown) => !shown)}>
+            {showResolved ? t('comments.hideResolved', { count: resolvedCount }) : t('comments.showResolved', { count: resolvedCount })}
+          </button>
+        </p>
       )}
       {ctx && live?.everSynced && <Unanchored ctx={ctx} />}
 
@@ -212,16 +227,18 @@ function LiveStatusBar({ live, version }: { live: LiveDocument | null; version: 
   else if (live.mode === 'read') message = t('live.readOnly')
   else message = t('live.connected')
   const savedAt = version.live.materialized_at
-  // Live news from the service wins over what the page loaded with.
-  const saveError = live.saveError !== undefined ? live.saveError : version.live.last_error
+  // Live news from the service wins over what the page loaded with. The reason comes from its code: the
+  // message itself is technical and in English.
+  const saveErrorCode =
+    live.saveError !== undefined ? (live.saveError === null ? null : (live.saveErrorCode ?? 'document_invalid')) : version.live.last_error_code
   return (
     <div className="live-status">
       <p className={tone} data-testid="live-status" data-state={live.locked ? 'locked' : live.frozen ? 'frozen' : live.status} data-mode={live.mode ?? ''}>
         {message}
       </p>
-      {saveError && (
+      {saveErrorCode && (
         <p className="error" data-testid="live-save-error">
-          {t('live.saveError', { error: saveError })}
+          {t('live.saveError', { reason: t(`live.saveErrors.${saveErrorCode}`, { defaultValue: t('live.saveErrors.document_invalid') }) })}
         </p>
       )}
       {savedAt && <p className="muted">{t('live.lastSaved', { time: new Date(savedAt).toLocaleString(i18n.language) })}</p>}
@@ -244,7 +261,7 @@ function AddNode({ parent, ctx }: { parent: LiveNode | null; ctx: Ctx }) {
         setTitle('')
       }}
     >
-      <input required aria-label={label} placeholder={label} value={title} onChange={(e) => setTitle(e.target.value)} />
+      <input required aria-label={label} placeholder={label} value={title} maxLength={MAX_TITLE_LENGTH} onChange={(e) => setTitle(e.target.value)} />
       <button type="submit" className="secondary">
         {t('common.add')}
       </button>
@@ -264,7 +281,7 @@ function NodeView({ node, ctx }: { node: LiveNode; ctx: Ctx }) {
     <div className={node.deleted ? 'node deleted' : 'node'} data-testid={`node-${node.title}`} data-level={node.level}>
       <div className="node-header">
         <span className="badge">{ctx.levelName(node.level)}</span>
-        {renaming ? (
+        {renaming && ctx.editable ? (
           <form
             className="row"
             onSubmit={(event) => {
@@ -273,7 +290,13 @@ function NodeView({ node, ctx }: { node: LiveNode; ctx: Ctx }) {
               setRenaming(false)
             }}
           >
-            <input aria-label={t('tree.nodeTitle')} value={title} data-testid="rename-input" onChange={(e) => setTitle(e.target.value)} />
+            <input
+              aria-label={t('tree.nodeTitle')}
+              value={title}
+              maxLength={MAX_TITLE_LENGTH}
+              data-testid="rename-input"
+              onChange={(e) => setTitle(e.target.value)}
+            />
             <button type="submit" className="secondary">
               {t('common.save')}
             </button>
@@ -460,6 +483,21 @@ function Alignment({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
   )
 }
 
+/** Blocks a person can see in the tree: not deleted, and not inside a deleted node (whose body is hidden). */
+function shownBlocks(snapshot: Snapshot): Set<string> {
+  const nodes = new Map(snapshot.nodes.map((node) => [node.key, node]))
+  const hidden = (key: string | null) => {
+    const seen = new Set<string>()
+    for (let cursor = key; cursor !== null && !seen.has(cursor); cursor = nodes.get(cursor)?.parent ?? null) {
+      seen.add(cursor)
+      const node = nodes.get(cursor)
+      if (!node || node.deleted) return true
+    }
+    return false
+  }
+  return new Set(snapshot.blocks.filter((block) => !block.deleted && !hidden(block.node_key)).map((block) => block.key))
+}
+
 /** Re-renders its caller on every change of the document, throttled to animation frames. */
 function useDocTick(doc: Y.Doc): number {
   const [tick, setTick] = useState(0)
@@ -484,7 +522,7 @@ function useDocTick(doc: Y.Doc): number {
 function BlockComments({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
   useDocTick(ctx.doc)
   const here = ctx.comments.comments
-    .filter((c) => c.block_key === block.key && c.status === 'open')
+    .filter((c) => c.block_key === block.key)
     .map((c) => ({ comment: c, ...placementOf(c, ctx.comments) }))
     .filter((entry) => entry.placement !== 'orphaned')
   return (
@@ -501,7 +539,7 @@ function Unanchored({ ctx }: { ctx: Ctx }) {
   const { t } = useTranslation()
   useDocTick(ctx.doc)
   const orphaned = ctx.comments.comments
-    .filter((c) => c.status === 'open' && c.block_key)
+    .filter((c) => c.block_key)
     .map((c) => ({ comment: c, ...placementOf(c, ctx.comments) }))
     .filter((entry) => entry.placement === 'orphaned')
   if (orphaned.length === 0) return null

@@ -90,3 +90,16 @@ export const RANGE_OF = `
   if (index < 0) throw new Error('quote not found: ' + args.quote)
   return { from: 1 + index, to: 1 + index + args.quote.length }
 `
+
+/** Comments on a quote in the first objective block, through the selection button as a person would. */
+export async function comment(page: Page, quote: string, body: string, category: 'must_fix' | 'suggestion') {
+  const range = await inEditor(page, 'objective', RANGE_OF, { quote })
+  await inEditor(page, 'objective', 'editor.commands.setTextSelection(args)', range)
+  await page.getByTestId('block-objective').getByTestId('comment-selection').click()
+  await expect(page.getByTestId('new-comment')).toContainText(quote)
+  await page.getByTestId('comment-category').selectOption(category)
+  await page.getByTestId('comment-body').fill(body)
+  await page.getByTestId('comment-save').click()
+}
+
+export const card = (page: Page, text: string) => page.getByTestId('comment').filter({ hasText: text })

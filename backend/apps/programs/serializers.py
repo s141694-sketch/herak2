@@ -118,11 +118,19 @@ class VersionDetailSerializer(serializers.ModelSerializer):
     def get_live(self, version) -> dict:
         draft = getattr(version, "draft_document", None) if hasattr(version, "draft_document") else None
         if draft is None:
-            return {"is_live": False, "materialized_at": None, "last_error": None, "issues": []}
+            return {
+                "is_live": False,
+                "materialized_at": None,
+                "last_error": None,
+                "last_error_code": None,
+                "issues": [],
+            }
         return {
             "is_live": True,
             "materialized_at": draft.materialized_at,
             "last_error": draft.last_error or None,
+            # The page translates the code; the message is technical and in English.
+            "last_error_code": (draft.last_error_code or "document_invalid") if draft.last_error else None,
             "issues": draft.issues,
         }
 

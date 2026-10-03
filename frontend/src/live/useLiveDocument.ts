@@ -6,6 +6,18 @@ import { http } from '../api'
 
 export type LiveStatus = 'connecting' | 'connected' | 'disconnected'
 
+/** Why a live save can fail, as the collaboration service and Django report it; each has a translation. */
+export const SAVE_ERROR_CODES = [
+  'rows_invalid',
+  'node_too_deep',
+  'node_title_invalid',
+  'block_content_invalid',
+  'document_invalid',
+  'document_too_large',
+  'save_unavailable',
+  'save_refused',
+] as const
+
 export interface LiveDocument {
   doc: Y.Doc
   provider: HocuspocusProvider
@@ -13,6 +25,8 @@ export interface LiveDocument {
   synced: boolean
   /** Stays true after the first sync, so content remains visible (read-only) while disconnected. */
   everSynced: boolean
+  /** Local changes the service has not confirmed yet. */
+  unsynced: number
   mode: 'read' | 'write' | null
   authFailed: boolean
   /** The version left draft status while this editor was open (it was submitted or cancelled). */
@@ -61,6 +75,9 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
       onStatus: ({ status }) => update({ status: status as LiveStatus, ...(status !== 'connected' ? { synced: false } : {}) }),
       onSynced: ({ state }) => update({ synced: state, mode, ...(state ? { everSynced: true } : {}) }),
       onAuthenticationFailed: () => update({ authFailed: true }),
+      // A later attempt (a fresh token after a reconnect) may succeed: the failure notice goes with it.
+      onAuthenticated: () => update({ authFailed: false }),
+      onUnsyncedChanges: ({ number }) => update({ unsynced: number }),
       onStateless: ({ payload }) => {
         try {
           const message = JSON.parse(payload)
@@ -80,7 +97,7 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
         }
       },
     })
-    setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, mode: null, authFailed: false, locked: false, frozen: false, commentsVersion: 0, saveError: undefined, saveErrorCode: null })
+    setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, unsynced: 0, mode: null, authFailed: false, locked: false, frozen: false, commentsVersion: 0, saveError: undefined, saveErrorCode: null })
     return () => {
       provider.destroy()
       doc.destroy()

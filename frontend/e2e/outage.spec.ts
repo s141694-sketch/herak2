@@ -52,6 +52,8 @@ test('the editor goes read-only during an outage, then reconnects and merges', a
   await expect(author.getByTestId('live-status')).toHaveClass(/error|notice/)
   await expect(authorEditor).toHaveAttribute('contenteditable', 'false')
   await expect(author.getByRole('textbox', { name: 'إضافة وحدة' })).toHaveCount(0)
+  // Submitting now could leave out what the author typed last, so it waits for the connection.
+  await expect(author.getByTestId('submit-version')).toBeDisabled()
   await author.screenshot({ path: 'e2e/screenshots/40-outage-ar.png', fullPage: true })
 
   // Meanwhile the admin keeps writing.
@@ -64,6 +66,7 @@ test('the editor goes read-only during an outage, then reconnects and merges', a
   await expect(author.getByTestId('live-status')).toHaveAttribute('data-state', 'connected', { timeout: 30_000 })
   await expect.poll(() => textOf(authorEditor), { timeout: 15_000 }).toBe('قبل الانقطاع وأثناءه')
   await expect(authorEditor).toHaveAttribute('contenteditable', 'true')
+  await expect(author.getByTestId('submit-version')).toBeEnabled()
   await authorEditor.click()
   await author.keyboard.press('End')
   await author.keyboard.type(' وبعده')

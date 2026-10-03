@@ -81,6 +81,7 @@
     "transition_refused": "This action is not possible in the version's current state.",
     "stage_out_of_order": "Stages advance in order.",
     "node_level_exceeds_template": "The template has no level this deep.",
+    "node_title_too_long": "The title is longer than allowed (500 characters).",
     "node_move_cycle": "A node cannot move inside itself.",
     "node_parent_invalid": "The parent node is not valid.",
     "block_node_invalid": "The node is not valid.",
@@ -286,9 +287,20 @@
     "readOnly": "This version opens read-only.",
     "authFailed": "The editor could not be opened. Reload the page.",
     "lastSaved": "Rows last saved: {{time}}",
-    "saveError": "The latest changes could not be saved, and submission is blocked until this is resolved: {{error}}",
+    "saveError": "The latest changes could not be saved: {{reason}}",
+    "saveErrors": {
+      "rows_invalid": "The document's structure is inconsistent. Reload the page, and contact support if it happens again. Submission is blocked until this is resolved.",
+      "node_too_deep": "A node is deeper than the structure template's levels. Move it up a level; submission is blocked until then.",
+      "node_title_invalid": "A node's title is empty or longer than 500 characters. Correct it; submission is blocked until then.",
+      "block_content_invalid": "A block contains something that is not allowed, such as an unsafe link. Correct it; submission is blocked until then.",
+      "document_invalid": "The document could not be turned into rows. Reload the page, and contact support if it happens again. Submission is blocked until this is resolved.",
+      "document_too_large": "The document is larger than the server accepts. Split the content or remove large parts of it.",
+      "save_unavailable": "The server cannot be reached right now. Your changes stay in the editor and saving is retried automatically.",
+      "save_refused": "The server refused the save. Reload the page, and contact support if it happens again."
+    },
     "locked": "This version was submitted or cancelled and can no longer be edited. Reload the page to see its state.",
     "frozen": "Someone is submitting this version, so editing is paused. If the submission does not go through, editing resumes on its own.",
+    "submitWaits": "Submission becomes available once all your changes have reached the server.",
     "editing": "{{name}} is editing"
   },
   "comments": {
@@ -311,8 +323,8 @@
     "quoted": "“{{text}}”",
     "now": "Now: “{{text}}”",
     "fromVersion": "From version {{number}}",
-    "show": "Show",
-    "resolvedCount": "{{count}} resolved"
+    "showResolved": "Show resolved comments ({{count}})",
+    "hideResolved": "Hide resolved comments ({{count}})"
   },
   "commentCategory": {
     "must_fix": "Must fix",

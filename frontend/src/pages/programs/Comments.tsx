@@ -24,6 +24,9 @@ export interface CommentContext {
 
 export type Placement = Resolved['status'] | 'block'
 
+/** The server's limit on a comment or a reply (the comments serializers). */
+const REPLY_MAX_LENGTH = 5000
+
 /** Where a comment sits now in the live document. */
 export function placementOf(comment: ProgramComment, ctx: CommentContext): { placement: Placement; resolved?: Resolved } {
   if (!comment.block_key) return { placement: 'block' }
@@ -63,7 +66,7 @@ export function CommentCard({ comment, ctx, placement, resolved }: { comment: Pr
         <button
           type="button"
           className="link-button quote"
-          disabled={!editor || !resolved?.from}
+          disabled={!editor || resolved?.from === undefined}
           onClick={() => {
             if (editor && resolved?.from !== undefined && resolved.to !== undefined) {
               editor.chain().focus().setTextSelection({ from: resolved.from, to: resolved.to }).scrollIntoView().run()
@@ -86,10 +89,21 @@ export function CommentCard({ comment, ctx, placement, resolved }: { comment: Pr
         className="row"
         onSubmit={(event: FormEvent) => {
           event.preventDefault()
-          run(() => http.post(`/api/comments/${comment.id}/replies/`, { body: reply }).then(() => setReply('')))
+          run(async () => {
+            await http.post(`/api/comments/${comment.id}/replies/`, { body: reply })
+            setReply('')
+            return true
+          })
         }}
       >
-        <input aria-label={t('comments.reply')} placeholder={t('comments.replyPlaceholder')} value={reply} required onChange={(e) => setReply(e.target.value)} />
+        <input
+          aria-label={t('comments.reply')}
+          placeholder={t('comments.replyPlaceholder')}
+          value={reply}
+          required
+          maxLength={REPLY_MAX_LENGTH}
+          onChange={(e) => setReply(e.target.value)}
+        />
         <button type="submit" className="secondary">
           {t('comments.reply')}
         </button>
@@ -170,7 +184,7 @@ export function NewComment({ blockKey, ctx }: { blockKey: string; ctx: CommentCo
       </label>
       <label className="field">
         <span>{t('comments.body')}</span>
-        <textarea required value={body} data-testid="comment-body" onChange={(e) => setBody(e.target.value)} />
+        <textarea required value={body} maxLength={REPLY_MAX_LENGTH} data-testid="comment-body" onChange={(e) => setBody(e.target.value)} />
       </label>
       <ErrorMessage code={action.error} />
       <div className="row">

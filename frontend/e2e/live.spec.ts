@@ -34,10 +34,16 @@ test('two editors see each other live, and submission locks the draft for both',
   await author.keyboard.type(' خطوات الإجراء')
   await expect.poll(() => textOf(adminEditor)).toBe('يصف المتدرب خطوات الإجراء')
 
-  // Submission by one locks the editor of the other, which says so.
+  // Titles stop at the server's limit.
+  await expect(admin.getByRole('textbox', { name: 'إضافة وحدة' })).toHaveAttribute('maxlength', '500')
+  await author.getByTestId('rename-node').click()
+  await expect(author.getByTestId('rename-input')).toHaveAttribute('maxlength', '500')
+
+  // Submission by one locks the editor of the other, which says so; a half-done rename closes too.
   await admin.getByTestId('submit-version').click()
   await expect(author.getByTestId('live-status')).toHaveAttribute('data-state', 'locked')
   await expect(authorEditor).toHaveAttribute('contenteditable', 'false')
+  await expect(author.getByTestId('rename-input')).toHaveCount(0)
 
   // The submitted rows hold what both typed.
   const tree = await api<{ blocks: Array<{ content: unknown }> }>(admin, 'GET', `/api/program-versions/${versionId}/tree/`)

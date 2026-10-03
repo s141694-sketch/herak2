@@ -1,21 +1,9 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-import { api, freshProgram, inEditor, openLive, RANGE_OF, signIn, textOf } from './helpers'
+import { api, card, comment, freshProgram, inEditor, openLive, RANGE_OF, signIn, textOf } from './helpers'
 
 // Task 3.6: comments anchored with Yjs relative positions survive concurrent edits, report changed text,
 // move to "comments without a place" when their text is deleted, and carry into the next version.
-
-async function comment(page: Page, quote: string, body: string, category: 'must_fix' | 'suggestion') {
-  const range = await inEditor(page, 'objective', RANGE_OF, { quote })
-  await inEditor(page, 'objective', 'editor.commands.setTextSelection(args)', range)
-  await page.getByTestId('block-objective').getByTestId('comment-selection').click()
-  await expect(page.getByTestId('new-comment')).toContainText(quote)
-  await page.getByTestId('comment-category').selectOption(category)
-  await page.getByTestId('comment-body').fill(body)
-  await page.getByTestId('comment-save').click()
-}
-
-const card = (page: Page, text: string) => page.getByTestId('comment').filter({ hasText: text })
 
 test('comments stay on their text through concurrent edits and versions', async ({ browser }) => {
   test.setTimeout(120_000)
