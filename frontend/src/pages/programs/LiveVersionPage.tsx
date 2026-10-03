@@ -174,7 +174,7 @@ export function LiveVersionPage({
           )}
         </div>
       )}
-      {ctx && live?.synced && <Unanchored ctx={ctx} />}
+      {ctx && live?.everSynced && <Unanchored ctx={ctx} />}
 
       <h2>{t('programs.targets')}</h2>
       <ul className="plain" data-testid="version-targets">
@@ -186,7 +186,7 @@ export function LiveVersionPage({
       </ul>
 
       <h2>{t('tree.title')}</h2>
-      {ctx && live?.synced && (
+      {ctx && live?.everSynced && (
         <div className="tree" data-testid="tree">
           {roots.length === 0 && <p className="muted">{t('tree.empty', { level: ctx.levelName(0) })}</p>}
           {roots.map((node) => (

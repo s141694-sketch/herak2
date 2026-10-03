@@ -11,6 +11,8 @@ export interface LiveDocument {
   provider: HocuspocusProvider
   status: LiveStatus
   synced: boolean
+  /** Stays true after the first sync, so content remains visible (read-only) while disconnected. */
+  everSynced: boolean
   mode: 'read' | 'write' | null
   authFailed: boolean
   /** The version left draft status while this editor was open (it was submitted or cancelled). */
@@ -51,7 +53,7 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
         return response.token
       },
       onStatus: ({ status }) => update({ status: status as LiveStatus, ...(status !== 'connected' ? { synced: false } : {}) }),
-      onSynced: ({ state }) => update({ synced: state, mode }),
+      onSynced: ({ state }) => update({ synced: state, mode, ...(state ? { everSynced: true } : {}) }),
       onAuthenticationFailed: () => update({ authFailed: true }),
       onStateless: ({ payload }) => {
         try {
@@ -63,7 +65,7 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
         }
       },
     })
-    setLive({ doc, provider, status: 'connecting', synced: false, mode: null, authFailed: false, locked: false, commentsVersion: 0 })
+    setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, mode: null, authFailed: false, locked: false, commentsVersion: 0 })
     return () => {
       provider.destroy()
       doc.destroy()
