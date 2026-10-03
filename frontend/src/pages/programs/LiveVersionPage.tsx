@@ -9,22 +9,28 @@ import {
   setBlockDeleted,
   setNodeDeleted,
 } from '@harak2/shared'
-import { useState } from 'react'
+import type { HocuspocusProvider } from '@hocuspocus/provider'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import type * as Y from 'yjs'
 
 import { http } from '../../api'
+import { useAuth } from '../../auth'
 import { ErrorMessage } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction } from '../../hooks/useResource'
 import { LiveBlockEditor } from '../../live/LiveBlockEditor'
+import { type Presence, usePresence } from '../../live/presence'
 import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../../live/snapshot'
 import { type LiveDocument, useLiveDocument } from '../../live/useLiveDocument'
 import { BLOCK_TYPES, type BlockType, type FrameworkVersionDetail, type ProgramVersionDetail } from '../../types'
 
 interface Ctx {
   doc: Y.Doc
+  provider: HocuspocusProvider
+  me: { id: number; name: string }
+  others: Presence[]
   snapshot: Snapshot
   editable: boolean
   levelCount: number
@@ -46,13 +52,22 @@ export function LiveVersionPage({
   const { t, i18n } = useTranslation()
   const live = useLiveDocument(version.id)
   const snapshot = useSnapshot(live?.doc)
+  const { session } = useAuth()
+  const me = useMemo(
+    () => (session ? { id: session.user.id, name: session.user.full_name || session.user.email } : null),
+    [session],
+  )
+  const others = usePresence(live?.provider, me)
   const action = useAction()
   const [ruleError, setRuleError] = useState<string | null>(null)
 
   const levels = version.template.levels
   const editable = Boolean(live && !live.locked && live.mode === 'write' && live.status === 'connected' && live.synced)
-  const ctx: Ctx | null = live && {
+  const ctx: Ctx | null = live && me && {
     doc: live.doc,
+    provider: live.provider,
+    me,
+    others,
     snapshot,
     editable,
     levelCount: levels.length,
@@ -87,6 +102,15 @@ export function LiveVersionPage({
         {t('common.version', { number: version.number })} <StatusBadge status={version.status} />
       </h1>
       <LiveStatusBar live={live} version={version} />
+      {others.length > 0 && (
+        <p className="row presence-here" data-testid="presence-here">
+          {others.map((person) => (
+            <span key={person.clientId} className="avatar" style={{ borderColor: person.color }}>
+              {person.name}
+            </span>
+          ))}
+        </p>
+      )}
       <ErrorMessage code={action.error ?? ruleError} testId="version-error" />
       {version.permissions.collaborate && (
         <div className="row">
@@ -275,6 +299,13 @@ function BlockView({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
       <div className="block-header">
         <span className={`badge badge-${block.type}`}>{t(`blockType.${block.type}`)}</span>
         {block.deleted && <span className="muted">{t('common.deleted')}</span>}
+        {ctx.others
+          .filter((person) => person.block === block.key)
+          .map((person) => (
+            <span key={person.clientId} className="avatar editing" style={{ borderColor: person.color }} data-testid="block-presence">
+              {t('live.editing', { name: person.name })}
+            </span>
+          ))}
         {ctx.editable && (
           <button type="button" className="link-button" onClick={() => ctx.edit(() => setBlockDeleted(ctx.doc, block.key, !block.deleted))}>
             {block.deleted ? t('common.restore') : t('common.delete')}
@@ -283,7 +314,7 @@ function BlockView({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
       </div>
       {!block.deleted && (
         <>
-          <LiveBlockEditor doc={ctx.doc} blockKey={block.key} editable={ctx.editable} />
+          <LiveBlockEditor doc={ctx.doc} provider={ctx.provider} blockKey={block.key} editable={ctx.editable} me={ctx.me} />
           <Alignment block={block} ctx={ctx} />
         </>
       )}

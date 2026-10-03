@@ -172,7 +172,7 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
 .node-header, .block-header { display: flex; flex-wrap: wrap; gap: var(--space); align-items: center; }
 .node-actions { display: inline-flex; gap: var(--space); align-items: center; font-size: 0.9rem; }
 .block { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 8px; padding: var(--space); margin-block: var(--space); }
-.block-editor { min-height: 2.5rem; padding: 4px var(--space); border-radius: 6px; outline: 1px solid transparent; }
+.block-editor { min-height: 2.5rem; padding: 4px var(--space); padding-block-start: 1.3em; border-radius: 6px; outline: 1px solid transparent; }
 .block-editor:focus { outline-color: var(--color-accent); }
 .block-editor p { margin: 0 0 0.4em; }
 .save-state { font-size: 0.8rem; }
@@ -196,3 +196,5 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
   position: absolute; inset-block-start: -1.4em; inset-inline-start: -1px; padding: 0 4px; border-radius: 3px;
   font-size: 0.75rem; color: #fff; white-space: nowrap; user-select: none;
 }
+.avatar { display: inline-block; border: 2px solid; border-radius: 999px; padding: 0 var(--space); font-size: 0.8rem; background: #fff; }
+.avatar.editing { font-size: 0.75rem; }

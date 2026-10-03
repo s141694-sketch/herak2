@@ -57,6 +57,15 @@ async function freshProgram(admin: Page): Promise<number> {
   return program.versions[0].id
 }
 
+/** The editor's text without other people's caret labels, which are drawn inside it. */
+function textOf(editor: ReturnType<Page['locator']>) {
+  return editor.evaluate((element) => {
+    const clone = element.cloneNode(true) as HTMLElement
+    clone.querySelectorAll('.collaboration-carets__caret').forEach((caret) => caret.remove())
+    return clone.textContent
+  })
+}
+
 async function openLive(page: Page, versionId: number) {
   await page.goto(`/program-versions/${versionId}`)
   await expect(page.getByTestId('live-status')).toHaveAttribute('data-mode', 'write')
@@ -81,13 +90,18 @@ test('two editors see each other live, and submission locks the draft for both',
   // Both type Arabic into the same block; both end with the same text.
   const adminEditor = admin.getByTestId('block-objective').locator('.ProseMirror')
   const authorEditor = author.getByTestId('block-objective').locator('.ProseMirror')
+  await expect(author.getByTestId('presence-here')).toContainText('مازن القنوبي')
   await adminEditor.click()
   await admin.keyboard.type('يصف المتدرب')
-  await expect(authorEditor).toHaveText('يصف المتدرب')
+  await expect.poll(() => textOf(authorEditor)).toBe('يصف المتدرب')
+  // Presence: the author sees who is editing this block, and the admin's named caret inside it.
+  await expect(author.getByTestId('block-objective').getByTestId('block-presence')).toHaveText('مازن القنوبي يحرر هنا')
+  await expect(author.getByTestId('block-objective').locator('.collaboration-carets__label')).toHaveText('مازن القنوبي')
+  await author.screenshot({ path: 'e2e/screenshots/20-presence-ar.png', fullPage: true })
   await authorEditor.click()
   await author.keyboard.press('End')
   await author.keyboard.type(' خطوات الإجراء')
-  await expect(adminEditor).toHaveText('يصف المتدرب خطوات الإجراء')
+  await expect.poll(() => textOf(adminEditor)).toBe('يصف المتدرب خطوات الإجراء')
 
   // Submission by one locks the editor of the other, which says so.
   await admin.getByTestId('submit-version').click()

@@ -282,6 +282,7 @@
     "authFailed": "The editor could not be opened. Reload the page.",
     "lastSaved": "Rows last saved: {{time}}",
     "saveError": "The latest changes could not be saved, and submission is blocked until this is resolved: {{error}}",
-    "locked": "This version was submitted or cancelled and can no longer be edited. Reload the page to see its state."
+    "locked": "This version was submitted or cancelled and can no longer be edited. Reload the page to see its state.",
+    "editing": "{{name}} is editing"
   }
 }
