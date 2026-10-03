@@ -386,5 +386,106 @@
     "warnings": {
       "NO_UNITS_DETECTED": "لم تُكتشف وحدات؛ عومل النص كله وحدة واحدة بعنوان «المستند»."
     }
+  },
+  "quality": {
+    "title": "تقرير الجودة",
+    "none": "لم يُفحص هذا الإصدار بعد. يبدأ الفحص الخفيف مع أول حفظ.",
+    "status": {
+      "running": "يجري الفحص…",
+      "complete": "مكتمل",
+      "partial_rules_only": "مكتمل بالقواعد وحدها: تعذّر الذكاء الاصطناعي",
+      "failed": "تعذّر الفحص"
+    },
+    "run": {
+      "light": "فحص خفيف",
+      "full": "فحص كامل"
+    },
+    "runFull": "شغّل الفحص الكامل",
+    "severity": {
+      "critical": "حرج",
+      "warning": "تحذير",
+      "info": "معلومة"
+    },
+    "source": {
+      "rule": "قاعدة",
+      "ai": "ذكاء اصطناعي"
+    },
+    "dismiss": "تجاهل",
+    "dismissReason": "سبب التجاهل (يراه المراجع)",
+    "restore": "إعادة",
+    "dismissedBecause": "تُجوهلت: {{reason}} — {{name}}",
+    "showDismissed": "إظهار الملاحظات المتجاهلة ({{count}})",
+    "showOpen": "إظهار الملاحظات المفتوحة ({{count}})",
+    "noneOpen": "لا ملاحظات مفتوحة.",
+    "noneDismissed": "لا ملاحظات متجاهلة.",
+    "unclassified": "غير مصنَّف",
+    "reading": "{{level}} ({{domain}})",
+    "ruleReading": "القاعدة: {{reading}}",
+    "aiReading": "الذكاء الاصطناعي: {{reading}}",
+    "listSeparator": "، ",
+    "domain": {
+      "cognitive": "المجال المعرفي",
+      "affective": "المجال الوجداني",
+      "psychomotor": "المجال النفسحركي"
+    },
+    "bloom": {
+      "cognitive": {
+        "1": "تذكر",
+        "2": "فهم",
+        "3": "تطبيق",
+        "4": "تحليل",
+        "5": "تقويم",
+        "6": "إبداع"
+      },
+      "affective": {
+        "1": "التقبل",
+        "2": "الاستجابة",
+        "3": "التقييم",
+        "4": "التنظيم",
+        "5": "التمييز (تكامل القيمة مع السلوك)"
+      },
+      "psychomotor": {
+        "1": "الملاحظة أو الاستقبال (الإدراك الحسي)",
+        "2": "التهيئة",
+        "3": "الاستجابة الموجهة",
+        "4": "الآلية (الميكانيكية)",
+        "5": "الاستجابة الظاهرة المعقدة",
+        "6": "التكيف أو التعديل",
+        "7": "الإبداع أو الابتكار"
+      }
+    },
+    "components": {
+      "an": "«أن»",
+      "verb": "الفعل",
+      "learner": "المتعلم",
+      "content": "المحتوى",
+      "condition": "الشرط",
+      "criterion": "المعيار"
+    },
+    "kinds": {
+      "competency_not_assessed": "الكفاية {{competency}} لا يصل إليها أي تقويم.",
+      "competency_not_served": "الكفاية {{competency}} لا يخدمها أي هدف ولا يصل إليها أي تقويم.",
+      "node_missing_objective": "هذه العقدة بلا هدف.",
+      "node_missing_assessment": "هذه العقدة بلا تقويم.",
+      "node_missing_activity": "هذه العقدة بلا نشاط.",
+      "node_missing_reference": "هذه العقدة بلا مرجع.",
+      "objective_not_aligned": "الهدف غير مرتبط بكفاية ولا بهدف أعلى.",
+      "assessment_not_aligned": "التقويم غير مرتبط بأي هدف.",
+      "link_to_deleted": "رابط يشير إلى كتلة محذوفة.",
+      "objective_unmeasurable": "الفعل «{{verb}}» غير قابل للقياس.",
+      "objective_teacher_activity": "الهدف يصف نشاط المدرب لا سلوك المتدرب.",
+      "objective_process": "الهدف يصف عملية التعلم لا ناتجها.",
+      "objective_topic": "الهدف عنوان موضوع لا سلوك ملاحظ.",
+      "objective_multi": "الهدف يجمع أكثر من ناتج في عبارة واحدة.",
+      "objective_unclassified": "الفعل «{{verb}}» غير مصنَّف في مستويات التصنيف.",
+      "objective_no_verb": "لا فعل واضحًا في الهدف.",
+      "objective_components_missing": "ينقص الهدف: {{missing}}.",
+      "possible_competency_match": "قد يخدم الهدف الكفاية {{competency}} (تطابق لفظي {{score}}٪)، وليس مرتبطًا بها.",
+      "bloom_ai_level": "صنّف الذكاء الاصطناعي الهدف: {{ai}}.",
+      "bloom_disagreement": "تختلف القاعدة والذكاء الاصطناعي في مستوى الهدف؛ راجعه بنفسك.",
+      "link_semantic_mismatch": "معنى الهدف لا يخدم الكفاية {{competency}} المرتبط بها.",
+      "link_semantic_weak": "الهدف يمس الكفاية {{competency}} مسًا ضعيفًا.",
+      "competency_objective_suggestion": "هدف مقترح للكفاية {{competency}}: {{objective}}"
+    }
   }
 }

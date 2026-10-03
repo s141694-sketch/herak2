@@ -252,3 +252,39 @@ export interface Suggestion {
   decided_at: string | null
   decision_reason: string
 }
+
+export type Severity = 'critical' | 'warning' | 'info'
+
+export interface BloomReading {
+  domain: 'cognitive' | 'affective' | 'psychomotor' | null
+  level_id: number
+  level: string
+  verb?: string
+}
+
+export interface Finding {
+  id: number
+  kind: string
+  severity: Severity
+  source: 'rule' | 'ai'
+  confidence: 'high' | 'medium' | 'low'
+  node_key: string | null
+  block_key: string | null
+  competency: { id: number; key: string; code: string; title: string } | null
+  params: Record<string, unknown>
+  explanation: string
+  dismissal: { reason: string; at: string; by: { id: number; name: string } | null } | null
+}
+
+/** A version's quality report (spec 4.4): rules always, AI where rules cannot decide. */
+export interface QualityReport {
+  id: number
+  version: number
+  status: 'running' | 'complete' | 'partial_rules_only' | 'failed'
+  last_run: 'light' | 'full'
+  counts: Record<Severity, number>
+  finished_at: string | null
+  error: string
+  findings: Finding[]
+  rollup: Record<string, Record<Severity, number>>
+}

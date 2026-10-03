@@ -84,6 +84,24 @@ describe('translations', () => {
     expect(lookup(ar as Tree, 'suggestions.warnings.NO_UNITS_DETECTED')).toBeDefined()
   })
 
+  it('every kind of finding the quality engine reports has a translated message', () => {
+    const backend = join(SRC, '..', '..', 'backend', 'apps', 'quality')
+    const sources = [join(backend, 'rules', 'program.py'), join(backend, 'ai_layer.py')].map((file) => readFileSync(file, 'utf8'))
+    const kinds = sources.flatMap((source) => [...source.matchAll(/^ {4}"([a-z_]+)": "(?:critical|warning|info)",$/gm)].map((m) => m[1]))
+    expect(kinds.length).toBeGreaterThan(15)
+    for (const kind of kinds) expect(lookup(ar as Tree, `quality.kinds.${kind}`), kind).toBeDefined()
+    for (const extra of ['competency_not_served', 'objective_no_verb']) expect(lookup(ar as Tree, `quality.kinds.${extra}`), extra).toBeDefined()
+    const levels = { cognitive: 6, affective: 5, psychomotor: 7 }
+    for (const [domain, count] of Object.entries(levels)) {
+      for (let id = 1; id <= count; id += 1) expect(lookup(ar as Tree, `quality.bloom.${domain}.${id}`), `${domain}.${id}`).toBeDefined()
+    }
+    for (const part of ['an', 'verb', 'learner', 'content', 'condition', 'criterion']) expect(lookup(ar as Tree, `quality.components.${part}`)).toBeDefined()
+    for (const key of ['severity.critical', 'severity.warning', 'severity.info', 'source.rule', 'source.ai', 'run.light', 'run.full']) {
+      expect(lookup(ar as Tree, `quality.${key}`), key).toBeDefined()
+    }
+    for (const status of ['running', 'complete', 'partial_rules_only', 'failed']) expect(lookup(ar as Tree, `quality.status.${status}`)).toBeDefined()
+  })
+
   it('every reason a live save can fail for has a translated explanation', () => {
     for (const code of SAVE_ERROR_CODES) expect(lookup(ar as Tree, `live.saveErrors.${code}`), code).toBeDefined()
   })

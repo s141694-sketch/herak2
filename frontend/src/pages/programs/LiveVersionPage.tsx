@@ -27,8 +27,17 @@ import { LiveBlockEditor } from '../../live/LiveBlockEditor'
 import { type Presence, usePresence } from '../../live/presence'
 import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../../live/snapshot'
 import { announceCommentsChanged, type LiveDocument, useLiveDocument } from '../../live/useLiveDocument'
-import { BLOCK_TYPES, type BlockType, type FrameworkVersionDetail, type ProgramComment, type ProgramVersionDetail } from '../../types'
+import {
+  BLOCK_TYPES,
+  type BlockType,
+  type Finding,
+  type FrameworkVersionDetail,
+  type ProgramComment,
+  type ProgramVersionDetail,
+  type QualityReport,
+} from '../../types'
 import { CommentCard, type CommentContext, NewComment, placementOf } from './Comments'
+import { QualityPanel, RollupBadges, useQualityReport } from './QualityPanel'
 import { ImportSuggestion, OutlineSuggestion, RewriteSuggestion, type SuggestionContext } from './Suggestions'
 
 interface Ctx {
@@ -45,6 +54,7 @@ interface Ctx {
   levelName: (level: number) => string
   edit: (change: () => void) => boolean
   suggestions: SuggestionContext
+  rollup: QualityReport['rollup']
 }
 
 /** A draft edited live through the collaboration service (phase 3). */
@@ -83,6 +93,7 @@ export function LiveVersionPage({
   const action = useAction()
   const [ruleError, setRuleError] = useState<string | null>(null)
   const [showResolved, setShowResolved] = useState(false)
+  const quality = useQualityReport(version.id, live?.doc)
 
   const levels = version.template.levels
   const editable = Boolean(live && !live.locked && !live.frozen && live.mode === 'write' && live.status === 'connected' && live.synced)
@@ -143,6 +154,12 @@ export function LiveVersionPage({
     },
     edit,
     suggestions: { versionId: version.id, doc: live.doc, levelCount: levels.length, framework, edit },
+    rollup: quality.report?.rollup ?? {},
+  }
+  const describe = (finding: Finding) => {
+    const node = snapshot.nodes.find((n) => n.key === finding.node_key)
+    const block = snapshot.blocks.find((b) => b.key === finding.block_key)
+    return [node?.title, block && t(`blockType.${block.type}`)].filter(Boolean).join(' · ')
   }
   const roots = snapshot.nodes.filter((n) => n.parent === null)
 
@@ -208,22 +225,33 @@ export function LiveVersionPage({
         ))}
       </ul>
 
-      <h2>{t('tree.title')}</h2>
-      {ctx?.editable && (
-        <div className="row suggestions">
-          <OutlineSuggestion ctx={ctx.suggestions} />
-          <ImportSuggestion ctx={ctx.suggestions} />
+      <div className="live-layout">
+        <div className="live-main">
+          <h2>{t('tree.title')}</h2>
+          {ctx?.editable && (
+            <div className="row suggestions">
+              <OutlineSuggestion ctx={ctx.suggestions} />
+              <ImportSuggestion ctx={ctx.suggestions} />
+            </div>
+          )}
+          {ctx && live?.everSynced && (
+            <div className="tree" data-testid="tree">
+              {roots.length === 0 && <p className="muted">{t('tree.empty', { level: ctx.levelName(0) })}</p>}
+              {roots.map((node) => (
+                <NodeView key={node.key} node={node} ctx={ctx} />
+              ))}
+              {ctx.editable && <AddNode parent={null} ctx={ctx} />}
+            </div>
+          )}
         </div>
-      )}
-      {ctx && live?.everSynced && (
-        <div className="tree" data-testid="tree">
-          {roots.length === 0 && <p className="muted">{t('tree.empty', { level: ctx.levelName(0) })}</p>}
-          {roots.map((node) => (
-            <NodeView key={node.key} node={node} ctx={ctx} />
-          ))}
-          {ctx.editable && <AddNode parent={null} ctx={ctx} />}
-        </div>
-      )}
+        <QualityPanel
+          versionId={version.id}
+          report={quality.report}
+          reload={() => void quality.reload()}
+          canChange={version.permissions.edit && version.status === 'draft'}
+          describe={describe}
+        />
+      </div>
     </section>
   )
 }
@@ -319,6 +347,7 @@ function NodeView({ node, ctx }: { node: LiveNode; ctx: Ctx }) {
           <strong>{node.title}</strong>
         )}
         {node.deleted && <span className="muted">{t('common.deleted')}</span>}
+        {!node.deleted && <RollupBadges counts={ctx.rollup[node.key]} testId="node-rollup" />}
         {ctx.editable && !renaming && (
           <span className="node-actions">
             <button

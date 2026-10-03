@@ -386,5 +386,106 @@
     "warnings": {
       "NO_UNITS_DETECTED": "No units were found; the whole text was treated as one unit titled “المستند”."
     }
+  },
+  "quality": {
+    "title": "Quality report",
+    "none": "This version has not been checked yet. The light check starts with the first save.",
+    "status": {
+      "running": "Checking…",
+      "complete": "Complete",
+      "partial_rules_only": "Complete with rules only: AI was unavailable",
+      "failed": "The check failed"
+    },
+    "run": {
+      "light": "light check",
+      "full": "full check"
+    },
+    "runFull": "Run the full check",
+    "severity": {
+      "critical": "Critical",
+      "warning": "Warning",
+      "info": "Information"
+    },
+    "source": {
+      "rule": "Rule",
+      "ai": "AI"
+    },
+    "dismiss": "Dismiss",
+    "dismissReason": "Why (the reviewer sees it)",
+    "restore": "Restore",
+    "dismissedBecause": "Dismissed: {{reason}} — {{name}}",
+    "showDismissed": "Show dismissed findings ({{count}})",
+    "showOpen": "Show open findings ({{count}})",
+    "noneOpen": "No open findings.",
+    "noneDismissed": "No dismissed findings.",
+    "unclassified": "unclassified",
+    "reading": "{{level}} ({{domain}})",
+    "ruleReading": "Rule: {{reading}}",
+    "aiReading": "AI: {{reading}}",
+    "listSeparator": ", ",
+    "domain": {
+      "cognitive": "cognitive domain",
+      "affective": "affective domain",
+      "psychomotor": "psychomotor domain"
+    },
+    "bloom": {
+      "cognitive": {
+        "1": "Remember",
+        "2": "Understand",
+        "3": "Apply",
+        "4": "Analyse",
+        "5": "Evaluate",
+        "6": "Create"
+      },
+      "affective": {
+        "1": "Receiving",
+        "2": "Responding",
+        "3": "Valuing",
+        "4": "Organisation",
+        "5": "Characterisation by a value"
+      },
+      "psychomotor": {
+        "1": "Perception",
+        "2": "Set",
+        "3": "Guided response",
+        "4": "Mechanism",
+        "5": "Complex overt response",
+        "6": "Adaptation",
+        "7": "Origination"
+      }
+    },
+    "components": {
+      "an": "“أن”",
+      "verb": "verb",
+      "learner": "learner",
+      "content": "content",
+      "condition": "condition",
+      "criterion": "criterion"
+    },
+    "kinds": {
+      "competency_not_assessed": "No assessment reaches the competency {{competency}}.",
+      "competency_not_served": "No objective serves and no assessment reaches the competency {{competency}}.",
+      "node_missing_objective": "This node has no objective.",
+      "node_missing_assessment": "This node has no assessment.",
+      "node_missing_activity": "This node has no activity.",
+      "node_missing_reference": "This node has no reference.",
+      "objective_not_aligned": "The objective is linked to no competency and no higher objective.",
+      "assessment_not_aligned": "The assessment is linked to no objective.",
+      "link_to_deleted": "A link points to a deleted block.",
+      "objective_unmeasurable": "The verb «{{verb}}» is not measurable.",
+      "objective_teacher_activity": "The objective describes what the trainer does, not what the trainee does.",
+      "objective_process": "The objective describes the learning process, not its outcome.",
+      "objective_topic": "The objective names a topic, not an observable behaviour.",
+      "objective_multi": "The objective joins more than one outcome.",
+      "objective_unclassified": "The verb «{{verb}}» is not classified in the taxonomy's levels.",
+      "objective_no_verb": "The objective has no clear verb.",
+      "objective_components_missing": "The objective lacks: {{missing}}.",
+      "possible_competency_match": "The objective may serve the competency {{competency}} ({{score}}% word match) but is not linked to it.",
+      "bloom_ai_level": "The AI classified the objective: {{ai}}.",
+      "bloom_disagreement": "The rule and the AI read the objective's level differently; review it yourself.",
+      "link_semantic_mismatch": "The objective's meaning does not serve the linked competency {{competency}}.",
+      "link_semantic_weak": "The objective only touches the competency {{competency}}.",
+      "competency_objective_suggestion": "Suggested objective for the competency {{competency}}: {{objective}}"
+    }
   }
 }

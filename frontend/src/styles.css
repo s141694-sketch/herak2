@@ -215,3 +215,15 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
 .badge-must_fix { background: #f6e7e7; color: var(--color-danger); }
 .new-comment { display: grid; gap: 4px; border: 1px dashed var(--color-line); padding: var(--space); border-radius: 8px; }
 .new-comment textarea { font: inherit; min-height: 4rem; padding: 4px var(--space); border: 1px solid var(--color-line); border-radius: 6px; }
+
+/* The quality report beside the editor (task 4.10); stacked under it on narrow screens. */
+.live-layout { display: grid; gap: calc(var(--space) * 3); grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) { .live-layout { grid-template-columns: minmax(0, 1fr) 340px; } }
+.quality-panel { border-inline-start: 1px solid var(--color-line); padding-inline-start: calc(var(--space) * 2); align-self: start; }
+.quality-counts { flex-wrap: wrap; }
+.findings .finding { border-block-end: 1px dashed var(--color-line); padding-block: var(--space); }
+.finding p { margin: 2px 0; }
+.rollup { display: inline-flex; gap: 2px; }
+.severity-critical { background: #f8d7d7; }
+.severity-warning { background: #fbebc8; }
+.severity-info { background: #e3eef8; }
