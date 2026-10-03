@@ -71,6 +71,8 @@ class QualityReport(OrganizationScopedModel):
     ai_prompts = models.JSONField(default=dict, blank=True)
     ai_models = models.JSONField(default=dict, blank=True)
     counts = models.JSONField(default=dict, blank=True)
+    # The AI layer of the latest run: {"status": "none"|"pending"|"done"|"skipped"|"partial", "reasons": [...]}.
+    ai_state = models.JSONField(default=dict, blank=True)
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -137,11 +139,16 @@ class ObjectiveAnalysis(_ReportRow):
     score = models.PositiveSmallIntegerField(default=0)
     errors = models.JSONField(default=list)
     dimension = models.JSONField(null=True, blank=True)
+    # The classification agent's reading, for the content it was given (ai_content_hash): none, done or failed.
     ai_status = models.CharField(max_length=20, default="none")
+    ai_content_hash = models.CharField(max_length=64, blank=True)
     ai_level_id = models.PositiveSmallIntegerField(null=True, blank=True)
+    ai_level = models.CharField(max_length=100, blank=True)
     ai_domain = models.CharField(max_length=20, blank=True)
+    ai_verb = models.CharField(max_length=100, blank=True)
     ai_confidence = models.CharField(max_length=10, choices=Confidence.choices, blank=True)
     ai_explanation = models.TextField(blank=True)
+    ai_model = models.CharField(max_length=100, blank=True)
 
     class Meta:
         ordering = ["report", "id"]

@@ -10,6 +10,7 @@ import uuid
 
 import sentry_sdk
 import structlog
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -19,6 +20,7 @@ from apps.programs.models import Node, ProgramVersion
 from apps.programs.services import can_edit
 from apps.tenancy.context import organization_context
 
+from . import ai_layer
 from .models import Finding, ObjectiveAnalysis, QualityReport, ReportLocked, Severity, engine_write
 from .rules import program as program_rules
 from .snapshot import load_snapshot
@@ -73,7 +75,12 @@ def request_run(version: ProgramVersion, kind: str, *, actor=None, final: bool =
 
 
 def execute_run(report_id: int, run_id: str) -> None:
-    """The background work of one run. Does nothing if a newer run was requested."""
+    """The background work of one run: the rules now, then the AI layer. Does nothing if a newer run was requested.
+
+    A full run (submission or a request) waits for the AI layer before the report is complete. A light run
+    (after an edit) completes on the rules and leaves the AI layer to a later task, which only runs if no newer
+    edit superseded it, so typing does not ask a model about every intermediate text.
+    """
     report = QualityReport.all_organizations.select_related("version").get(pk=report_id)
     with organization_context(report.organization_id):
         if str(report.run_id) != run_id:
@@ -85,7 +92,57 @@ def execute_run(report_id: int, run_id: str) -> None:
             sentry_sdk.capture_exception(exc)
             _finish(report_id, run_id, status=S.FAILED, error=str(exc)[:2000])
             return
-        _write(report_id, run_id, objectives, findings)
+        full = report.last_run == QualityReport.Run.FULL
+        pending = _write_rules(report_id, run_id, objectives, findings, finish=not full)
+        if pending is None:
+            return
+    if full:
+        run_ai(report_id, run_id)
+    elif pending:
+        _schedule_ai(report_id, run_id)
+
+
+def _schedule_ai(report_id: int, run_id: str) -> None:
+    from .tasks import run_ai_layer
+
+    try:
+        run_ai_layer.apply_async((report_id, run_id), countdown=settings.QUALITY_AI_DELAY_SECONDS, retry=False)
+    except Exception as exc:
+        log.error("quality.enqueue_failed", report=report_id, error=str(exc))
+        sentry_sdk.capture_exception(exc)
+
+
+def run_ai(report_id: int, run_id: str) -> None:
+    """The AI layer of a run. The calls happen outside any transaction; the results are written only if the run
+    is still the latest (otherwise they stay in the gateway's cache for the next run)."""
+    report = QualityReport.all_organizations.get(pk=report_id)
+    with organization_context(report.organization_id):
+        if str(report.run_id) != run_id:
+            return
+        pending = [a for a in report.objectives.all() if ai_layer.needs_classification(a)]
+        updates, state = ai_layer.classify(pending, organization_id=report.organization_id)
+        with transaction.atomic(), engine_write():
+            report = QualityReport.objects.select_for_update().select_related("version").get(pk=report_id)
+            if str(report.run_id) != run_id:
+                return
+            analyses = list(report.objectives.all())
+            for analysis in analyses:
+                for name, value in updates.get(analysis.pk, {}).items():
+                    setattr(analysis, name, value)
+            ObjectiveAnalysis.objects.bulk_update(analyses, ai_layer.AI_FIELDS)
+            _replace_ai_findings(report, analyses, _carried_dismissals(report))
+            report.ai_state = state
+            if updates:
+                from apps.agents import classification
+
+                report.ai_prompts = {**report.ai_prompts, classification.NAME: classification.PROMPT_VERSION}
+                models = sorted({a.ai_model for a in analyses if a.ai_model})
+                if models:
+                    report.ai_models = {**report.ai_models, classification.NAME: models[-1]}
+            report.status = S.PARTIAL_RULES_ONLY if state["status"] == "partial" else S.COMPLETE
+            report.finished_at = timezone.now()
+            report.counts = counts(report.findings.all())
+            report.save()
 
 
 def _finish(report_id: int, run_id: str, *, status: str, error: str = "") -> None:
@@ -111,20 +168,59 @@ def _carried_dismissals(report: QualityReport) -> dict[tuple[str, str], Finding]
     return {(f.source, f.fingerprint): f for f in dismissed}
 
 
-def _write(report_id: int, run_id: str, objectives, findings) -> None:
+def _finding_row(report, f, source, carried, competencies) -> Finding:
+    previous = carried.get((source, f.fingerprint))
+    return Finding(
+        organization_id=report.organization_id,
+        report=report,
+        fingerprint=f.fingerprint,
+        kind=f.kind,
+        severity=f.severity,
+        source=source,
+        confidence=f.confidence,
+        node_key=f.node_key,
+        block_key=f.block_key,
+        competency=competencies.get(f.competency_key),
+        params=f.params,
+        explanation=getattr(f, "explanation", ""),
+        dismissed_reason=previous.dismissed_reason if previous else "",
+        dismissed_by_id=previous.dismissed_by_id if previous else None,
+        dismissed_at=previous.dismissed_at if previous else None,
+    )
+
+
+def _competencies(report, findings) -> dict:
+    keys = {f.competency_key for f in findings if f.competency_key}
+    return {
+        str(c.competency_key): c
+        for c in Competency.objects.filter(version=report.version.framework_version, competency_key__in=keys)
+    }
+
+
+def _replace_ai_findings(report, analyses, carried) -> None:
+    Finding.objects.filter(report=report, source=Finding.Source.AI).delete()
+    found = ai_layer.findings_from(analyses)
+    competencies = _competencies(report, found)
+    Finding.objects.bulk_create(_finding_row(report, f, Finding.Source.AI, carried, competencies) for f in found)
+
+
+def _write_rules(report_id: int, run_id: str, objectives, findings, *, finish: bool) -> bool | None:
+    """Replaces the report's rows with the rules' results, keeping the AI readings of unchanged objectives.
+
+    Returns whether objectives still wait for the AI layer, or None when a newer run superseded this one.
+    """
     with transaction.atomic(), engine_write():
         report = QualityReport.objects.select_for_update().select_related("version").get(pk=report_id)
         if str(report.run_id) != run_id:
-            return
+            return None
         carried = _carried_dismissals(report)
-        keys = {f.competency_key for f in findings if f.competency_key}
-        competencies = {
-            str(c.competency_key): c
-            for c in Competency.objects.filter(version=report.version.framework_version, competency_key__in=keys)
+        readings = {
+            (str(a.block_key), a.ai_content_hash): {name: getattr(a, name) for name in ai_layer.AI_FIELDS}
+            for a in ObjectiveAnalysis.objects.filter(report=report, ai_status="done")
         }
         Finding.objects.filter(report=report).delete()
         ObjectiveAnalysis.objects.filter(report=report).delete()
-        ObjectiveAnalysis.objects.bulk_create(
+        analyses = ObjectiveAnalysis.objects.bulk_create(
             ObjectiveAnalysis(
                 organization_id=report.organization_id,
                 report=report,
@@ -141,36 +237,24 @@ def _write(report_id: int, run_id: str, objectives, findings) -> None:
                 score=o.score,
                 errors=o.errors,
                 dimension=o.dimension,
+                **readings.get((o.block_key, o.content_hash), {}),
             )
             for o in objectives
         )
-        rows = []
-        for f in findings:
-            previous = carried.get((Finding.Source.RULE, f.fingerprint))
-            rows.append(
-                Finding(
-                    organization_id=report.organization_id,
-                    report=report,
-                    fingerprint=f.fingerprint,
-                    kind=f.kind,
-                    severity=f.severity,
-                    source=Finding.Source.RULE,
-                    confidence=f.confidence,
-                    node_key=f.node_key,
-                    block_key=f.block_key,
-                    competency=competencies.get(f.competency_key),
-                    params=f.params,
-                    dismissed_reason=previous.dismissed_reason if previous else "",
-                    dismissed_by_id=previous.dismissed_by_id if previous else None,
-                    dismissed_at=previous.dismissed_at if previous else None,
-                )
-            )
-        Finding.objects.bulk_create(rows)
+        competencies = _competencies(report, findings)
+        Finding.objects.bulk_create(
+            _finding_row(report, f, Finding.Source.RULE, carried, competencies) for f in findings
+        )
+        _replace_ai_findings(report, analyses, carried)
+        pending = any(ai_layer.needs_classification(a) for a in analyses)
         report.rules_version = program_rules.RULES_VERSION
-        report.status = S.COMPLETE
-        report.finished_at = timezone.now()
-        report.counts = counts(rows)
+        report.ai_state = {"status": "pending", "reasons": []} if pending else {"status": "done", "reasons": []}
+        if finish:
+            report.status = S.COMPLETE
+            report.finished_at = timezone.now()
+        report.counts = counts(report.findings.all())
         report.save()
+        return pending
 
 
 def counts(findings) -> dict[str, int]:

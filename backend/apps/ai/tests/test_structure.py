@@ -12,7 +12,8 @@ PROVIDERS = re.compile(r"apps\.ai\.providers|from apps\.ai import providers|from
 def sources():
     for path in sorted(BACKEND.rglob("*.py")):
         relative = path.relative_to(BACKEND).as_posix()
-        if relative.startswith((".venv/", "apps/ai/tests/")) or "/migrations/" in relative:
+        # Tests may build providers and fakes on purpose; the rule is about the code that runs in production.
+        if relative.startswith(".venv/") or "/migrations/" in relative or "/tests/" in relative:
             continue
         yield relative, path.read_text(encoding="utf-8")
 

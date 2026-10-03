@@ -27,6 +27,7 @@ env = environ.Env(
     AI_BACKOFF_SECONDS=(float, 1.0),
     AI_MONTHLY_TOKEN_QUOTA=(int, 2_000_000),
     AI_RECORDINGS_DIR=(str, ""),
+    QUALITY_AI_DELAY_SECONDS=(int, 60),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -55,6 +56,7 @@ INSTALLED_APPS = [
     "apps.quality",
     "apps.ai",
     "apps.evals",
+    "apps.agents",
 ]
 
 MIDDLEWARE = [
@@ -140,6 +142,8 @@ AI_MAX_ATTEMPTS = env("AI_MAX_ATTEMPTS")
 AI_BACKOFF_SECONDS = env("AI_BACKOFF_SECONDS")
 AI_MONTHLY_TOKEN_QUOTA = env("AI_MONTHLY_TOKEN_QUOTA")
 AI_RECORDINGS_DIR = env("AI_RECORDINGS_DIR")
+# A light quality run asks the AI layer only after edits pause this long (cost control, spec 5.4).
+QUALITY_AI_DELAY_SECONDS = env("QUALITY_AI_DELAY_SECONDS")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 AUTH_USER_MODEL = "accounts.User"

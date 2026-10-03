@@ -1,0 +1,41 @@
+"""Inputs and hand-written answers the agent tests replay (see recordings.py)."""
+
+from apps.agents import classification
+
+
+def EXAMPLES():
+    return [
+        (
+            classification.SPEC,
+            classification.payload("أن يتأمل المتدرب تجربته في الموقع"),
+            {
+                "domain": "affective",
+                "level_id": 3,
+                "verb": "يتأمل",
+                "confidence": "medium",
+                "explanation": "التأمل في الخبرة سلوك وجداني يقيّم فيه المتدرب تجربته.",
+            },
+        ),
+        (
+            classification.SPEC,
+            classification.payload("أن يحدد المتدرب مواقع مخارج الطوارئ على المخطط"),
+            {
+                "domain": "cognitive",
+                "level_id": 1,
+                "verb": "يحدد",
+                "confidence": "high",
+                "explanation": "تحديد المواقع على المخطط استرجاع وتعرّف، أي مستوى التذكر.",
+            },
+        ),
+        (
+            classification.SPEC,
+            classification.payload("معرفة أنواع الصمامات"),
+            {
+                "domain": "unclear",
+                "level_id": 0,
+                "verb": "",
+                "confidence": "low",
+                "explanation": "الهدف بلا سلوك ملاحظ؛ يحتاج فعلًا قابلًا للقياس.",
+            },
+        ),
+    ]
