@@ -100,3 +100,55 @@ describe('loading and saving through Django', () => {
     a.provider.destroy()
   })
 })
+
+describe('internal endpoints for Django', () => {
+  const call = (path: string, secret = 'svc-secret-of-the-right-length-0123456789') =>
+    fetch(`http://127.0.0.1:${PORT}${path}`, { method: 'POST', headers: { Authorization: `Service ${secret}` } })
+
+  beforeEach(async () => {
+    await service.destroy()
+    service = new CollabService({
+      port: PORT,
+      tokenSecret: SECRET,
+      serviceSecret: 'svc-secret-of-the-right-length-0123456789',
+      store,
+      debounceMs: 60_000,
+      maxDebounceMs: 60_000,
+      log: () => {},
+    })
+    await service.listen()
+  })
+
+  it('refuses callers without the service secret', async () => {
+    expect((await call(`/internal/documents/${NAME}/flush`, 'wrong')).status).toBe(403)
+  })
+
+  it('flush saves pending edits right away, without waiting for the debounce', async () => {
+    store.seed(42, { rows: rowsOfSample().rows })
+    const a = await connect(PORT, NAME, await token({}))
+    a.doc.getMap<Y.Map<unknown>>('nodes').forEach((node) => node.set('title', 'قبل الإرسال'))
+    await settle(100)
+    expect(store.saves).toEqual([])
+    const body = await (await call(`/internal/documents/${NAME}/flush`)).json()
+    expect(body).toEqual({ status: 'saved', error: null })
+    expect(store.saves.at(-1)!.rows.nodes[0].title).toBe('قبل الإرسال')
+    a.provider.destroy()
+  })
+
+  it('flush of a document nobody has open is a no-op', async () => {
+    expect(await (await call('/internal/documents/program-version:77/flush')).json()).toEqual({ status: 'not_loaded' })
+  })
+
+  it('lock turns every connection read-only', async () => {
+    store.seed(42, { rows: rowsOfSample().rows })
+    const a = await connect(PORT, NAME, await token({}))
+    const b = await connect(PORT, NAME, await token({ sub: '8' }))
+    expect(await (await call(`/internal/documents/${NAME}/lock`)).json()).toEqual({ status: 'locked', loaded: true })
+    await eventually(() => b.stateless.includes(JSON.stringify({ type: 'locked' })))
+    a.doc.getMap<Y.Map<unknown>>('nodes').forEach((node) => node.set('title', 'بعد القفل'))
+    await settle()
+    expect([...b.doc.getMap<Y.Map<unknown>>('nodes').values()].map((n) => n.get('title'))).toEqual(['البرنامج'])
+    a.provider.destroy()
+    b.provider.destroy()
+  })
+})

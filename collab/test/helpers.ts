@@ -19,19 +19,22 @@ export async function token(claims: Record<string, unknown>, options: { secret?:
 export interface Client {
   doc: Y.Doc
   provider: HocuspocusProvider
+  stateless: string[]
 }
 
 /** Connects and resolves once synced, or rejects when authentication fails. */
 export function connect(port: number, name: string, tokenValue: string): Promise<Client> {
   return new Promise((resolve, reject) => {
     const doc = new Y.Doc()
+    const stateless: string[] = []
     const websocketProvider = new HocuspocusProviderWebsocket({ url: `ws://127.0.0.1:${port}`, WebSocketPolyfill: WebSocket })
     const provider = new HocuspocusProvider({
       name,
       document: doc,
       token: tokenValue,
       websocketProvider,
-      onSynced: () => resolve({ doc, provider }),
+      onSynced: () => resolve({ doc, provider, stateless }),
+      onStateless: ({ payload }) => stateless.push(payload),
       onAuthenticationFailed: ({ reason }) => {
         provider.destroy()
         websocketProvider.destroy()

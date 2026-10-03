@@ -90,7 +90,10 @@
     "link_exists": "This link already exists.",
     "diff_programs_differ": "Only versions of the same program can be compared.",
     "no_active_organization": "Choose an organization first.",
-    "not_authenticated": "Sign in to continue."
+    "not_authenticated": "Sign in to continue.",
+    "draft_is_live": "This draft is edited live in the editor.",
+    "materialization_failed": "The latest changes could not be saved, so the program was not submitted. Check the content and try again.",
+    "collab_unavailable": "The editor cannot be reached to save the latest changes. Try submitting again shortly."
   },
   "common": {
     "create": "Create",
@@ -270,5 +273,15 @@
     "content": "Content",
     "type": "Type",
     "node": "Node"
+  },
+  "live": {
+    "connecting": "Connecting to the editor…",
+    "connected": "Connected. Changes are saved automatically.",
+    "offline": "The editor is disconnected. Content is read-only until the connection returns, then changes merge automatically.",
+    "readOnly": "This version opens read-only.",
+    "authFailed": "The editor could not be opened. Reload the page.",
+    "lastSaved": "Rows last saved: {{time}}",
+    "saveError": "The latest changes could not be saved, and submission is blocked until this is resolved: {{error}}",
+    "locked": "This version was submitted or cancelled and can no longer be edited. Reload the page to see its state."
   }
 }

@@ -7,6 +7,7 @@ import { BlockEditor } from '../../components/BlockEditor'
 import { ErrorMessage, Loading } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
+import { LiveVersionPage } from './LiveVersionPage'
 import {
   type AlignmentLink,
   BLOCK_TYPES,
@@ -47,6 +48,10 @@ export function VersionPage() {
     tree.reload()
     links.reload()
   }
+  // A draft is edited live; every other status shows the frozen rows.
+  if (version.data.status === 'draft') {
+    return <LiveVersionPage version={version.data} framework={framework.data} onSubmitted={refresh} />
+  }
   const levels = version.data.template.levels
   const ctx: Ctx = {
     version: version.data,
@@ -64,12 +69,9 @@ export function VersionPage() {
   const roots = tree.data.nodes.filter((n) => n.parent === null).sort((a, b) => a.order - b.order)
   const { status } = version.data
 
-  async function transition(path: 'submit' | 'withdraw') {
+  async function transition(path: 'withdraw') {
     const done = await action.run(() => http.post(`/api/program-versions/${id}/${path}/`))
-    if (done) {
-      if (path === 'withdraw') navigate(`/programs/${version.data!.program.id}`)
-      else refresh()
-    }
+    if (done) navigate(`/programs/${version.data!.program.id}`)
   }
 
   return (
@@ -83,11 +85,6 @@ export function VersionPage() {
       <ErrorMessage code={action.error} testId="version-error" />
       {!ctx.editable && <p className="notice">{t('programs.readOnly')}</p>}
       <div className="row">
-        {ctx.editable && status === 'draft' && (
-          <button type="button" className="primary-inline" data-testid="submit-version" onClick={() => void transition('submit')}>
-            {t('programs.submit')}
-          </button>
-        )}
         {version.data.permissions.collaborate && ['submitted', 'in_stage'].includes(status) && (
           <button type="button" className="secondary" data-testid="withdraw-version" onClick={() => void transition('withdraw')}>
             {t('programs.withdraw')}

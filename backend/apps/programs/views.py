@@ -417,4 +417,6 @@ class VersionDiffView(APIView):
     def get(self, request, pk, other):
         before = get_object_or_404(ProgramVersion.objects, pk=pk)
         after = get_object_or_404(ProgramVersion.objects, pk=other)
+        for version in {before, after}:
+            lifecycle.rows_requested.send(sender=ProgramVersion, version=version)
         return Response(diff.diff_versions(before, after))

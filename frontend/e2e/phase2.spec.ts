@@ -19,8 +19,13 @@ async function typeInto(page: Page, editor: ReturnType<Page['locator']>, text: s
   await editor.click()
   await page.keyboard.press('Control+a')
   await page.keyboard.type(text)
-  // Saving happens on blur.
-  await page.locator('h1').first().click()
+  // Drafts are live: every keystroke goes to the collaboration service, which saves rows on its own.
+  await expect(editor).toHaveText(text)
+}
+
+async function expectLiveEditing(page: Page) {
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-state', 'connected')
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-mode', 'write')
 }
 
 test('a program on a four-level template, two versions, and a correct comparison', async ({ page }) => {
@@ -76,6 +81,7 @@ test('a program on a four-level template, two versions, and a correct comparison
   await page.getByTestId('create-program').click()
   await expect(page.getByTestId('program-heading')).toHaveText(programTitle)
   await page.getByRole('link', { name: 'النسخة 1' }).click()
+  await expectLiveEditing(page)
 
   // 4. A tree four levels deep, with blocks and an alignment link.
   for (const [label, title] of [
@@ -95,11 +101,9 @@ test('a program on a four-level template, two versions, and a correct comparison
   await lessonBlocks.locator('select').selectOption('objective')
   await lessonBlocks.getByRole('button').click()
   await typeInto(page, page.getByTestId('block-objective').locator('.ProseMirror'), 'يحدد المتدرب مخاطر موقع العمل')
-  await expect(page.getByTestId('block-objective').getByTestId('save-state')).toHaveText('حُفظ')
   await lessonBlocks.locator('select').selectOption('content')
   await lessonBlocks.getByRole('button').click()
   await typeInto(page, page.getByTestId('block-content').locator('.ProseMirror'), 'النص الأول للمحتوى')
-  await expect(page.getByTestId('block-content').getByTestId('save-state')).toHaveText('حُفظ')
   await page.getByTestId('link-objective_competency').selectOption({ index: 1 })
   await expect(page.getByTestId('block-objective').locator('.chip')).toContainText('SAF-01')
   await shot(page, '11-version-1-tree-ar')
@@ -114,9 +118,9 @@ test('a program on a four-level template, two versions, and a correct comparison
 
   // 6. Change version 2: one block edited, one node renamed, one node added.
   await page.getByRole('link', { name: 'النسخة 2' }).click()
+  await expectLiveEditing(page)
   await expect(page.getByTestId('block-content').locator('.ProseMirror')).toHaveText('النص الأول للمحتوى')
   await typeInto(page, page.getByTestId('block-content').locator('.ProseMirror'), 'النص المعدّل للمحتوى')
-  await expect(page.getByTestId('block-content').getByTestId('save-state')).toHaveText('حُفظ')
   const module = page.getByTestId('node-الوحدة الأولى')
   await module.locator('.node-header').first().getByTestId('rename-node').click()
   await module.getByTestId('rename-input').fill('الوحدة الأولى المعدّلة')

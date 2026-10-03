@@ -187,3 +187,12 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
 .removed-text { text-decoration: line-through; color: var(--color-danger); }
 .added-text { color: #1e7a4c; }
 .quick-links { margin-block-start: calc(var(--space) * 2); }
+
+.live-status p { margin: 4px 0; }
+.live-status .error { background: #fbeaea; padding: var(--space); border-radius: 6px; }
+/* Remote carets drawn by the collaboration caret extension. */
+.collaboration-carets__caret { position: relative; margin-inline: -1px; border-inline: 1px solid; pointer-events: none; word-break: normal; }
+.collaboration-carets__label {
+  position: absolute; inset-block-start: -1.4em; inset-inline-start: -1px; padding: 0 4px; border-radius: 3px;
+  font-size: 0.75rem; color: #fff; white-space: nowrap; user-select: none;
+}

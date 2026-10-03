@@ -90,12 +90,14 @@ class VersionDetailSerializer(serializers.ModelSerializer):
     targets = serializers.SerializerMethodField()
     source_version = serializers.IntegerField(source="source_version.number", default=None, read_only=True)
     permissions = serializers.SerializerMethodField()
+    live = serializers.SerializerMethodField()
 
     class Meta:
         model = ProgramVersion
         fields = [
             "id",
             "permissions",
+            "live",
             "program",
             "number",
             "status",
@@ -112,6 +114,17 @@ class VersionDetailSerializer(serializers.ModelSerializer):
     def get_permissions(self, version) -> dict:
         allowed = _permissions(self, version.program)
         return {**allowed, "edit": allowed["edit"] and version.is_editable}
+
+    def get_live(self, version) -> dict:
+        draft = getattr(version, "draft_document", None) if hasattr(version, "draft_document") else None
+        if draft is None:
+            return {"is_live": False, "materialized_at": None, "last_error": None, "issues": []}
+        return {
+            "is_live": True,
+            "materialized_at": draft.materialized_at,
+            "last_error": draft.last_error or None,
+            "issues": draft.issues,
+        }
 
     def get_program(self, version) -> dict:
         return {"id": version.program_id, "title": version.program.title, "owner_id": version.program.owner_id}

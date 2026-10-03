@@ -1,0 +1,370 @@
+import {
+  addBlock,
+  addLink,
+  addNode,
+  DocumentRuleError,
+  moveNode,
+  removeLink,
+  renameNode,
+  setBlockDeleted,
+  setNodeDeleted,
+} from '@harak2/shared'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router'
+import type * as Y from 'yjs'
+
+import { http } from '../../api'
+import { ErrorMessage } from '../../components/ErrorMessage'
+import { StatusBadge } from '../../components/StatusBadge'
+import { useAction } from '../../hooks/useResource'
+import { LiveBlockEditor } from '../../live/LiveBlockEditor'
+import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../../live/snapshot'
+import { type LiveDocument, useLiveDocument } from '../../live/useLiveDocument'
+import { BLOCK_TYPES, type BlockType, type FrameworkVersionDetail, type ProgramVersionDetail } from '../../types'
+
+interface Ctx {
+  doc: Y.Doc
+  snapshot: Snapshot
+  editable: boolean
+  levelCount: number
+  framework: FrameworkVersionDetail | undefined
+  levelName: (level: number) => string
+  edit: (change: () => void) => void
+}
+
+/** A draft edited live through the collaboration service (phase 3). */
+export function LiveVersionPage({
+  version,
+  framework,
+  onSubmitted,
+}: {
+  version: ProgramVersionDetail
+  framework: FrameworkVersionDetail | undefined
+  onSubmitted: () => void
+}) {
+  const { t, i18n } = useTranslation()
+  const live = useLiveDocument(version.id)
+  const snapshot = useSnapshot(live?.doc)
+  const action = useAction()
+  const [ruleError, setRuleError] = useState<string | null>(null)
+
+  const levels = version.template.levels
+  const editable = Boolean(live && !live.locked && live.mode === 'write' && live.status === 'connected' && live.synced)
+  const ctx: Ctx | null = live && {
+    doc: live.doc,
+    snapshot,
+    editable,
+    levelCount: levels.length,
+    framework,
+    levelName: (level) => {
+      const found = levels.find((l) => l.depth === level)
+      return found ? (i18n.language === 'ar' ? found.name_ar : found.name_en) : ''
+    },
+    edit: (change) => {
+      setRuleError(null)
+      try {
+        change()
+      } catch (error) {
+        if (error instanceof DocumentRuleError) setRuleError(error.code)
+        else throw error
+      }
+    },
+  }
+  const roots = snapshot.nodes.filter((n) => n.parent === null)
+
+  async function submit() {
+    const done = await action.run(() => http.post(`/api/program-versions/${version.id}/submit/`))
+    if (done) onSubmitted()
+  }
+
+  return (
+    <section className="card">
+      <p>
+        <Link to={`/programs/${version.program.id}`}>{version.program.title}</Link>
+      </p>
+      <h1>
+        {t('common.version', { number: version.number })} <StatusBadge status={version.status} />
+      </h1>
+      <LiveStatusBar live={live} version={version} />
+      <ErrorMessage code={action.error ?? ruleError} testId="version-error" />
+      {version.permissions.collaborate && (
+        <div className="row">
+          <button type="button" className="primary-inline" data-testid="submit-version" disabled={action.busy} onClick={() => void submit()}>
+            {t('programs.submit')}
+          </button>
+        </div>
+      )}
+
+      <h2>{t('programs.targets')}</h2>
+      <ul className="plain" data-testid="version-targets">
+        {version.targets.map((target) => (
+          <li key={target.id}>
+            <span dir="ltr">{target.code}</span> {target.title}
+          </li>
+        ))}
+      </ul>
+
+      <h2>{t('tree.title')}</h2>
+      {ctx && live?.synced && (
+        <div className="tree" data-testid="tree">
+          {roots.length === 0 && <p className="muted">{t('tree.empty', { level: ctx.levelName(0) })}</p>}
+          {roots.map((node) => (
+            <NodeView key={node.key} node={node} ctx={ctx} />
+          ))}
+          {ctx.editable && <AddNode parent={null} ctx={ctx} />}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function LiveStatusBar({ live, version }: { live: LiveDocument | null; version: ProgramVersionDetail }) {
+  const { t, i18n } = useTranslation()
+  if (!live) return null
+  let message: string
+  let tone = 'notice'
+  if (live.authFailed) (message = t('live.authFailed')), (tone = 'error')
+  else if (live.locked) (message = t('live.locked')), (tone = 'error')
+  else if (live.status === 'disconnected') (message = t('live.offline')), (tone = 'error')
+  else if (live.status === 'connecting' || !live.synced) message = t('live.connecting')
+  else if (live.mode === 'read') message = t('live.readOnly')
+  else message = t('live.connected')
+  const savedAt = version.live.materialized_at
+  return (
+    <div className="live-status">
+      <p className={tone} data-testid="live-status" data-state={live.locked ? 'locked' : live.status} data-mode={live.mode ?? ''}>
+        {message}
+      </p>
+      {version.live.last_error && (
+        <p className="error" data-testid="live-save-error">
+          {t('live.saveError', { error: version.live.last_error })}
+        </p>
+      )}
+      {savedAt && <p className="muted">{t('live.lastSaved', { time: new Date(savedAt).toLocaleString(i18n.language) })}</p>}
+    </div>
+  )
+}
+
+function AddNode({ parent, ctx }: { parent: LiveNode | null; ctx: Ctx }) {
+  const { t } = useTranslation()
+  const [title, setTitle] = useState('')
+  const level = parent ? parent.level + 1 : 0
+  if (level >= ctx.levelCount) return null
+  const label = t(parent ? 'tree.addChild' : 'tree.addRoot', { level: ctx.levelName(level) })
+  return (
+    <form
+      className="row add-node"
+      onSubmit={(event) => {
+        event.preventDefault()
+        ctx.edit(() => addNode(ctx.doc, { parent: parent?.key ?? null, title }, ctx.levelCount))
+        setTitle('')
+      }}
+    >
+      <input required aria-label={label} placeholder={label} value={title} onChange={(e) => setTitle(e.target.value)} />
+      <button type="submit" className="secondary">
+        {t('common.add')}
+      </button>
+    </form>
+  )
+}
+
+function NodeView({ node, ctx }: { node: LiveNode; ctx: Ctx }) {
+  const { t } = useTranslation()
+  const [renaming, setRenaming] = useState(false)
+  const [title, setTitle] = useState(node.title)
+  const children = ctx.snapshot.nodes.filter((n) => n.parent === node.key)
+  const blocks = ctx.snapshot.blocks.filter((b) => b.node_key === node.key)
+  const possibleParents = ctx.snapshot.nodes.filter((n) => !n.deleted && n.level === node.level - 1 && n.key !== node.parent)
+
+  return (
+    <div className={node.deleted ? 'node deleted' : 'node'} data-testid={`node-${node.title}`} data-level={node.level}>
+      <div className="node-header">
+        <span className="badge">{ctx.levelName(node.level)}</span>
+        {renaming ? (
+          <form
+            className="row"
+            onSubmit={(event) => {
+              event.preventDefault()
+              ctx.edit(() => renameNode(ctx.doc, node.key, title))
+              setRenaming(false)
+            }}
+          >
+            <input aria-label={t('tree.nodeTitle')} value={title} data-testid="rename-input" onChange={(e) => setTitle(e.target.value)} />
+            <button type="submit" className="secondary">
+              {t('common.save')}
+            </button>
+          </form>
+        ) : (
+          <strong>{node.title}</strong>
+        )}
+        {node.deleted && <span className="muted">{t('common.deleted')}</span>}
+        {ctx.editable && !renaming && (
+          <span className="node-actions">
+            <button
+              type="button"
+              className="link-button"
+              data-testid="rename-node"
+              onClick={() => {
+                setTitle(node.title)
+                setRenaming(true)
+              }}
+            >
+              {t('common.rename')}
+            </button>
+            <button type="button" className="link-button" onClick={() => ctx.edit(() => setNodeDeleted(ctx.doc, node.key, !node.deleted))}>
+              {node.deleted ? t('common.restore') : t('common.delete')}
+            </button>
+            {node.level > 0 && possibleParents.length > 0 && (
+              <select
+                aria-label={t('tree.moveTo')}
+                value=""
+                data-testid="move-node"
+                onChange={(e) => ctx.edit(() => moveNode(ctx.doc, node.key, { parent: e.target.value }, ctx.levelCount))}
+              >
+                <option value="">{t('tree.moveTo')}</option>
+                {possibleParents.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            )}
+          </span>
+        )}
+      </div>
+      {!node.deleted && (
+        <div className="node-body">
+          {blocks.map((block) => (
+            <BlockView key={block.key} block={block} ctx={ctx} />
+          ))}
+          {ctx.editable && <AddBlock node={node} ctx={ctx} />}
+          {children.map((child) => (
+            <NodeView key={child.key} node={child} ctx={ctx} />
+          ))}
+          {ctx.editable && <AddNode parent={node} ctx={ctx} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AddBlock({ node, ctx }: { node: LiveNode; ctx: Ctx }) {
+  const { t } = useTranslation()
+  const [type, setType] = useState<BlockType>('objective')
+  return (
+    <div className="row add-block" data-testid={`add-block-${node.title}`}>
+      <select aria-label={t('tree.blockType')} value={type} onChange={(e) => setType(e.target.value as BlockType)}>
+        {BLOCK_TYPES.map((value) => (
+          <option key={value} value={value}>
+            {t(`blockType.${value}`)}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="secondary" onClick={() => ctx.edit(() => addBlock(ctx.doc, { node_key: node.key, type }))}>
+        {t('tree.addBlock')}
+      </button>
+    </div>
+  )
+}
+
+function BlockView({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
+  const { t } = useTranslation()
+  return (
+    <div className={block.deleted ? 'block deleted' : 'block'} data-testid={`block-${block.type}`} data-block-key={block.key}>
+      <div className="block-header">
+        <span className={`badge badge-${block.type}`}>{t(`blockType.${block.type}`)}</span>
+        {block.deleted && <span className="muted">{t('common.deleted')}</span>}
+        {ctx.editable && (
+          <button type="button" className="link-button" onClick={() => ctx.edit(() => setBlockDeleted(ctx.doc, block.key, !block.deleted))}>
+            {block.deleted ? t('common.restore') : t('common.delete')}
+          </button>
+        )}
+      </div>
+      {!block.deleted && (
+        <>
+          <LiveBlockEditor doc={ctx.doc} blockKey={block.key} editable={ctx.editable} />
+          <Alignment block={block} ctx={ctx} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function Alignment({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
+  const { t } = useTranslation()
+  const outgoing = ctx.snapshot.links.filter((link) => link.source_key === block.key)
+  const objectives = ctx.snapshot.blocks.filter((b) => b.type === 'objective' && !b.deleted && b.key !== block.key)
+  const competencies = ctx.framework?.competencies ?? []
+  const nodeOf = (key: string) => ctx.snapshot.nodes.find((n) => n.key === key)
+  const ancestors = new Set<string>()
+  for (let cursor = nodeOf(block.node_key)?.parent ?? null; cursor !== null; cursor = nodeOf(cursor)?.parent ?? null) {
+    if (ancestors.has(cursor)) break
+    ancestors.add(cursor)
+  }
+  const objectiveLabel = (key: string | null) => {
+    const index = objectives.findIndex((o) => o.key === key)
+    return index === -1 ? '' : `${t('blockType.objective')} ${index + 1}`
+  }
+
+  type Option = { kind: 'objective_competency' | 'assessment_objective' | 'objective_parent'; label: string; choices: Array<{ value: string; label: string }> }
+  const options: Option[] = []
+  if (block.type === 'objective') {
+    options.push({ kind: 'objective_competency', label: t('alignment.competencies'), choices: competencies.map((c) => ({ value: c.competency_key, label: `${c.code} ${c.title}` })) })
+    options.push({
+      kind: 'objective_parent',
+      label: t('alignment.parents'),
+      choices: objectives.filter((o) => ancestors.has(o.node_key)).map((o) => ({ value: o.key, label: objectiveLabel(o.key) })),
+    })
+  }
+  if (block.type === 'assessment') {
+    options.push({ kind: 'assessment_objective', label: t('alignment.objectives'), choices: objectives.map((o) => ({ value: o.key, label: objectiveLabel(o.key) })) })
+  }
+  if (options.length === 0) return null
+
+  return (
+    <div className="alignment" data-testid="alignment">
+      {options.map((option) => (
+        <div className="row" key={option.kind}>
+          <span className="muted">{option.label}</span>
+          {outgoing
+            .filter((link) => link.kind === option.kind)
+            .map((link) => (
+              <span className="chip" key={link.key}>
+                {link.competency_key ? (competencies.find((c) => c.competency_key === link.competency_key)?.code ?? '') : objectiveLabel(link.target_key)}
+                {ctx.editable && (
+                  <button type="button" className="link-button" onClick={() => ctx.edit(() => removeLink(ctx.doc, link.key))}>
+                    {t('programs.remove')}
+                  </button>
+                )}
+              </span>
+            ))}
+          {ctx.editable && option.choices.length > 0 && (
+            <select
+              aria-label={option.label}
+              value=""
+              data-testid={`link-${option.kind}`}
+              onChange={(e) =>
+                ctx.edit(() =>
+                  addLink(
+                    ctx.doc,
+                    option.kind === 'objective_competency'
+                      ? { kind: option.kind, source_key: block.key, competency_key: e.target.value }
+                      : { kind: option.kind, source_key: block.key, target_key: e.target.value },
+                  ),
+                )
+              }
+            >
+              <option value="">{t('alignment.choose')}</option>
+              {option.choices.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}

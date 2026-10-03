@@ -243,7 +243,10 @@ def test_once_live_the_draft_refuses_rest_content_writes(world):
         assert excinfo.value.get_codes() == "draft_is_live"
 
 
-def test_a_new_draft_copies_the_yjs_state(world):
+def test_a_new_draft_copies_the_yjs_state(world, monkeypatch):
+    from apps.collab import client as collab_client
+
+    monkeypatch.setattr(collab_client, "call", lambda action, document: {"status": "saved", "error": None})
     v1 = world["version"]
     service().put(url(v1), {"state": base64.b64encode(b"state-v1").decode(), "rows": rows_for(world)}, format="json")
     with organization_context(world["org"]):

@@ -11,6 +11,7 @@ const port = Number(process.env.PORT ?? 1234)
 const service = createCollabServer({
   port,
   tokenSecret: required('COLLAB_TOKEN_SECRET'),
+  serviceSecret: required('COLLAB_SERVICE_SECRET'),
   store: new DjangoStore(required('DJANGO_INTERNAL_URL'), required('COLLAB_SERVICE_SECRET')),
 })
 

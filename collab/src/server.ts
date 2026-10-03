@@ -1,5 +1,7 @@
 import { hydrate, materialize } from '@harak2/shared'
 import { type Document, Server } from '@hocuspocus/server'
+import { timingSafeEqual } from 'node:crypto'
+
 import * as Y from 'yjs'
 
 import { AuthenticationRefused, type Grant, verifyToken } from './auth.js'
@@ -8,6 +10,8 @@ import type { DocumentStore } from './store.js'
 export interface CollabServerOptions {
   port: number
   tokenSecret: string
+  /** Secret Django presents on the internal flush and lock endpoints. */
+  serviceSecret?: string
   store?: DocumentStore
   name?: string
   /** Quiet period before a changed document is saved, and the longest it may wait. */
@@ -46,6 +50,8 @@ export class CollabService {
       port: options.port,
       name: options.name ?? 'harak2-collab',
       quiet: true,
+      // Shutdown is handled by main.ts, which saves pending documents first.
+      stopOnSignals: false,
       debounce: options.debounceMs ?? 2000,
       maxDebounce: options.maxDebounceMs ?? 10_000,
       onAuthenticate: async ({ token, documentName, connectionConfig }) => {
@@ -78,16 +84,44 @@ export class CollabService {
       afterUnloadDocument: async ({ documentName }) => {
         this.status.delete(documentName)
       },
-      onRequest: ({ request, response }) => {
-        if (request.url === '/health') {
-          response.writeHead(200, { 'Content-Type': 'application/json' })
-          response.end(JSON.stringify({ status: 'ok', service: 'collab' }))
-          // A rejection with no value tells Hocuspocus the request was handled here.
-          return Promise.reject()
+      onRequest: async ({ request, response }) => {
+        const reply = (status: number, body: unknown) => {
+          response.writeHead(status, { 'Content-Type': 'application/json' })
+          response.end(JSON.stringify(body))
         }
-        return Promise.resolve()
+        if (request.url === '/health') {
+          reply(200, { status: 'ok', service: 'collab' })
+          // A rejection with no value tells Hocuspocus the request was handled here.
+          throw undefined
+        }
+        const internal = /^\/internal\/documents\/([^/]+)\/(flush|lock)$/.exec(request.url ?? '')
+        if (internal && request.method === 'POST') {
+          if (!this.authorizedService(request.headers.authorization)) reply(403, { error: 'forbidden' })
+          else reply(200, await this.internal(decodeURIComponent(internal[1]), internal[2] as 'flush' | 'lock'))
+          throw undefined
+        }
       },
     })
+  }
+
+  private authorizedService(header: string | undefined): boolean {
+    const secret = this.options.serviceSecret
+    if (!secret || !header?.startsWith('Service ')) return false
+    const given = Buffer.from(header.slice('Service '.length))
+    const expected = Buffer.from(secret)
+    return given.length === expected.length && timingSafeEqual(given, expected)
+  }
+
+  /** Django asks to save a document now (before submission) or to stop accepting edits (after it). */
+  private async internal(documentName: string, action: 'flush' | 'lock') {
+    const document = this.server.hocuspocus.documents.get(documentName)
+    if (action === 'lock') {
+      this.lock(documentName)
+      return { status: 'locked', loaded: Boolean(document) }
+    }
+    if (!document) return { status: 'not_loaded' }
+    const status = await this.store(documentName, document, null)
+    return { status: status?.lastSave === 'failed' ? 'failed' : 'saved', error: status?.lastError ?? null }
   }
 
   statusOf(documentName: string): DocumentStatus | undefined {
@@ -130,6 +164,8 @@ export class CollabService {
     document?.connections.forEach((_value, connection) => {
       connection.readOnly = true
     })
+    // Tell every open editor, so it switches to read-only instead of typing into the void.
+    document?.broadcastStateless(JSON.stringify({ type: 'locked' }))
   }
 
   listen() {
