@@ -1,0 +1,14 @@
+{
+  "name": "harak2-parity",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs Harak 1 read-only in a headless browser and records what its own rule functions return for a fixed corpus; the Python rules are tested against these outputs.",
+  "type": "module",
+  "scripts": {
+    "extract": "node extract.mjs",
+    "check": "node extract.mjs --check"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

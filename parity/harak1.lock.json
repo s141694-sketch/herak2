@@ -1,0 +1,6 @@
+{
+  "description": "The exact Harak 1 file the expected outputs were taken from. It is read and run only, never modified (CLAUDE.md). extract.mjs refuses any other file.",
+  "repository": "s141694-sketch/curriculum-reviewer",
+  "path": "curriculum-analyzer/curriculum-analyzer.html",
+  "sha256": "4e1256cfa7d1d16ccab29ae2e8a5cbfe69d5ea6991137228d6ac866efad7859e"
+}
