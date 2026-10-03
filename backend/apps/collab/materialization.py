@@ -18,7 +18,16 @@ from apps.programs.signals import content_changed
 
 
 class MaterializationError(Exception):
-    """The rows cannot be applied; the last good rows stay in place."""
+    """The rows cannot be applied; the last good rows stay in place.
+
+    The code tells editors what to fix in their own language; the message is for the technical log.
+    """
+
+    CODES = ("rows_invalid", "node_too_deep", "node_title_invalid", "block_content_invalid", "document_invalid")
+
+    def __init__(self, message: str, code: str = "rows_invalid"):
+        super().__init__(message)
+        self.code = code
 
 
 def rows_from_version(version: ProgramVersion) -> dict:
@@ -66,9 +75,9 @@ def _uuid(value, what: str) -> str:
         raise MaterializationError(f"{what} is not a valid key: {value!r}") from exc
 
 
-def _require(condition: bool, message: str) -> None:
+def _require(condition: bool, message: str, code: str = "rows_invalid") -> None:
     if not condition:
-        raise MaterializationError(message)
+        raise MaterializationError(message, code)
 
 
 @transaction.atomic
@@ -89,9 +98,9 @@ def apply_rows(version: ProgramVersion, rows: dict, *, actor=None) -> dict:
             _require(parent is not None, f"node {key} comes before its parent")
         level = 0 if parent is None else parent.level + 1
         _require(row.get("level") == level, f"node {key} has level {row.get('level')}, its place gives {level}")
-        _require(level < level_count, f"node {key} is deeper than the template's {level_count} levels")
+        _require(level < level_count, f"node {key} is deeper than the template's {level_count} levels", "node_too_deep")
         title = row.get("title")
-        _require(isinstance(title, str) and len(title) <= 500, f"node {key} has an invalid title")
+        _require(isinstance(title, str) and len(title) <= 500, f"node {key} has an invalid title", "node_title_invalid")
         order = row.get("order")
         _require(isinstance(order, int) and order >= 0, f"node {key} has an invalid order")
         fields = {"parent": parent, "level": level, "order": order, "title": title, "deleted": bool(row.get("deleted"))}
@@ -122,7 +131,7 @@ def apply_rows(version: ProgramVersion, rows: dict, *, actor=None) -> dict:
         try:
             body = block_content.validate(row.get("content"))
         except ProgramError as exc:
-            raise MaterializationError(f"block {key}: {exc.detail}") from exc
+            raise MaterializationError(f"block {key}: {exc.detail}", "block_content_invalid") from exc
         digest = block_content.content_hash(body)
         fields = {
             "node": node,

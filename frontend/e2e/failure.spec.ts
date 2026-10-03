@@ -20,7 +20,7 @@ test('a document the server rejects keeps the last good rows and blocks submissi
   await admin.getByTestId('add-block-الوحدة').getByRole('button').click()
   await admin.getByTestId('block-objective').locator('.ProseMirror').click()
   await admin.keyboard.type('نص سليم')
-  // Comparing a version with itself flushes its live document, so the rows are current.
+  // Comparing a version with itself first takes a snapshot of its live document, so the rows are current.
   await api(admin, 'GET', `/api/program-versions/${versionId}/diff/${versionId}/`)
   const good = await api<Tree>(admin, 'GET', `/api/program-versions/${versionId}/tree/`)
   expect(JSON.stringify(good.blocks[0].content)).toContain('نص سليم')

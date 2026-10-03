@@ -19,7 +19,10 @@ class DraftDocument(OrganizationScopedModel):
     updated_at = models.DateTimeField(auto_now=True)
     materialized_at = models.DateTimeField(null=True, blank=True)
     issues = models.JSONField(default=list, blank=True)
+    # The collaboration service numbers what it sends; an older save arriving late never overwrites a newer one.
+    saved_seq = models.BigIntegerField(default=0)
     last_error = models.TextField(blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
     last_error_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:

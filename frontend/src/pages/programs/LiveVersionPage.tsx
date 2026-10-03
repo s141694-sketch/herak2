@@ -81,7 +81,7 @@ export function LiveVersionPage({
   const [ruleError, setRuleError] = useState<string | null>(null)
 
   const levels = version.template.levels
-  const editable = Boolean(live && !live.locked && live.mode === 'write' && live.status === 'connected' && live.synced)
+  const editable = Boolean(live && !live.locked && !live.frozen && live.mode === 'write' && live.status === 'connected' && live.synced)
   const role = session?.organization?.role
   const commentContext: CommentContext | null = live && {
     programId: version.program.id,
@@ -206,6 +206,7 @@ function LiveStatusBar({ live, version }: { live: LiveDocument | null; version: 
   let tone = 'notice'
   if (live.authFailed) (message = t('live.authFailed')), (tone = 'error')
   else if (live.locked) (message = t('live.locked')), (tone = 'error')
+  else if (live.frozen) message = t('live.frozen')
   else if (live.status === 'disconnected') (message = t('live.offline')), (tone = 'error')
   else if (live.status === 'connecting' || !live.synced) message = t('live.connecting')
   else if (live.mode === 'read') message = t('live.readOnly')
@@ -215,7 +216,7 @@ function LiveStatusBar({ live, version }: { live: LiveDocument | null; version: 
   const saveError = live.saveError !== undefined ? live.saveError : version.live.last_error
   return (
     <div className="live-status">
-      <p className={tone} data-testid="live-status" data-state={live.locked ? 'locked' : live.status} data-mode={live.mode ?? ''}>
+      <p className={tone} data-testid="live-status" data-state={live.locked ? 'locked' : live.frozen ? 'frozen' : live.status} data-mode={live.mode ?? ''}>
         {message}
       </p>
       {saveError && (

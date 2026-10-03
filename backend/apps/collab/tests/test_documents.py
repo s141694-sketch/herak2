@@ -190,45 +190,92 @@ def test_invalid_links_are_skipped_and_reported_not_fatal(world):
         assert AlignmentLink.objects.filter(version=v).count() == 2
 
 
-def test_a_failed_materialization_keeps_the_last_good_rows_and_records_the_error(world, monkeypatch):
+def test_a_failed_materialization_keeps_the_last_good_rows_and_the_newer_state(world, monkeypatch):
+    """The rows stay at the last good save; the state is kept so a restart of the editor loses nothing typed."""
     alerts = []
     monkeypatch.setattr(
-        "apps.collab.internal_views.sentry_sdk.capture_message", lambda message, level: alerts.append((message, level))
+        "apps.collab.saving.sentry_sdk.capture_message", lambda message, level: alerts.append((message, level))
     )
     v = world["version"]
-    assert (
-        service()
-        .put(url(v), {"state": "AQ==", "rows": rows_for(world, objective_text="أول حفظ")}, format="json")
-        .status_code
-        == 200
-    )
+    first = {"state": "AQ==", "rows": rows_for(world, objective_text="أول حفظ"), "seq": 10}
+    assert service().put(url(v), first, format="json").status_code == 200
     bad = rows_for(world, objective_text="ثاني")
     bad["blocks"][0]["content"] = {"type": "doc", "content": [{"type": "iframe"}]}
-    response = service().put(url(v), {"state": "Ag==", "rows": bad}, format="json")
+    response = service().put(url(v), {"state": "Ag==", "rows": bad, "seq": 11}, format="json")
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "materialization_failed"
+    error = response.json()["error"]
+    assert error["code"] == "block_content_invalid" and error["details"] == {"state_saved": True}
     with organization_context(world["org"]):
         world["objective"].refresh_from_db()
         assert world["objective"].content == doc("أول حفظ")
         draft = DraftDocument.objects.get(version=v)
-        assert bytes(draft.state) == b"\x01", "the state that failed is not stored over the last good one"
+        assert bytes(draft.state) == b"\x02" and draft.saved_seq == 11
         assert "content" in draft.last_error and draft.last_error_at
+        assert draft.last_error_code == "block_content_invalid"
     assert alerts and alerts[0][1] == "error", "a technical alert is raised"
+    fixed = {"state": "Aw==", "rows": rows_for(world, objective_text="ثالث"), "seq": 12}
+    assert service().put(url(v), fixed, format="json").status_code == 200
+    with organization_context(world["org"]):
+        draft = DraftDocument.objects.get(version=v)
+        assert draft.last_error == "" and draft.last_error_code == "" and draft.last_error_at is None
+
+
+@pytest.mark.parametrize(
+    ("change", "code"),
+    [
+        (lambda rows: rows["nodes"][0].update(title="ط" * 501), "node_title_invalid"),
+        (lambda rows: rows["blocks"][0].update(type="poem"), "rows_invalid"),
+        (lambda rows: rows["nodes"][0].update(node_key="not-a-key"), "rows_invalid"),
+    ],
+)
+def test_each_materialization_error_carries_a_code_the_editor_translates(world, change, code):
+    rows = rows_for(world)
+    change(rows)
+    response = service().put(url(world["version"]), {"state": "AA==", "rows": rows, "seq": 1}, format="json")
+    assert response.status_code == 422 and response.json()["error"]["code"] == code
+
+
+def test_a_save_older_than_the_stored_one_changes_nothing(world):
+    """A slow save may arrive after a newer one (a submission snapshot, a retry); the newer content stays."""
+    v = world["version"]
+    newer = {"state": "Ag==", "rows": rows_for(world, objective_text="أحدث"), "seq": 20}
+    older = {"state": "AQ==", "rows": rows_for(world, objective_text="أقدم"), "seq": 19}
+    assert service().put(url(v), newer, format="json").status_code == 200
+    response = service().put(url(v), older, format="json")
+    assert response.status_code == 200 and response.json()["stale"] is True
+    with organization_context(world["org"]):
+        world["objective"].refresh_from_db()
+        assert world["objective"].content == doc("أحدث")
+        assert bytes(DraftDocument.objects.get(version=v).state) == b"\x02"
+
+
+def test_the_service_reports_a_document_it_cannot_read(world, monkeypatch):
+    monkeypatch.setattr("apps.collab.saving.sentry_sdk.capture_message", lambda message, level: None)
+    v = world["version"]
+    response = service().post(
+        f"{url(v)}failure/", {"error": "materialize: bad block", "code": "document_invalid"}, format="json"
+    )
+    assert response.status_code == 200
+    with organization_context(world["org"]):
+        draft = DraftDocument.objects.get(version=v)
+        assert draft.last_error == "materialize: bad block" and draft.last_error_code == "document_invalid"
+    unknown = service().post(f"{url(v)}failure/", {"error": "x", "code": "<script>"}, format="json")
+    assert unknown.status_code == 200
+    with organization_context(world["org"]):
+        assert DraftDocument.objects.get(version=v).last_error_code == "document_invalid"
 
 
 def test_nodes_deeper_than_the_template_fail_materialization(world):
     rows = rows_for(world)
-    rows["nodes"].append(
-        {
-            "node_key": "66666666-6666-4666-8666-666666666666",
-            "parent_key": str(world["root"].node_key),
-            "level": 4,
-            "order": 1,
-            "title": "عميق",
-            "deleted": False,
-        }
-    )
-    assert service().put(url(world["version"]), {"state": "AA==", "rows": rows}, format="json").status_code == 422
+    parent = str(world["root"].node_key)
+    for level in range(1, 5):  # the template has four levels, 0 to 3
+        key = f"6666666{level}-6666-4666-8666-666666666666"
+        rows["nodes"].append(
+            {"node_key": key, "parent_key": parent, "level": level, "order": 1, "title": "عميق", "deleted": False}
+        )
+        parent = key
+    response = service().put(url(world["version"]), {"state": "AA==", "rows": rows}, format="json")
+    assert response.status_code == 422 and response.json()["error"]["code"] == "node_too_deep"
 
 
 def test_locked_versions_cannot_be_saved(world):
@@ -251,7 +298,7 @@ def test_once_live_the_draft_refuses_rest_content_writes(world):
 def test_a_new_draft_copies_the_yjs_state(world, monkeypatch):
     from apps.collab import client as collab_client
 
-    monkeypatch.setattr(collab_client, "call", lambda action, document: {"status": "saved", "error": None})
+    monkeypatch.setattr(collab_client, "call", lambda action, document, **kwargs: {"status": "not_loaded"})
     v1 = world["version"]
     service().put(url(v1), {"state": base64.b64encode(b"state-v1").decode(), "rows": rows_for(world)}, format="json")
     with organization_context(world["org"]):

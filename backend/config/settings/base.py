@@ -20,6 +20,7 @@ env = environ.Env(
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
+    COLLAB_SNAPSHOT_TIMEOUT_SECONDS=(float, 3.0),
     AI_PROVIDER=(str, "claude"),
     AI_MODEL=(str, "claude-opus-5-5"),
     AI_TIMEOUT_SECONDS=(float, 60.0),
@@ -133,6 +134,8 @@ COLLAB_SERVICE_SECRET = env("COLLAB_SERVICE_SECRET")
 COLLAB_TOKEN_TTL_SECONDS = env("COLLAB_TOKEN_TTL_SECONDS")
 COLLAB_INTERNAL_URL = env("COLLAB_INTERNAL_URL")
 COLLAB_TIMEOUT_SECONDS = env("COLLAB_TIMEOUT_SECONDS")
+# Readers of a live draft's rows (comparison, analysis) wait this long for its latest content, then read the rows.
+COLLAB_SNAPSHOT_TIMEOUT_SECONDS = env("COLLAB_SNAPSHOT_TIMEOUT_SECONDS")
 # A live save carries the whole document twice (rows and Yjs state); it has its own limit (internal endpoint only).
 COLLAB_SAVE_MAX_BYTES = env("COLLAB_SAVE_MAX_BYTES")
 # The collaboration service calls Django directly over the private network, not through the TLS proxy.

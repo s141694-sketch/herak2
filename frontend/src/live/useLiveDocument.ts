@@ -17,10 +17,14 @@ export interface LiveDocument {
   authFailed: boolean
   /** The version left draft status while this editor was open (it was submitted or cancelled). */
   locked: boolean
+  /** Someone is submitting or cancelling the draft: edits wait until that ends (unfrozen) or locks it. */
+  frozen: boolean
   /** Bumped when another client announces that comments changed. */
   commentsVersion: number
   /** Last save news from the service: an error, null once saving works again, undefined before any news. */
   saveError: string | null | undefined
+  /** The code of the last save error, which the page translates. */
+  saveErrorCode: string | null
 }
 
 interface TokenResponse {
@@ -59,17 +63,24 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
       onAuthenticationFailed: () => update({ authFailed: true }),
       onStateless: ({ payload }) => {
         try {
-          const type = JSON.parse(payload).type
-          if (type === 'locked') update({ locked: true, mode: 'read' })
-          if (type === 'save-failed') update({ saveError: String(JSON.parse(payload).error ?? '') })
-          if (type === 'saved') update({ saveError: null })
+          const message = JSON.parse(payload)
+          const type = message.type
+          if (type === 'locked') update({ locked: true, frozen: false, mode: 'read' })
+          if (type === 'frozen') update({ frozen: true })
+          if (type === 'unfrozen') {
+            update({ frozen: false })
+            // Anything typed in the moment before the freeze reached this editor was refused: send it again.
+            provider.forceSync()
+          }
+          if (type === 'save-failed') update({ saveError: String(message.error ?? ''), saveErrorCode: message.code ? String(message.code) : null })
+          if (type === 'saved') update({ saveError: null, saveErrorCode: null })
           if (type === 'comments-changed') setLive((current) => (current && current.doc === doc ? { ...current, commentsVersion: current.commentsVersion + 1 } : current))
         } catch {
           // Ignore messages this client does not understand.
         }
       },
     })
-    setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, mode: null, authFailed: false, locked: false, commentsVersion: 0, saveError: undefined })
+    setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, mode: null, authFailed: false, locked: false, frozen: false, commentsVersion: 0, saveError: undefined, saveErrorCode: null })
     return () => {
       provider.destroy()
       doc.destroy()

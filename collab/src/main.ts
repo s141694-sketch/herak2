@@ -17,9 +17,9 @@ const service = createCollabServer({
 
 service.listen().then(() => console.log(JSON.stringify({ event: 'collab.listening', port })))
 
+// Containers are given about ten seconds to stop: pending saves get eight, then the process exits regardless.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
-    service.server.hocuspocus.flushPendingStores()
-    service.destroy().then(() => process.exit(0))
+    service.destroy(8000).finally(() => process.exit(0))
   })
 }

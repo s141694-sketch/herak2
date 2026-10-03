@@ -288,6 +288,7 @@
     "lastSaved": "Rows last saved: {{time}}",
     "saveError": "The latest changes could not be saved, and submission is blocked until this is resolved: {{error}}",
     "locked": "This version was submitted or cancelled and can no longer be edited. Reload the page to see its state.",
+    "frozen": "Someone is submitting this version, so editing is paused. If the submission does not go through, editing resumes on its own.",
     "editing": "{{name}} is editing"
   },
   "comments": {

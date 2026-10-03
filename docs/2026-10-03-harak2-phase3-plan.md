@@ -12,11 +12,15 @@
 المتصفح (TipTap + Yjs)  ⇄  collab (Hocuspocus)  ⇄  Django
         │  رمز قصير العمر لمستند واحد ←──────────── POST /api/program-versions/{id}/collab-token/
         │                   │ تحميل الحالة أو الصفوف ── GET  /api/internal/collab/documents/{id}/
-        │                   │ حفظ الحالة + الصفوف ──── PUT  /api/internal/collab/documents/{id}/
+        │                   │ حفظ الحالة + الصفوف + رقم تسلسلي ── PUT  /api/internal/collab/documents/{id}/
         │                   │ الإبلاغ عن فشل التحويل ── POST /api/internal/collab/documents/{id}/failure/
-        │                   ⇠ تفريغ قبل الإرسال ─────── POST /internal/documents/{name}/flush   (Django ← collab)
-        │                   ⇠ قفل بعد الإرسال ───────── POST /internal/documents/{name}/lock
+        │                   ⇠ تجميد قبل الإرسال وإرجاع المستند ── POST /internal/documents/{name}/freeze   (Django ← collab)
+        │                   ⇠ فك التجميد إن بقيت مسودة ─────── POST /internal/documents/{name}/unfreeze?token=…
+        │                   ⇠ لقطة دون تجميد (المقارنة) ────── POST /internal/documents/{name}/snapshot
+        │                   ⇠ قفل بعد الإرسال ───────────────── POST /internal/documents/{name}/lock
 ```
+
+> **تعديل بعد المراجعة المستقلة (D43):** كان المخطط الأول «تفريغًا» تحفظ فيه خدمة التعاون عبر Django أثناء طلب Django نفسه، وهذا قد يستنفد عمّال Django، وتضيع فيه التعديلات بين التفريغ والقفل. صار Django يطلب «تجميدًا» يعيد المستند نفسه فيخزّنه Django بنفسه، ولا تستدعي أي من نداءات Django خدمةَ التعاون التي تعود إليه.
 
 - **`shared/`**: حزمة TypeScript تعيش في مساحة عمل npm واحدة مع `collab/` و`frontend/` حتى توجد نسخة واحدة من `yjs` (تكرارها يكسر Yjs). تحتوي مخطط المستند، وامتدادات المحرر (مصدر واحد لمخطط ProseMirror)، والتحويل `materialize` / `hydrate`، وتثبيت الملاحظات. كتابة جديدة مستفيدة من `spike/`، مع نقل اختباراته.
 - **Django لا يحلل Yjs أبدًا:** يخزن الحالة الثنائية كما هي، ويستقبل الصفوف جاهزة من خدمة التعاون ويتحقق منها.
