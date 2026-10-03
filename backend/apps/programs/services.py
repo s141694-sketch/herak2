@@ -9,6 +9,7 @@ from . import content as block_content
 from .copying import create_draft_copy
 from .errors import ProgramError
 from .models import AlignmentLink, Block, Node, Program, ProgramCollaborator, ProgramTarget, ProgramVersion
+from .signals import content_changed
 
 EDITING_ROLES = {Role.ADMIN, Role.AUTHOR}
 S = ProgramVersion.Status
@@ -56,6 +57,7 @@ def set_targets(version: ProgramVersion, target_ids, *, actor) -> ProgramVersion
     for competency_id in ids:
         ProgramTarget.objects.create(version=version, competency_id=competency_id)
     record("program_version.targets_changed", actor=actor, target=version, payload={"targets": ids})
+    _changed(version)
     return version
 
 
@@ -123,6 +125,11 @@ def _editable(version: ProgramVersion) -> ProgramVersion:
     return version
 
 
+def _changed(version: ProgramVersion) -> None:
+    """Tell followers (the quality engine) that this draft's rows changed."""
+    content_changed.send(sender=ProgramVersion, version=version)
+
+
 def _level_count(version: ProgramVersion) -> int:
     return version.program.template_version.levels.count()
 
@@ -161,14 +168,16 @@ def add_node(
     record(
         "program_node.added", actor=actor, target=version, payload={"node_key": str(node.node_key), "title": node.title}
     )
+    _changed(version)
     return node
 
 
 @transaction.atomic
 def update_node(node: Node, *, title: str, actor) -> Node:
-    _editable(node.version)
+    version = _editable(node.version)
     node.title = title.strip()
     node.save()
+    _changed(version)
     return node
 
 
@@ -191,6 +200,7 @@ def move_node(node: Node, *, parent: Node | None, order: int, actor) -> Node:
             member.order = order
         member.save()
     record("program_node.moved", actor=actor, target=version, payload={"node_key": str(node.node_key)})
+    _changed(version)
     node.refresh_from_db()
     return node
 
@@ -201,6 +211,7 @@ def soft_delete_node(node: Node, *, actor) -> Node:
     node.deleted = True
     node.save()
     record("program_node.deleted", actor=actor, target=node.version, payload={"node_key": str(node.node_key)})
+    _changed(node.version)
     return node
 
 
@@ -210,6 +221,7 @@ def restore_node(node: Node, *, actor) -> Node:
     node.deleted = False
     node.save()
     record("program_node.restored", actor=actor, target=node.version, payload={"node_key": str(node.node_key)})
+    _changed(node.version)
     return node
 
 
@@ -234,6 +246,7 @@ def add_block(
     record(
         "program_block.added", actor=actor, target=version, payload={"block_key": str(block.block_key), "type": type}
     )
+    _changed(version)
     return block
 
 
@@ -256,6 +269,7 @@ def update_block(
     if order is not None:
         block.order = order
     block.save()
+    _changed(version)
     return block
 
 
@@ -265,6 +279,7 @@ def soft_delete_block(block: Block, *, actor) -> Block:
     block.deleted = True
     block.save()
     record("program_block.deleted", actor=actor, target=block.version, payload={"block_key": str(block.block_key)})
+    _changed(block.version)
     return block
 
 
@@ -274,6 +289,7 @@ def restore_block(block: Block, *, actor) -> Block:
     block.deleted = False
     block.save()
     record("program_block.restored", actor=actor, target=block.version, payload={"block_key": str(block.block_key)})
+    _changed(block.version)
     return block
 
 
@@ -347,6 +363,7 @@ def link(version: ProgramVersion, *, kind: str, source: Block, actor, target: Bl
             "competency": competency.code if competency else None,
         },
     )
+    _changed(version)
     return created
 
 
@@ -360,3 +377,4 @@ def unlink(alignment_link: AlignmentLink, *, actor) -> None:
         payload={"kind": alignment_link.kind, "source": str(alignment_link.source.block_key)},
     )
     alignment_link.delete()
+    _changed(alignment_link.version)

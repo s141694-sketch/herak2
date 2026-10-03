@@ -14,6 +14,7 @@ from apps.programs import content as block_content
 from apps.programs import services as program_services
 from apps.programs.errors import ProgramError
 from apps.programs.models import AlignmentLink, Block, Node, ProgramVersion
+from apps.programs.signals import content_changed
 
 
 class MaterializationError(Exception):
@@ -189,4 +190,5 @@ def apply_rows(version: ProgramVersion, rows: dict, *, actor=None) -> dict:
 
     if changed:
         record("program_version.materialized", actor=actor, target=version, payload={"changed_blocks": changed})
+    content_changed.send(sender=ProgramVersion, version=version)
     return {"changed_blocks": changed, "skipped_links": skipped}

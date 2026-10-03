@@ -10,4 +10,5 @@ urlpatterns = [
     path("api/", include("apps.programs.urls")),
     path("api/", include("apps.collab.urls")),
     path("api/", include("apps.comments.urls")),
+    path("api/", include("apps.quality.urls")),
 ]
