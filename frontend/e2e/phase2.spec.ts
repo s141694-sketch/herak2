@@ -110,7 +110,8 @@ test('a program on a four-level template, two versions, and a correct comparison
 
   // 5. Submit, withdraw: version 1 is locked and version 2 is a draft copy.
   await page.getByTestId('submit-version').click()
-  await expect(page.getByText('هذه النسخة للقراءة فقط.')).toBeVisible()
+  // The submitted version reopens read-only on its frozen live state.
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-mode', 'read')
   await page.getByTestId('withdraw-version').click()
   await expect(page.getByTestId('program-versions').locator('tr')).toHaveCount(2)
   await expect(page.getByTestId('program-versions').locator('tr[data-version="1"]')).toContainText('مسحوبة')

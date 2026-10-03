@@ -81,6 +81,16 @@ export class CollabService {
       onStoreDocument: async ({ documentName, document, lastContext }) => {
         await this.store(documentName, document, lastContext?.grant?.userId ?? null)
       },
+      onStateless: async ({ connection, document, payload }) => {
+        // Clients announce changes that live outside the document (comments) so the others refresh.
+        let type: unknown
+        try {
+          type = JSON.parse(payload).type
+        } catch {
+          return
+        }
+        if (type === 'comments-changed') document.broadcastStateless(payload, (other) => other !== connection)
+      },
       afterUnloadDocument: async ({ documentName }) => {
         this.status.delete(documentName)
       },

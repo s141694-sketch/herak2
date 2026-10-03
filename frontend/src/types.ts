@@ -185,3 +185,27 @@ export interface Diff {
   targets: { added: Array<{ code: string; title: string }>; removed: Array<{ code: string; title: string }> }
   summary: { nodes: Record<Change, number>; blocks: Record<Change, number> }
 }
+
+export interface CommentReply {
+  id: number
+  author: { id: number; email: string; full_name: string }
+  body: string
+  created_at: string
+}
+
+export interface ProgramComment {
+  id: number
+  version: number
+  version_number: number
+  block_key: string | null
+  node_key: string | null
+  anchor: { start: string; end: string } | null
+  quoted: string
+  body: string
+  category: 'must_fix' | 'suggestion'
+  status: 'open' | 'resolved'
+  author: { id: number; email: string; full_name: string }
+  created_at: string
+  resolved_by: { id: number; email: string; full_name: string } | null
+  replies: CommentReply[]
+}

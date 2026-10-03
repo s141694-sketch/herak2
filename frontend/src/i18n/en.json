@@ -93,7 +93,10 @@
     "not_authenticated": "Sign in to continue.",
     "draft_is_live": "This draft is edited live in the editor.",
     "materialization_failed": "The latest changes could not be saved, so the program was not submitted. Check the content and try again.",
-    "collab_unavailable": "The editor cannot be reached to save the latest changes. Try submitting again shortly."
+    "collab_unavailable": "The editor cannot be reached to save the latest changes. Try submitting again shortly.",
+    "comment_target_missing": "Choose a block or node.",
+    "comment_target_unknown": "That block or node is not in this version.",
+    "comment_not_allowed": "You cannot do this to the comment."
   },
   "common": {
     "create": "Create",
@@ -284,5 +287,36 @@
     "saveError": "The latest changes could not be saved, and submission is blocked until this is resolved: {{error}}",
     "locked": "This version was submitted or cancelled and can no longer be edited. Reload the page to see its state.",
     "editing": "{{name}} is editing"
+  },
+  "comments": {
+    "title": "Comments",
+    "add": "Comment on selection",
+    "addBlock": "Comment on block",
+    "body": "Comment",
+    "category": "Category",
+    "save": "Add comment",
+    "reply": "Reply",
+    "replyPlaceholder": "Write a reply",
+    "resolve": "Mark resolved",
+    "reopen": "Reopen",
+    "unanchored": "Comments without a place",
+    "unanchoredHint": "The text these comments were on has been deleted.",
+    "status_intact": "On its text",
+    "status_changed": "The quoted text changed",
+    "status_orphaned": "Without a place",
+    "status_block": "On the whole block",
+    "quoted": "“{{text}}”",
+    "now": "Now: “{{text}}”",
+    "fromVersion": "From version {{number}}",
+    "show": "Show",
+    "resolvedCount": "{{count}} resolved"
+  },
+  "commentCategory": {
+    "must_fix": "Must fix",
+    "suggestion": "Suggestion"
+  },
+  "commentStatus": {
+    "open": "Open",
+    "resolved": "Resolved"
   }
 }

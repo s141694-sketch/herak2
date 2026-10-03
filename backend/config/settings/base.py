@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.structures",
     "apps.programs",
     "apps.collab",
+    "apps.comments",
 ]
 
 MIDDLEWARE = [

@@ -152,3 +152,18 @@ describe('internal endpoints for Django', () => {
     b.provider.destroy()
   })
 })
+
+
+describe('relaying announcements', () => {
+  it('passes a comments-changed announcement to the other clients only', async () => {
+    store.seed(42, { rows: rowsOfSample().rows })
+    const a = await connect(PORT, NAME, await token({}))
+    const b = await connect(PORT, NAME, await token({ sub: '8', mode: 'read' }))
+    a.provider.sendStateless(JSON.stringify({ type: 'comments-changed' }))
+    await eventually(() => b.stateless.includes(JSON.stringify({ type: 'comments-changed' })))
+    await settle(100)
+    expect(a.stateless).not.toContain(JSON.stringify({ type: 'comments-changed' }))
+    a.provider.destroy()
+    b.provider.destroy()
+  })
+})

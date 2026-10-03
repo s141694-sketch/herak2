@@ -48,8 +48,9 @@ export function VersionPage() {
     tree.reload()
     links.reload()
   }
-  // A draft is edited live; every other status shows the frozen rows.
-  if (version.data.status === 'draft') {
+  // A draft is edited live. A locked version that was edited live opens read-only on its frozen
+  // live state, so comments anchor against the same Yjs items as the next draft (decision D2).
+  if (version.data.status === 'draft' || version.data.live.is_live) {
     return <LiveVersionPage version={version.data} framework={framework.data} onSubmitted={refresh} />
   }
   const levels = version.data.template.levels

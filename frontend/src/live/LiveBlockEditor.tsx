@@ -1,5 +1,6 @@
 import { blockFragment, editorExtensions } from '@harak2/shared'
 import type { HocuspocusProvider } from '@hocuspocus/provider'
+import type { Editor } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { EditorContent, useEditor } from '@tiptap/react'
@@ -19,12 +20,14 @@ export function LiveBlockEditor({
   blockKey,
   editable,
   me,
+  onEditor,
 }: {
   doc: Y.Doc
   provider: HocuspocusProvider
   blockKey: string
   editable: boolean
   me: { id: number; name: string }
+  onEditor?: (blockKey: string, editor: Editor | null) => void
 }) {
   const editor = useEditor(
     {
@@ -45,6 +48,12 @@ export function LiveBlockEditor({
   useEffect(() => {
     editor?.setEditable(editable)
   }, [editor, editable])
+
+  useEffect(() => {
+    if (!editor || !onEditor) return
+    onEditor(blockKey, editor)
+    return () => onEditor(blockKey, null)
+  }, [editor, blockKey, onEditor])
 
   return <EditorContent editor={editor} />
 }

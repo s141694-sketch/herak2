@@ -198,3 +198,14 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
 }
 .avatar { display: inline-block; border: 2px solid; border-radius: 999px; padding: 0 var(--space); font-size: 0.8rem; background: #fff; }
 .avatar.editing { font-size: 0.75rem; }
+
+.comments { display: grid; gap: var(--space); margin-block-start: var(--space); }
+.comment { border: 1px solid var(--color-line); border-inline-start: 4px solid var(--color-secondary); border-radius: 8px; padding: var(--space); background: #fffdf8; }
+.comment-must_fix { border-inline-start-color: var(--color-danger); }
+.comment-resolved { opacity: 0.7; }
+.comment p { margin: 4px 0; }
+.comment .quote { font-style: italic; }
+.reply { padding-inline-start: calc(var(--space) * 2); }
+.badge-must_fix { background: #f6e7e7; color: var(--color-danger); }
+.new-comment { display: grid; gap: 4px; border: 1px dashed var(--color-line); padding: var(--space); border-radius: 8px; }
+.new-comment textarea { font: inherit; min-height: 4rem; padding: 4px var(--space); border: 1px solid var(--color-line); border-radius: 6px; }

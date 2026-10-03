@@ -2,6 +2,7 @@ import {
   addBlock,
   addLink,
   addNode,
+  blockFragment,
   DocumentRuleError,
   moveNode,
   removeLink,
@@ -10,23 +11,27 @@ import {
   setNodeDeleted,
 } from '@harak2/shared'
 import type { HocuspocusProvider } from '@hocuspocus/provider'
-import { useMemo, useState } from 'react'
+import type { Editor } from '@tiptap/core'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import type * as Y from 'yjs'
 
 import { http } from '../../api'
 import { useAuth } from '../../auth'
 import { ErrorMessage } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
-import { useAction } from '../../hooks/useResource'
+import { useAction, useResource } from '../../hooks/useResource'
 import { LiveBlockEditor } from '../../live/LiveBlockEditor'
 import { type Presence, usePresence } from '../../live/presence'
 import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../../live/snapshot'
-import { type LiveDocument, useLiveDocument } from '../../live/useLiveDocument'
-import { BLOCK_TYPES, type BlockType, type FrameworkVersionDetail, type ProgramVersionDetail } from '../../types'
+import { announceCommentsChanged, type LiveDocument, useLiveDocument } from '../../live/useLiveDocument'
+import { BLOCK_TYPES, type BlockType, type FrameworkVersionDetail, type ProgramComment, type ProgramVersionDetail } from '../../types'
+import { CommentCard, type CommentContext, NewComment, placementOf } from './Comments'
 
 interface Ctx {
+  comments: CommentContext
+  onEditor: (blockKey: string, editor: Editor | null) => void
   doc: Y.Doc
   provider: HocuspocusProvider
   me: { id: number; name: string }
@@ -58,12 +63,50 @@ export function LiveVersionPage({
     [session],
   )
   const others = usePresence(live?.provider, me)
+  const navigate = useNavigate()
+  const comments = useResource<ProgramComment[]>(`/api/programs/${version.program.id}/comments/`)
+  const reloadComments = comments.reload
+  const commentsVersion = live?.commentsVersion ?? 0
+  useEffect(() => {
+    if (commentsVersion > 0) reloadComments()
+  }, [commentsVersion, reloadComments])
+  const editors = useRef(new Map<string, Editor>())
+  const [, setEditorsTick] = useState(0)
+  const onEditor = useCallback((blockKey: string, editor: Editor | null) => {
+    if (editor) editors.current.set(blockKey, editor)
+    else editors.current.delete(blockKey)
+    setEditorsTick((n) => n + 1)
+  }, [])
   const action = useAction()
   const [ruleError, setRuleError] = useState<string | null>(null)
 
   const levels = version.template.levels
   const editable = Boolean(live && !live.locked && live.mode === 'write' && live.status === 'connected' && live.synced)
-  const ctx: Ctx | null = live && me && {
+  const role = session?.organization?.role
+  const commentContext: CommentContext | null = live && {
+    programId: version.program.id,
+    versionId: version.id,
+    comments: comments.data ?? [],
+    reload: () => {
+      comments.reload()
+      announceCommentsChanged(live.provider)
+    },
+    canResolve: version.permissions.collaborate,
+    canReopen: role === 'reviewer' || role === 'approver' || role === 'admin',
+    editorFor: (key) => editors.current.get(key),
+    fragmentFor: (key) => {
+      try {
+        return blockFragment(live.doc, key)
+      } catch {
+        return undefined
+      }
+    },
+    doc: live.doc,
+    liveBlocks: new Set(snapshot.blocks.filter((b) => !b.deleted).map((b) => b.key)),
+  }
+  const ctx: Ctx | null = live && me && commentContext && {
+    comments: commentContext,
+    onEditor,
     doc: live.doc,
     provider: live.provider,
     me,
@@ -93,6 +136,11 @@ export function LiveVersionPage({
     if (done) onSubmitted()
   }
 
+  async function withdraw() {
+    const done = await action.run(() => http.post(`/api/program-versions/${version.id}/withdraw/`))
+    if (done) navigate(`/programs/${version.program.id}`)
+  }
+
   return (
     <section className="card">
       <p>
@@ -114,11 +162,19 @@ export function LiveVersionPage({
       <ErrorMessage code={action.error ?? ruleError} testId="version-error" />
       {version.permissions.collaborate && (
         <div className="row">
-          <button type="button" className="primary-inline" data-testid="submit-version" disabled={action.busy} onClick={() => void submit()}>
-            {t('programs.submit')}
-          </button>
+          {version.status === 'draft' && (
+            <button type="button" className="primary-inline" data-testid="submit-version" disabled={action.busy} onClick={() => void submit()}>
+              {t('programs.submit')}
+            </button>
+          )}
+          {(version.status === 'submitted' || version.status === 'in_stage') && (
+            <button type="button" className="secondary" data-testid="withdraw-version" disabled={action.busy} onClick={() => void withdraw()}>
+              {t('programs.withdraw')}
+            </button>
+          )}
         </div>
       )}
+      {ctx && live?.synced && <Unanchored ctx={ctx} />}
 
       <h2>{t('programs.targets')}</h2>
       <ul className="plain" data-testid="version-targets">
@@ -314,8 +370,9 @@ function BlockView({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
       </div>
       {!block.deleted && (
         <>
-          <LiveBlockEditor doc={ctx.doc} provider={ctx.provider} blockKey={block.key} editable={ctx.editable} me={ctx.me} />
+          <LiveBlockEditor doc={ctx.doc} provider={ctx.provider} blockKey={block.key} editable={ctx.editable} me={ctx.me} onEditor={ctx.onEditor} />
           <Alignment block={block} ctx={ctx} />
+          <BlockComments block={block} ctx={ctx} />
         </>
       )}
     </div>
@@ -397,5 +454,61 @@ function Alignment({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/** Re-renders its caller on every change of the document, throttled to animation frames. */
+function useDocTick(doc: Y.Doc): number {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    let frame = 0
+    const bump = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        setTick((n) => n + 1)
+      })
+    }
+    doc.on('update', bump)
+    return () => {
+      doc.off('update', bump)
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [doc])
+  return tick
+}
+
+function BlockComments({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
+  useDocTick(ctx.doc)
+  const here = ctx.comments.comments
+    .filter((c) => c.block_key === block.key && c.status === 'open')
+    .map((c) => ({ comment: c, ...placementOf(c, ctx.comments) }))
+    .filter((entry) => entry.placement !== 'orphaned')
+  return (
+    <div className="comments" data-testid="block-comments">
+      {here.map(({ comment, placement, resolved }) => (
+        <CommentCard key={comment.id} comment={comment} ctx={ctx.comments} placement={placement} resolved={resolved} />
+      ))}
+      <NewComment blockKey={block.key} ctx={ctx.comments} />
+    </div>
+  )
+}
+
+function Unanchored({ ctx }: { ctx: Ctx }) {
+  const { t } = useTranslation()
+  useDocTick(ctx.doc)
+  const orphaned = ctx.comments.comments
+    .filter((c) => c.status === 'open' && c.block_key)
+    .map((c) => ({ comment: c, ...placementOf(c, ctx.comments) }))
+    .filter((entry) => entry.placement === 'orphaned')
+  if (orphaned.length === 0) return null
+  return (
+    <section className="panel" data-testid="unanchored-comments">
+      <h2>{t('comments.unanchored')}</h2>
+      <p className="muted">{t('comments.unanchoredHint')}</p>
+      {orphaned.map(({ comment, placement }) => (
+        <CommentCard key={comment.id} comment={comment} ctx={ctx.comments} placement={placement} />
+      ))}
+    </section>
   )
 }

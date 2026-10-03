@@ -15,6 +15,8 @@ export interface LiveDocument {
   authFailed: boolean
   /** The version left draft status while this editor was open (it was submitted or cancelled). */
   locked: boolean
+  /** Bumped when another client announces that comments changed. */
+  commentsVersion: number
 }
 
 interface TokenResponse {
@@ -53,13 +55,15 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
       onAuthenticationFailed: () => update({ authFailed: true }),
       onStateless: ({ payload }) => {
         try {
-          if (JSON.parse(payload).type === 'locked') update({ locked: true, mode: 'read' })
+          const type = JSON.parse(payload).type
+          if (type === 'locked') update({ locked: true, mode: 'read' })
+          if (type === 'comments-changed') setLive((current) => (current && current.doc === doc ? { ...current, commentsVersion: current.commentsVersion + 1 } : current))
         } catch {
           // Ignore messages this client does not understand.
         }
       },
     })
-    setLive({ doc, provider, status: 'connecting', synced: false, mode: null, authFailed: false, locked: false })
+    setLive({ doc, provider, status: 'connecting', synced: false, mode: null, authFailed: false, locked: false, commentsVersion: 0 })
     return () => {
       provider.destroy()
       doc.destroy()
@@ -68,4 +72,8 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
   }, [versionId])
 
   return live
+}
+
+export function announceCommentsChanged(provider: HocuspocusProvider | undefined): void {
+  provider?.sendStateless(JSON.stringify({ type: 'comments-changed' }))
 }
