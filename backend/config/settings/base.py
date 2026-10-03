@@ -22,6 +22,7 @@ env = environ.Env(
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
     COLLAB_SNAPSHOT_TIMEOUT_SECONDS=(float, 3.0),
     AI_PROVIDER=(str, "claude"),
+    CELERY_TASK_ALWAYS_EAGER=(bool, False),
     AI_MODEL=(str, "claude-opus-5-5"),
     AI_TIMEOUT_SECONDS=(float, 60.0),
     AI_MAX_ATTEMPTS=(int, 3),
@@ -59,6 +60,7 @@ INSTALLED_APPS = [
     "apps.ai",
     "apps.evals",
     "apps.agents",
+    "apps.suggestions",
 ]
 
 MIDDLEWARE = [
@@ -102,7 +104,8 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", 
 
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
-CELERY_TASK_ALWAYS_EAGER = False
+# Tasks run inside the request that queued them only where no worker runs (the browser tests).
+CELERY_TASK_ALWAYS_EAGER = env("CELERY_TASK_ALWAYS_EAGER")
 CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULE: dict = {}
 

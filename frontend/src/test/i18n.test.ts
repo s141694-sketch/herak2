@@ -73,6 +73,13 @@ describe('translations', () => {
     for (const code of codes) expect(lookup(ar as Tree, `errors.${code}`), code).toBeDefined()
   })
 
+  it('every reason and confidence an AI suggestion shows has a translation', () => {
+    for (const reason of ['default', 'rules_only', 'not_released', 'not_configured', 'quota_exceeded']) {
+      expect(lookup(ar as Tree, `suggestions.failed.${reason}`), reason).toBeDefined()
+    }
+    for (const level of ['high', 'medium', 'low']) expect(lookup(ar as Tree, `suggestions.confidence.${level}`), level).toBeDefined()
+  })
+
   it('every reason a live save can fail for has a translated explanation', () => {
     for (const code of SAVE_ERROR_CODES) expect(lookup(ar as Tree, `live.saveErrors.${code}`), code).toBeDefined()
   })

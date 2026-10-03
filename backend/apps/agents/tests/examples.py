@@ -1,6 +1,6 @@
 """Inputs and hand-written answers the agent tests replay (see recordings.py)."""
 
-from apps.agents import alignment, classification
+from apps.agents import alignment, classification, drafting
 
 ISOLATION = alignment.Competency("EL-01", "عزل الدوائر الكهربائية وإقفالها قبل الصيانة")
 FIRST_AID = alignment.Competency("FA-01", "تقديم الإسعافات الأولية للمصابين")
@@ -58,6 +58,40 @@ def EXAMPLES():
                 "objective": "أن يقدم المتدرب الإسعافات الأولية لمصاب بنزيف وفق دليل الإسعاف خلال دقيقتين",
                 "confidence": "medium",
                 "explanation": "يجعل الكفاية سلوكًا ملاحظًا بشرط ومعيار.",
+            },
+        ),
+        (
+            drafting.REWRITE,
+            drafting.rewrite_payload("أن يفهم المتدرب أهمية الإسعافات", [FIRST_AID]),
+            {
+                "objective": "أن يقدم المتدرب الإسعافات الأولية لمصاب بنزيف وفق دليل الإسعاف خلال دقيقتين",
+                "confidence": "medium",
+                "explanation": "استبدلت «يفهم» بفعل ملاحظ وأضفت شرطًا ومعيارًا مع بقاء موضوع الإسعافات.",
+            },
+        ),
+        (
+            drafting.OUTLINE,
+            drafting.outline_payload("برنامج السلامة", "فني", ["وحدة", "درس"], [FIRST_AID, ISOLATION]),
+            {
+                "nodes": [
+                    {"ref": "n1", "parent": "", "title": "السلامة في موقع العمل"},
+                    {"ref": "n2", "parent": "n1", "title": "الإسعافات الأولية"},
+                    {"ref": "n3", "parent": "n1", "title": "عزل الدوائر الكهربائية"},
+                ],
+                "objectives": [
+                    {
+                        "node": "n2",
+                        "competency": "FA-01",
+                        "text": "أن يقدم المتدرب الإسعافات الأولية لمصاب بنزيف وفق دليل الإسعاف خلال دقيقتين",
+                    },
+                    {
+                        "node": "n3",
+                        "competency": "EL-01",
+                        "text": "أن يطبق المتدرب إجراء العزل والإقفال على لوحة كهربائية",
+                    },
+                ],
+                "confidence": "medium",
+                "explanation": "وحدة واحدة بدرسين، لكل كفاية درس وهدف.",
             },
         ),
     ]

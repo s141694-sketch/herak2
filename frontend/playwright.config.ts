@@ -20,6 +20,10 @@ const backendEnv = {
   HARAK_ALLOW_SEED: '1',
   LOGIN_THROTTLE_RATE: '1000/minute',
   LOG_LEVEL: 'WARNING',
+  // No Celery worker runs here: tasks (quality runs, AI suggestions) run inside the request that queued them.
+  CELERY_TASK_ALWAYS_EAGER: '1',
+  // No AI provider: the browser tests never reach a model; AI answers they need are served by route mocks.
+  AI_PROVIDER: '',
 }
 
 export default defineConfig({

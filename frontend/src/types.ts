@@ -209,3 +209,36 @@ export interface ProgramComment {
   resolved_by: { id: number; email: string; full_name: string } | null
   replies: CommentReply[]
 }
+
+export type SuggestionStatus = 'pending' | 'ready' | 'rejected' | 'failed' | 'accepted' | 'dismissed'
+
+export interface OutlineResult {
+  nodes: Array<{ ref: string; parent: string; title: string }>
+  objectives: Array<{ node: string; competency: string; competency_key: string; text: string }>
+  dropped: { nodes: number; objectives: number }
+  confidence: 'high' | 'medium' | 'low'
+  explanation: string
+}
+
+export interface RewriteResult {
+  objective: string
+  confidence: 'high' | 'medium' | 'low'
+  explanation: string
+}
+
+/** An AI suggestion an author asked for (task 4.8); `result` only when it may be shown. */
+export interface Suggestion {
+  id: number
+  version: number
+  kind: 'rewrite' | 'outline'
+  subject: string
+  status: SuggestionStatus
+  reason: string
+  original: string | null
+  result: RewriteResult | OutlineResult | null
+  model: string
+  prompt_version: string
+  created_at: string
+  decided_at: string | null
+  decision_reason: string
+}

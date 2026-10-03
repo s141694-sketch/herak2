@@ -24,10 +24,17 @@ class EvaluatedAgent:
     payload: Callable[[dict], dict]
     label_of: Callable[[dict], str]
     score: Callable[[list[str], list[str | None]], dict[str, float]]
+    # For an answer whose label depends on what was asked too (an outline serving the competencies it was given).
+    label_with_input: Callable[[dict, dict], str] | None = None
 
     @property
     def name(self) -> str:
         return self.spec.name
+
+    def label(self, output: dict, payload: dict) -> str:
+        if self.label_with_input is not None:
+            return self.label_with_input(output, payload)
+        return self.label_of(output)
 
 
 def classification_score(gold, predicted):
@@ -72,13 +79,14 @@ def run(agent: EvaluatedAgent, golden_set: GoldenSet, gateway: Gateway) -> Agent
     gold, predicted, unanswered = [], [], 0
     for item in items:
         gold.append(item.gold)
+        payload = agent.payload(item.input)
         try:
-            output = gateway.evaluate(agent.spec, agent.payload(item.input), provider=provider)
+            output = gateway.evaluate(agent.spec, payload, provider=provider)
         except AIUnavailable:
             predicted.append(None)
             unanswered += 1
         else:
-            predicted.append(agent.label_of(output))
+            predicted.append(agent.label(output, payload))
     scores = {**agent.score(gold, predicted), "answered": 1 - unanswered / len(items)}
     thresholds = current_thresholds(agent.name)
     return AgentEvaluation.objects.create(

@@ -35,8 +35,10 @@
 | `classification` | `classification.csv` | `cognitive:1`…`cognitive:6`، `affective:1`…`affective:5`، `psychomotor:1`…`psychomotor:7`، `unclear` |
 | `alignment` | `alignment.csv` | `aligned`، `weak`، `misaligned` |
 | `alignment_suggestion` | `alignment_suggestion.csv` | `ok` للكفاية التي يمكن كتابة هدف سليم لها |
+| `drafting_rewrite` | `drafting_rewrite.csv` | `ok` للهدف الضعيف الذي يمكن إعادة صياغته صياغة سليمة؛ عمود `competencies` اختياري، كفاية في كل سطر بصيغة `الرمز: العنوان` |
+| `drafting_outline` | `drafting_outline.csv` | `ok` للبرنامج الذي يمكن بناء هيكل مبدئي له؛ `levels` أسماء مستويات القالب من الأعلى مفصولة بـ `/`، و`competencies` كفاية في كل سطر بصيغة `الرمز: العنوان` |
 
-المقاييس: `classification` الدقة (accuracy)؛ `alignment` دقة وشمول كشف `misaligned` (precision وrecall) والدقة العامة؛ `alignment_suggestion` نسبة الاقتراحات التي تقبلها قواعد حراك (`well_formed`)، ويُقاس المعنى من قبول المؤلفين ورفضهم أثناء الاستخدام. كل وكيل يُضاف قالبه مع بنائه.
+المقاييس: `classification` الدقة (accuracy)؛ `alignment` دقة وشمول كشف `misaligned` (precision وrecall) والدقة العامة؛ `alignment_suggestion` نسبة الاقتراحات التي تقبلها قواعد حراك (`well_formed`)، ويُقاس المعنى من قبول المؤلفين ورفضهم أثناء الاستخدام. `drafting_rewrite` نسبة الصياغات التي تقبلها قواعد حراك وتختلف عن الأصل (`well_formed`)؛ `drafting_outline` نسبة الهياكل التي تخدم كل الكفايات المعطاة بأهداف تقبلها القواعد ضمن عمق القالب (`complete`). حفظ المعنى في الحالتين يُقاس من قبول المؤلفين ورفضهم المسجّل. كل وكيل يُضاف قالبه مع بنائه.
 
 ## 4. الأوامر (يشغّلها المسؤول التقني)
 

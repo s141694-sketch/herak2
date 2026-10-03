@@ -12,4 +12,5 @@ urlpatterns = [
     path("api/", include("apps.comments.urls")),
     path("api/", include("apps.quality.urls")),
     path("api/", include("apps.ai.urls")),
+    path("api/", include("apps.suggestions.urls")),
 ]

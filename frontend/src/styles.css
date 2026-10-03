@@ -177,6 +177,10 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
 .block-editor p { margin: 0 0 0.4em; }
 .save-state { font-size: 0.8rem; }
 .badge-objective { background: #e7e9f6; }
+.badge-ai { background: #f3e8fd; }
+.suggestion { margin-block: var(--space); }
+.outline { padding-inline-start: calc(var(--space) * 2); }
+.outline-objective { margin-block: 2px; }
 .badge-assessment { background: #f6efe0; }
 .alignment { font-size: 0.9rem; border-block-start: 1px dashed var(--color-line); margin-block-start: var(--space); }
 .chip { display: inline-flex; gap: 4px; align-items: center; background: var(--color-bg); border-radius: 999px; padding: 0 var(--space); }

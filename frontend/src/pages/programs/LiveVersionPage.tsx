@@ -29,6 +29,7 @@ import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../..
 import { announceCommentsChanged, type LiveDocument, useLiveDocument } from '../../live/useLiveDocument'
 import { BLOCK_TYPES, type BlockType, type FrameworkVersionDetail, type ProgramComment, type ProgramVersionDetail } from '../../types'
 import { CommentCard, type CommentContext, NewComment, placementOf } from './Comments'
+import { OutlineSuggestion, RewriteSuggestion, type SuggestionContext } from './Suggestions'
 
 interface Ctx {
   comments: CommentContext
@@ -42,7 +43,8 @@ interface Ctx {
   levelCount: number
   framework: FrameworkVersionDetail | undefined
   levelName: (level: number) => string
-  edit: (change: () => void) => void
+  edit: (change: () => void) => boolean
+  suggestions: SuggestionContext
 }
 
 /** A draft edited live through the collaboration service (phase 3). */
@@ -111,6 +113,19 @@ export function LiveVersionPage({
     doc: live.doc,
     liveBlocks: shownBlocks(snapshot),
   }
+  function edit(change: () => void): boolean {
+    setRuleError(null)
+    try {
+      change()
+      return true
+    } catch (error) {
+      if (error instanceof DocumentRuleError) {
+        setRuleError(error.code)
+        return false
+      }
+      throw error
+    }
+  }
   const ctx: Ctx | null = live && me && commentContext && {
     comments: commentContext,
     onEditor,
@@ -126,15 +141,8 @@ export function LiveVersionPage({
       const found = levels.find((l) => l.depth === level)
       return found ? (i18n.language === 'ar' ? found.name_ar : found.name_en) : ''
     },
-    edit: (change) => {
-      setRuleError(null)
-      try {
-        change()
-      } catch (error) {
-        if (error instanceof DocumentRuleError) setRuleError(error.code)
-        else throw error
-      }
-    },
+    edit,
+    suggestions: { versionId: version.id, doc: live.doc, levelCount: levels.length, framework, edit },
   }
   const roots = snapshot.nodes.filter((n) => n.parent === null)
 
@@ -201,6 +209,7 @@ export function LiveVersionPage({
       </ul>
 
       <h2>{t('tree.title')}</h2>
+      {ctx?.editable && <OutlineSuggestion ctx={ctx.suggestions} />}
       {ctx && live?.everSynced && (
         <div className="tree" data-testid="tree">
           {roots.length === 0 && <p className="muted">{t('tree.empty', { level: ctx.levelName(0) })}</p>}
@@ -397,6 +406,7 @@ function BlockView({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
       {!block.deleted && (
         <>
           <LiveBlockEditor doc={ctx.doc} provider={ctx.provider} blockKey={block.key} editable={ctx.editable} me={ctx.me} onEditor={ctx.onEditor} />
+          {ctx.editable && block.type === 'objective' && <RewriteSuggestion blockKey={block.key} ctx={ctx.suggestions} />}
           <Alignment block={block} ctx={ctx} />
           <BlockComments block={block} ctx={ctx} />
         </>

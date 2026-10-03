@@ -99,7 +99,11 @@
     "comment_target_unknown": "That block or node is not in this version.",
     "comment_not_allowed": "You cannot do this to the comment.",
     "comment_already_resolved": "This comment is already resolved; refresh the page.",
-    "comment_not_resolved": "This comment is already open; refresh the page."
+    "comment_not_resolved": "This comment is already open; refresh the page.",
+    "objective_already_sound": "This objective already passes Harak's rules, so it needs no rewrite.",
+    "suggestion_subject_invalid": "A rewrite can be suggested only for an objective saved in this version. Wait for your changes to save, then try again.",
+    "no_target_competencies": "Choose the competencies this version targets first.",
+    "suggestion_not_open": "This suggestion is no longer open."
   },
   "common": {
     "create": "Create",
@@ -333,5 +337,35 @@
   "commentStatus": {
     "open": "Open",
     "resolved": "Resolved"
+  },
+  "suggestions": {
+    "rewrite": "Suggest a better wording",
+    "outline": "Suggest a first outline from the target competencies",
+    "aiLabel": "AI suggestion — review it before accepting",
+    "pending": "The drafting agent is preparing a suggestion…",
+    "original": "Current text",
+    "suggested": "Suggested wording",
+    "accept": "Accept",
+    "dismiss": "Reject",
+    "dismissReason": "Why you reject it (optional)",
+    "accepted": "Accepted and added to the document.",
+    "dismissed": "Rejected; the rejection is recorded to measure the agent's accuracy.",
+    "rejected": "The agent's answer did not pass Harak's rules, so it is not shown.",
+    "changed": "The objective changed since the suggestion was requested, so it was not applied. Request a new one.",
+    "close": "Close",
+    "outlinePreview": "Suggested outline",
+    "dropped": "Left out of the suggestion because Harak's rules or the structure template refused them: nodes {{nodes}}, objectives {{objectives}}.",
+    "confidence": {
+      "high": "High confidence",
+      "medium": "Medium confidence",
+      "low": "Low confidence"
+    },
+    "failed": {
+      "default": "No suggestion could be obtained right now. Try again later.",
+      "rules_only": "Your organization works with rules only, so no AI suggestions are requested.",
+      "not_released": "The drafting agent is not released yet: it has not passed its evaluation on the golden set at the owner's threshold.",
+      "not_configured": "AI is not set up on this server.",
+      "quota_exceeded": "Your organization's AI quota for this month is used up."
+    }
   }
 }
