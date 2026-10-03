@@ -109,7 +109,27 @@ export function contentOf(fragment: Y.XmlFragment): ProseMirrorJSON {
   return yXmlFragmentToProseMirrorRootNode(fragment, editorSchema).toJSON() as ProseMirrorJSON
 }
 
+/** Raised when the document holds content the editor schema cannot represent (D32: the save fails). */
+export class UnrepresentableContent extends Error {}
+
+/**
+ * The document as rows. It never changes the document: the conversion runs on a copy, because the
+ * underlying converter silently deletes elements and marks the schema does not know; if it had to,
+ * the document cannot be represented and the save fails instead (review finding).
+ */
 export function materialize(doc: Y.Doc): Rows {
+  const copy = new Y.Doc()
+  Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc))
+  let changed = false
+  copy.on('update', () => {
+    changed = true
+  })
+  const rows = rowsOf(copy)
+  if (changed) throw new UnrepresentableContent('the document holds content the editor schema cannot represent')
+  return rows
+}
+
+function rowsOf(doc: Y.Doc): Rows {
   const nodes = nodesOf(doc)
   const { parentOf, issues } = resolveParents(nodes)
 
@@ -168,6 +188,41 @@ export function setBlockContent(doc: Y.Doc, blockKey: string, json: ProseMirrorJ
     if (fragment.length) fragment.delete(0, fragment.length)
     prosemirrorJSONToYXmlFragment(editorSchema, json, fragment)
   })
+}
+
+/**
+ * A client id that depends only on the rows. Building the same rows twice with it gives the same Yjs
+ * items, so documents rebuilt from rows on two loads, or on the server and a reconnecting client,
+ * merge instead of conflicting, and comment anchors keep pointing at real items (review finding).
+ */
+export function stableClientId(rows: Pick<Rows, 'nodes' | 'blocks' | 'links'>): number {
+  const text = canonical({ nodes: rows.nodes, blocks: rows.blocks, links: rows.links })
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash || 1
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`)
+    return `{${entries.join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+/** Rebuilds a document from rows deterministically (see stableClientId) into ``doc``. */
+export function hydrateStable(rows: Pick<Rows, 'nodes' | 'blocks' | 'links'>, doc: Y.Doc = new Y.Doc()): Y.Doc {
+  const built = new Y.Doc()
+  built.clientID = stableClientId(rows)
+  hydrate(rows, built)
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(built))
+  return doc
 }
 
 /** Rebuilds a document from rows (when a version has rows but no stored Yjs state). */

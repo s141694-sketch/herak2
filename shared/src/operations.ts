@@ -63,12 +63,22 @@ function siblings(doc: Y.Doc, parent: string | null) {
   return found
 }
 
+/** The server's limit for a node title (counted in characters, as Python counts them). */
+export const MAX_TITLE_LENGTH = 500
+
+function cleanTitle(title: string): string {
+  const trimmed = title.trim()
+  if ([...trimmed].length > MAX_TITLE_LENGTH) throw new DocumentRuleError('node_title_too_long')
+  return trimmed
+}
+
 export function addNode(
   doc: Y.Doc,
   fields: { parent: string | null; title: string; order?: number; key?: string },
   levelCount: number,
 ): string {
   const nodes = nodesOf(doc)
+  const title = cleanTitle(fields.title)
   if (fields.parent !== null && !nodes.has(fields.parent)) throw new DocumentRuleError('node_parent_invalid')
   const depth = fields.parent === null ? 0 : depthOf(doc, fields.parent) + 1
   if (depth >= levelCount) throw new DocumentRuleError('node_level_exceeds_template')
@@ -77,7 +87,7 @@ export function addNode(
     const node: NodeMap = new Y.Map()
     node.set('parent', fields.parent)
     node.set('order', fields.order ?? nextOrder(siblings(doc, fields.parent)))
-    node.set('title', fields.title.trim())
+    node.set('title', title)
     node.set('deleted', false)
     nodes.set(key, node)
   })
@@ -87,7 +97,7 @@ export function addNode(
 export function renameNode(doc: Y.Doc, key: string, title: string): void {
   const node = nodesOf(doc).get(key)
   if (!node) throw new DocumentRuleError('node_parent_invalid')
-  node.set('title', title.trim())
+  node.set('title', cleanTitle(title))
 }
 
 export function isSelfOrDescendant(doc: Y.Doc, key: string, candidate: string | null): boolean {

@@ -27,13 +27,21 @@ export interface Resolution {
   text?: Y.XmlText
 }
 
+/** The characters of a text, without the formatting markup ``toString()`` adds around marked runs. */
+export function plainText(text: Y.XmlText): string {
+  return text
+    .toDelta()
+    .map((part: { insert: unknown }) => (typeof part.insert === 'string' ? part.insert : ''))
+    .join('')
+}
+
 export function createAnchor(blockKey: string, text: Y.XmlText, from: number, to: number): Anchor {
   if (to <= from) throw new Error('empty anchor range')
   return {
     block_key: blockKey,
     start: Y.createRelativePositionFromTypeIndex(text, from, 0),
     end: Y.createRelativePositionFromTypeIndex(text, to, -1),
-    quoted: text.toString().slice(from, to),
+    quoted: plainText(text).slice(from, to),
   }
 }
 
@@ -53,7 +61,7 @@ export function resolveAnchor(doc: Y.Doc, anchor: Anchor): Resolution {
   if (!start || !end || start.type !== end.type || !(start.type instanceof Y.XmlText)) return { status: 'orphaned' }
   const text = start.type as Y.XmlText
   if (text._item?.deleted || !insideBlock(doc, text, anchor.block_key) || end.index <= start.index) return { status: 'orphaned' }
-  const current = text.toString().slice(start.index, end.index)
+  const current = plainText(text).slice(start.index, end.index)
   return { status: current === anchor.quoted ? 'intact' : 'changed', current, from: start.index, to: end.index, text }
 }
 
@@ -97,10 +105,10 @@ export function textsOf(fragment: Y.XmlFragment): Y.XmlText[] {
 /** Fallback when the Yjs items are gone: find the quoted text once, and only once, in the same block. */
 export function reanchorByText(doc: Y.Doc, anchor: Anchor): { status: 'reanchored' | 'ambiguous' | 'not_found'; anchor?: Anchor } {
   const fragment = blocksOf(doc).get(anchor.block_key)?.get('content') as Y.XmlFragment | undefined
-  if (!fragment) return { status: 'not_found' }
+  if (!fragment || !anchor.quoted) return { status: 'not_found' }
   const hits: Array<{ text: Y.XmlText; from: number }> = []
   for (const text of textsOf(fragment)) {
-    const value = text.toString()
+    const value = plainText(text)
     for (let from = value.indexOf(anchor.quoted); from !== -1; from = value.indexOf(anchor.quoted, from + 1)) hits.push({ text, from })
   }
   if (hits.length === 0) return { status: 'not_found' }
