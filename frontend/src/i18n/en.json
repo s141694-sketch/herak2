@@ -96,7 +96,9 @@
     "collab_unavailable": "The editor cannot be reached to save the latest changes. Try submitting again shortly.",
     "comment_target_missing": "Choose a block or node.",
     "comment_target_unknown": "That block or node is not in this version.",
-    "comment_not_allowed": "You cannot do this to the comment."
+    "comment_not_allowed": "You cannot do this to the comment.",
+    "comment_already_resolved": "This comment is already resolved; refresh the page.",
+    "comment_not_resolved": "This comment is already open; refresh the page."
   },
   "common": {
     "create": "Create",

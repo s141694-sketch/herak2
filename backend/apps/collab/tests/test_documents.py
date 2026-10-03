@@ -262,3 +262,21 @@ def test_a_new_draft_copies_the_yjs_state(world, monkeypatch):
         assert set(AlignmentLink.objects.filter(version=v2).values_list("link_key", flat=True)) == set(
             AlignmentLink.objects.filter(version=v1).values_list("link_key", flat=True)
         )
+
+
+def test_a_draft_is_live_from_the_moment_the_editor_loads_it(world):
+    """Before the first save, REST edits would be overwritten by the editor's next save without a word."""
+    assert service().get(url(world["version"])).json()["state"] is None
+    with organization_context(world["org"]):
+        assert DraftDocument.objects.filter(version=world["version"]).exists()
+        with pytest.raises(services.ProgramError) as excinfo:
+            services.update_block(world["objective"], content=doc("من REST"), actor=world["owner"])
+        assert excinfo.value.get_codes() == "draft_is_live"
+
+
+def test_loading_a_locked_version_makes_no_live_draft(world):
+    with organization_context(world["org"]):
+        lifecycle.transition(world["version"], S.SUBMITTED, actor=world["owner"])
+    service().get(url(world["version"]))
+    with organization_context(world["org"]):
+        assert not DraftDocument.objects.filter(version=world["version"]).exists()

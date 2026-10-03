@@ -70,6 +70,9 @@ def add_reply(comment: Comment, *, author, body) -> CommentReply:
 def resolve(comment: Comment, *, actor, role) -> Comment:
     if not program_services.can_edit(comment.program, actor, role):
         raise CommentError("only the program's editors mark comments resolved", code="comment_not_allowed")
+    comment = Comment.objects.select_for_update().select_related("program").get(pk=comment.pk)
+    if comment.status == Comment.Status.RESOLVED:
+        raise CommentError("this comment is already resolved", code="comment_already_resolved")
     comment.status = Comment.Status.RESOLVED
     comment.resolved_by = actor
     comment.resolved_at = timezone.now()
@@ -82,6 +85,9 @@ def resolve(comment: Comment, *, actor, role) -> Comment:
 def reopen(comment: Comment, *, actor, role) -> Comment:
     if role not in REOPENING_ROLES and comment.author_id != actor.pk:
         raise CommentError("reviewers reopen comments", code="comment_not_allowed")
+    comment = Comment.objects.select_for_update().select_related("program").get(pk=comment.pk)
+    if comment.status == Comment.Status.OPEN:
+        raise CommentError("this comment is already open", code="comment_not_resolved")
     comment.status = Comment.Status.OPEN
     comment.resolved_by = None
     comment.resolved_at = None

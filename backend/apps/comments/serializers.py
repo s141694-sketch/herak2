@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from apps.accounts.serializers import UserSerializer
@@ -8,6 +9,7 @@ from .services import valid_anchor
 
 class ReplySerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
+    body = serializers.CharField(max_length=5000)
 
     class Meta:
         model = CommentReply
@@ -48,7 +50,10 @@ class CommentWriteSerializer(serializers.Serializer):
     block_key = serializers.UUIDField(required=False, allow_null=True)
     node_key = serializers.UUIDField(required=False, allow_null=True)
     anchor = serializers.JSONField(required=False, allow_null=True)
-    quoted = serializers.CharField(required=False, allow_blank=True, max_length=2000, trim_whitespace=False)
+    # The client sends the whole selected text; any selection inside one block fits a block's size limit.
+    quoted = serializers.CharField(
+        required=False, allow_blank=True, max_length=settings.BLOCK_CONTENT_MAX_BYTES, trim_whitespace=False
+    )
     body = serializers.CharField(max_length=5000)
     category = serializers.ChoiceField(choices=Comment.Category.choices)
 

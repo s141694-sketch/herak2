@@ -144,3 +144,36 @@ def test_comments_are_kept_out_of_other_organizations(world):
     assert outsider.get(f"/api/comments/{comment['id']}/").status_code == 404
     with organization_context(world["org"]):
         assert Comment.objects.count() == 1
+
+
+def test_a_long_quoted_selection_is_accepted(world):
+    response = create(login("reviewer@example.com"), world, quoted="ن" * 2500)
+    assert response.status_code == 201, response.content
+    assert len(response.json()["quoted"]) == 2500
+
+
+def test_replies_are_capped_like_comments(world):
+    comment = create(login("reviewer@example.com"), world).json()
+    response = login("author@example.com").post(
+        f"/api/comments/{comment['id']}/replies/", {"body": "ر" * 5001}, format="json"
+    )
+    assert response.status_code == 400
+
+
+def test_resolving_twice_or_reopening_an_open_comment_is_refused_and_keeps_the_record(world):
+    comment = create(login("reviewer@example.com"), world).json()
+    author, reviewer = login("author@example.com"), login("reviewer@example.com")
+    first = author.post(f"/api/comments/{comment['id']}/resolve/", {}, format="json").json()
+    again = author.post(f"/api/comments/{comment['id']}/resolve/", {}, format="json")
+    assert again.status_code == 409 and again.json()["error"]["code"] == "comment_already_resolved"
+    assert reviewer.post(f"/api/comments/{comment['id']}/reopen/", {}, format="json").status_code == 200
+    reopened = reviewer.post(f"/api/comments/{comment['id']}/reopen/", {}, format="json")
+    assert reopened.status_code == 409 and reopened.json()["error"]["code"] == "comment_not_resolved"
+    assert first["resolved_by"]["email"] == "author@example.com"
+    with organization_context(world["org"]):
+        events = list(
+            AuditLog.objects.filter(event__in=["comment.resolved", "comment.reopened"])
+            .order_by("id")
+            .values_list("event", flat=True)
+        )
+    assert events == ["comment.resolved", "comment.reopened"]

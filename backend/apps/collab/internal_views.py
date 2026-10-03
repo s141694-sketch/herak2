@@ -65,6 +65,10 @@ class DocumentView(_ServiceView):
         version = self.version(pk)
         with organization_context(version.organization_id):
             draft = DraftDocument.objects.filter(version=version).first()
+            if draft is None and version.is_editable:
+                # From the moment the live editor holds the document, it is the only writer of the draft's
+                # content (D31): REST writes are refused from here on, not only after the first save.
+                draft, _ = DraftDocument.objects.get_or_create(version=version, defaults={"state": b""})
             has_state = draft is not None and len(bytes(draft.state)) > 0
             return Response(
                 {
@@ -79,8 +83,6 @@ class DocumentView(_ServiceView):
     def put(self, request, pk):
         version = self.version(pk)
         with organization_context(version.organization_id):
-            if not version.is_editable:
-                raise VersionLocked()
             try:
                 state = base64.b64decode(request.data.get("state", ""), validate=True)
             except (binascii.Error, ValueError) as exc:
@@ -91,6 +93,11 @@ class DocumentView(_ServiceView):
                 actor = User.objects.get(pk=actor_id)
             try:
                 with transaction.atomic():
+                    # Saves of one document run one at a time, and never after the version left draft: the
+                    # lock conflicts with the transition's (FOR NO KEY UPDATE) and with REST writes (FOR UPDATE).
+                    version = ProgramVersion.objects.select_for_update().get(pk=version.pk)
+                    if not version.is_editable:
+                        raise VersionLocked()
                     result = apply_rows(version, request.data.get("rows"), actor=actor)
                     draft, _ = DraftDocument.objects.get_or_create(version=version, defaults={"state": b""})
                     draft.state = state
