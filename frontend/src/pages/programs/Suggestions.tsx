@@ -1,4 +1,4 @@
-import { applyOutline, applyRewrite } from '@harak2/shared'
+import { applyImport, applyOutline, applyRewrite } from '@harak2/shared'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type * as Y from 'yjs'
@@ -6,7 +6,7 @@ import type * as Y from 'yjs'
 import { http } from '../../api'
 import { ErrorMessage } from '../../components/ErrorMessage'
 import { useAction } from '../../hooks/useResource'
-import type { FrameworkVersionDetail, OutlineResult, RewriteResult, Suggestion } from '../../types'
+import type { FrameworkVersionDetail, ImportResult, OutlineResult, RewriteResult, Suggestion } from '../../types'
 
 /** What the suggestion components need from the live page. */
 export interface SuggestionContext {
@@ -239,6 +239,129 @@ export function OutlineSuggestion({ ctx }: { ctx: SuggestionContext }) {
         </>
       ) : (
         <Outcome suggestion={suggestion} onClose={reset} />
+      )}
+      <ErrorMessage code={action.error} testId="suggestion-error" />
+    </section>
+  )
+}
+
+function ImportPreview({ layout }: { layout: ImportResult }) {
+  const { t } = useTranslation()
+  const render = (parent: string) => (
+    <ul className="plain outline">
+      {layout.nodes
+        .filter((node) => node.parent === parent)
+        .map((node) => (
+          <li key={node.ref} data-testid="import-node">
+            <strong>{node.title}</strong>
+            {layout.blocks
+              .filter((block) => block.node === node.ref)
+              .map((block, index) => (
+                <p key={`${block.node}-${index}`} className="outline-objective" data-testid="import-block" data-type={block.type}>
+                  <span className={`badge badge-${block.type}`}>{t(`blockType.${block.type}`)}</span> {block.text}
+                </p>
+              ))}
+            {render(node.ref)}
+          </li>
+        ))}
+    </ul>
+  )
+  return (
+    <>
+      <h3>{t('suggestions.importPreview')}</h3>
+      {layout.warnings.map((code) => (
+        <p key={code} className="muted">
+          {t(`suggestions.warnings.${code}`, { defaultValue: code })}
+        </p>
+      ))}
+      {render('')}
+      {layout.unplaced.length > 0 && (
+        <details data-testid="import-unplaced">
+          <summary>{t('suggestions.unplaced', { count: layout.unplaced.length })}</summary>
+          <ul className="plain muted">
+            {layout.unplaced.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  )
+}
+
+/** Curriculum text laid out on the tree: Harak's rules first, the import agent when it may help; nothing reaches
+ * the document before the author accepts it. */
+export function ImportSuggestion({ ctx }: { ctx: SuggestionContext }) {
+  const { t } = useTranslation()
+  const { suggestion, action, ask, decide, reset } = useSuggestion(ctx.versionId)
+  const [open, setOpen] = useState(false)
+  const [source, setSource] = useState('')
+
+  if (!suggestion) {
+    if (!open) {
+      return (
+        <div className="suggestion">
+          <button type="button" className="secondary" data-testid="import-open" onClick={() => setOpen(true)}>
+            {t('suggestions.import')}
+          </button>
+        </div>
+      )
+    }
+    return (
+      <form
+        className="suggestion panel"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault()
+          void ask({ kind: 'import', text: source })
+        }}
+      >
+        <label className="field">
+          <span>{t('suggestions.importText')}</span>
+          <textarea required rows={10} value={source} maxLength={200_000} data-testid="import-text" onChange={(e) => setSource(e.target.value)} />
+        </label>
+        <p className="muted">{t('suggestions.importConfirm')}</p>
+        <div className="row">
+          <button type="submit" className="primary-inline" disabled={action.busy} data-testid="import-submit">
+            {t('suggestions.importSubmit')}
+          </button>
+          <button type="button" className="secondary" onClick={() => setOpen(false)}>
+            {t('common.cancel')}
+          </button>
+        </div>
+        <ErrorMessage code={action.error} testId="suggestion-error" />
+      </form>
+    )
+  }
+  const layout = suggestion.status === 'ready' ? (suggestion.result as ImportResult) : null
+  return (
+    <section className="suggestion panel" data-testid="import-suggestion" data-source={layout?.source ?? ''}>
+      {layout ? (
+        <>
+          {layout.source === 'ai' ? (
+            <AiNote result={{ confidence: layout.confidence ?? 'low', explanation: layout.explanation ?? '' }} />
+          ) : (
+            <p className="muted" data-testid="import-rules-note">
+              <span className="badge">{t('suggestions.importRules')}</span>{' '}
+              {t(`suggestions.importFallback.${suggestion.reason}`, { defaultValue: t('suggestions.importFallback.default') })}
+            </p>
+          )}
+          <ImportPreview layout={layout} />
+          <Decision
+            busy={action.busy}
+            onAccept={() => {
+              if (ctx.edit(() => applyImport(ctx.doc, layout, ctx.levelCount))) void decide('accept')
+            }}
+            onDismiss={(reason) => void decide('dismiss', reason)}
+          />
+        </>
+      ) : (
+        <Outcome
+          suggestion={suggestion}
+          onClose={() => {
+            reset()
+            setOpen(false)
+          }}
+        />
       )}
       <ErrorMessage code={action.error} testId="suggestion-error" />
     </section>

@@ -1,9 +1,19 @@
 """Inputs and hand-written answers the agent tests replay (see recordings.py)."""
 
-from apps.agents import alignment, classification, drafting
+from apps.agents import alignment, classification, drafting, importing
 
 ISOLATION = alignment.Competency("EL-01", "عزل الدوائر الكهربائية وإقفالها قبل الصيانة")
 FIRST_AID = alignment.Competency("FA-01", "تقديم الإسعافات الأولية للمصابين")
+LOOSE_TEXT = """مقدمة البرنامج تعرض أهمية السلامة في المواقع.
+أن يعدد المتدرب أنواع المخاطر في موقع العمل.
+نشاط: جولة ميدانية لرصد المخاطر.
+اختبار قصير من عشرة أسئلة.
+"""
+
+
+def import_payload(source: str, levels: list[str]) -> dict:
+    read = importing.read(source)
+    return importing.payload(read, levels, importing.rules_proposal(read, level_count=len(levels)))
 
 
 def EXAMPLES():
@@ -92,6 +102,24 @@ def EXAMPLES():
                 ],
                 "confidence": "medium",
                 "explanation": "وحدة واحدة بدرسين، لكل كفاية درس وهدف.",
+            },
+        ),
+        (
+            importing.SPEC,
+            import_payload(LOOSE_TEXT, ["وحدة", "درس"]),
+            {
+                "nodes": [
+                    {"ref": "n1", "parent": "", "title": "السلامة"},
+                    {"ref": "n2", "parent": "n1", "title": "المخاطر"},
+                ],
+                "blocks": [
+                    {"node": "n2", "type": "content", "lines": [0]},
+                    {"node": "n2", "type": "objective", "lines": [1]},
+                    {"node": "n2", "type": "activity", "lines": [2]},
+                    {"node": "n2", "type": "assessment", "lines": [3]},
+                ],
+                "confidence": "medium",
+                "explanation": "مقدمة ثم هدف ونشاط وتقويم في درس واحد.",
             },
         ),
     ]

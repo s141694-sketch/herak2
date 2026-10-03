@@ -366,6 +366,25 @@
       "not_released": "The drafting agent is not released yet: it has not passed its evaluation on the golden set at the owner's threshold.",
       "not_configured": "AI is not set up on this server.",
       "quota_exceeded": "Your organization's AI quota for this month is used up."
+    },
+    "import": "Import from text",
+    "importText": "Paste the curriculum text here",
+    "importSubmit": "Suggest how to lay out the text",
+    "importConfirm": "Nothing is added to the document until you review the layout and accept it.",
+    "importPreview": "Suggested layout",
+    "importRules": "Laid out by Harak's rules",
+    "unplaced": "Lines that will not be added to the document: {{count}}",
+    "importFallback": {
+      "default": "AI did not contribute to this layout.",
+      "rules_only": "Your organization works with rules only, so Harak's rules alone laid out the text.",
+      "not_released": "The import agent is not released yet, so Harak's rules alone laid out the text.",
+      "not_configured": "AI is not set up on this server, so Harak's rules alone laid out the text.",
+      "quota_exceeded": "This month's AI quota is used up, so Harak's rules alone laid out the text.",
+      "too_long": "The text is too long for the AI to lay out, so Harak's rules alone laid it out.",
+      "ai_rejected": "The AI's layout did not fit the template or the text, so Harak's rules alone laid out the text."
+    },
+    "warnings": {
+      "NO_UNITS_DETECTED": "No units were found; the whole text was treated as one unit titled “المستند”."
     }
   }
 }

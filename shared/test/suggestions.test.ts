@@ -3,7 +3,7 @@ import * as Y from 'yjs'
 
 import { hydrate, materialize, setBlockContent } from '../src/materialize'
 import { addBlock, addNode } from '../src/operations'
-import { applyOutline, applyRewrite, blockPlainText } from '../src/suggestions'
+import { applyImport, applyOutline, applyRewrite, blockPlainText } from '../src/suggestions'
 
 const paragraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
 
@@ -77,5 +77,40 @@ describe('an outline', () => {
     expect(() => applyOutline(doc, tooDeep, 2)).toThrow()
     expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
     expect(materialize(hydrate(materialize(doc))).nodes).toHaveLength(3)
+  })
+})
+
+describe('an import', () => {
+  const layout = {
+    nodes: [
+      { ref: 'u1', parent: '', title: 'الوحدة الأولى: المخاطر' },
+      { ref: 'u1l1', parent: 'u1', title: 'الدرس الأول: تحديد المخاطر' },
+    ],
+    blocks: [
+      { node: 'u1l1', type: 'objective' as const, text: 'أن يعدد المتدرب أنواع المخاطر.' },
+      { node: 'u1l1', type: 'activity' as const, text: 'نشاط: جولة ميدانية.\nتطبيق: تعبئة نموذج.' },
+      { node: 'u1', type: 'content' as const, text: 'مقدمة الوحدة.' },
+    ],
+  }
+
+  it('adds its nodes and blocks, each block of its type and with its lines as paragraphs', () => {
+    const doc = new Y.Doc()
+    expect(applyImport(doc, layout, 2)).toEqual({ nodes: 2, blocks: 3 })
+    const rows = materialize(doc)
+    expect(rows.nodes.map((n) => [n.title, n.level])).toEqual([
+      ['الوحدة الأولى: المخاطر', 0],
+      ['الدرس الأول: تحديد المخاطر', 1],
+    ])
+    const lesson = rows.nodes[1].node_key
+    expect(rows.blocks.filter((b) => b.node_key === lesson).map((b) => b.type)).toEqual(['objective', 'activity'])
+    const activity = rows.blocks.find((b) => b.type === 'activity')!
+    expect(activity.content).toEqual({ type: 'doc', content: [paragraph('نشاط: جولة ميدانية.'), paragraph('تطبيق: تعبئة نموذج.')] })
+    expect(rows.links).toEqual([])
+  })
+
+  it('changes nothing when the template refuses part of it', () => {
+    const doc = new Y.Doc()
+    expect(() => applyImport(doc, layout, 1)).toThrow()
+    expect(materialize(doc).nodes).toEqual([])
   })
 })

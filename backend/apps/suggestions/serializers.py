@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.accounts.serializers import UserSerializer
+from apps.agents.importing import MAX_TEXT_CHARS
 
 from .models import Suggestion
 
@@ -43,10 +44,13 @@ class SuggestionSerializer(serializers.ModelSerializer):
 class SuggestionRequestSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=Suggestion.Kind.choices)
     block_key = serializers.UUIDField(required=False)
+    text = serializers.CharField(required=False, max_length=MAX_TEXT_CHARS, trim_whitespace=False)
 
     def validate(self, data):
         if data["kind"] == Suggestion.Kind.REWRITE and "block_key" not in data:
             raise serializers.ValidationError({"block_key": "say which objective to rewrite"})
+        if data["kind"] == Suggestion.Kind.IMPORT and not data.get("text", "").strip():
+            raise serializers.ValidationError({"text": "paste the text to import"})
         return data
 
 

@@ -7,7 +7,7 @@ import structlog
 from django.db import transaction
 from django.utils import timezone
 
-from apps.agents import drafting
+from apps.agents import drafting, importing
 from apps.agents.alignment import Competency
 from apps.ai.gateway import AIUnavailable
 from apps.audit.services import record
@@ -52,25 +52,42 @@ def _outline_request(version: ProgramVersion) -> dict:
     targets = [target.competency for target in version.targets.select_related("competency")]
     if not targets:
         raise SuggestionError("choose the competencies this version targets first", code="no_target_competencies")
-    levels = [level.name_ar for level in version.program.template_version.levels.order_by("depth")]
+    levels = _levels(version)
     program = version.program
     return drafting.outline_payload(program.title, program.target_role, levels, [_competency(c) for c in targets])
 
 
-def request(version: ProgramVersion, kind: str, *, actor, block_key=None) -> Suggestion:
+def request(version: ProgramVersion, kind: str, *, actor, block_key=None, text: str = "") -> Suggestion:
     """A suggestion for the version's current content; an open one for the same content is returned instead."""
     if not version.is_editable:
         raise VersionLocked()
     # The rows are read below; a live draft's latest content reaches them first when the editor can be reached.
     # This calls the collaboration service, so it happens before the transaction, not while holding it.
     lifecycle.rows_requested.send(sender=ProgramVersion, version=version)
-    return _record_request(version, kind, actor=actor, block_key=block_key)
+    return _record_request(version, kind, actor=actor, block_key=block_key, text=text)
+
+
+def _levels(version: ProgramVersion) -> list[str]:
+    return [level.name_ar for level in version.program.template_version.levels.order_by("depth")]
+
+
+def _import_request(version: ProgramVersion, text: str) -> dict:
+    """The text as Harak 1 reads it, and the layout its rules give on this template, kept to fall back on."""
+    try:
+        read = importing.read(text)
+    except importing.ImportTextInvalid as exc:
+        code = "import_no_text" if exc.code == "NO_TEXT" else "import_text_invalid"
+        raise SuggestionError(str(exc), code=code) from exc
+    levels = _levels(version)
+    return {"text": text, "levels": levels, "rules": importing.rules_proposal(read, level_count=len(levels))}
 
 
 @transaction.atomic
-def _record_request(version: ProgramVersion, kind: str, *, actor, block_key) -> Suggestion:
+def _record_request(version: ProgramVersion, kind: str, *, actor, block_key, text) -> Suggestion:
     if kind == Suggestion.Kind.REWRITE:
         payload, subject = _rewrite_request(version, block_key), str(block_key)
+    elif kind == Suggestion.Kind.IMPORT:
+        payload, subject = _import_request(version, text), ""
     else:
         payload, subject = _outline_request(version), ""
     basis = _hash(payload)
@@ -98,10 +115,36 @@ def _enqueue(suggestion: Suggestion) -> None:
         )
 
 
+def _import_answer(suggestion: Suggestion) -> tuple[str, str, dict, str]:
+    """The agent's layout when it is usable; otherwise the rules' layout, with the reason the AI did not help.
+    Either way the import is ready for the author to confirm or reject."""
+    payload = suggestion.request
+    rules = payload["rules"]
+    read = importing.read(payload["text"])
+    if len(read["lines"]) > importing.MAX_AI_LINES:
+        return Suggestion.Status.READY, "too_long", rules, ""
+    try:
+        output, model = importing.distribute(read, payload["levels"], organization_id=suggestion.organization_id)
+    except AIUnavailable as exc:
+        return Suggestion.Status.READY, exc.reason, rules, ""
+    try:
+        shaped = importing.shape_import(output, lines=read["lines"], level_count=len(payload["levels"]))
+    except importing.ImportRejected:
+        return Suggestion.Status.READY, "ai_rejected", rules, model
+    return (
+        Suggestion.Status.READY,
+        "",
+        {**shaped, "confidence": output["confidence"], "explanation": output["explanation"]},
+        model,
+    )
+
+
 def _answer(suggestion: Suggestion) -> tuple[str, str, dict, str]:
     """(status, reason, result, model) of asking the agent."""
     payload = suggestion.request
     organization_id = suggestion.organization_id
+    if suggestion.kind == Suggestion.Kind.IMPORT:
+        return _import_answer(suggestion)
     if suggestion.kind == Suggestion.Kind.REWRITE:
         output, model = drafting.rewrite(
             payload["objective"],
@@ -143,7 +186,11 @@ def run(suggestion_id: int) -> None:
     suggestion = Suggestion.objects.select_related("version__program").filter(pk=suggestion_id).first()
     if suggestion is None or suggestion.status != Suggestion.Status.PENDING:
         return
-    spec = drafting.REWRITE if suggestion.kind == Suggestion.Kind.REWRITE else drafting.OUTLINE
+    spec = {
+        Suggestion.Kind.REWRITE: drafting.REWRITE,
+        Suggestion.Kind.OUTLINE: drafting.OUTLINE,
+        Suggestion.Kind.IMPORT: importing.SPEC,
+    }[suggestion.kind]
     try:
         status, reason, result, model = _answer(suggestion)
     except AIUnavailable as exc:

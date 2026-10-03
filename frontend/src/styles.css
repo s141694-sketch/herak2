@@ -179,6 +179,8 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
 .badge-objective { background: #e7e9f6; }
 .badge-ai { background: #f3e8fd; }
 .suggestion { margin-block: var(--space); }
+.suggestions { flex-wrap: wrap; align-items: flex-start; }
+.suggestions > .panel { flex-basis: 100%; }
 .outline { padding-inline-start: calc(var(--space) * 2); }
 .outline-objective { margin-block: 2px; }
 .badge-assessment { background: #f6efe0; }

@@ -283,3 +283,59 @@ def test_the_versions_suggestions_are_listed_newest_first(world, ai, ask):
     outline = ask(client, world["version"], kind="outline").json()
     listed = client.get(f"/api/program-versions/{world['version'].pk}/suggestions/").json()
     assert [s["id"] for s in listed] == [outline["id"], rewrite["id"]]
+
+
+# Imports (task 4.9).
+
+
+def test_an_import_without_ai_is_laid_out_by_harak1s_rules(world, ask):
+    from apps.agents.tests.test_importing import SAFETY
+
+    response = ask(signed_in(), world["version"], kind="import", text=SAFETY)
+    assert response.status_code == 202, response.content
+    body = signed_in().get(f"/api/suggestions/{response.json()['id']}/").json()
+    assert body["status"] == "ready" and body["reason"] == "not_configured"
+    result = body["result"]
+    assert result["source"] == "rules"
+    assert [n["title"] for n in result["nodes"] if n["parent"] == ""] == [
+        "الوحدة الأولى: مخاطر بيئة العمل",
+        "الوحدة الثانية: الاستجابة للطوارئ",
+    ]
+    assert "برنامج السلامة المهنية للفنيين" in result["unplaced"]
+
+
+def test_an_import_uses_the_agents_layout_when_it_is_usable(world, ai, ask):
+    from apps.agents.tests.test_importing import LOOSE, ai_answer
+
+    provider = ai(answer(json.dumps(ai_answer())))
+    response = ask(signed_in(), world["version"], kind="import", text=LOOSE)
+    body = signed_in().get(f"/api/suggestions/{response.json()['id']}/").json()
+    assert body["status"] == "ready" and body["reason"] == ""
+    assert body["result"]["source"] == "ai" and body["result"]["unplaced"] == []
+    assert [b["type"] for b in body["result"]["blocks"]] == ["content", "objective", "activity", "assessment"]
+    payload = json.loads(provider.requests[0].user.split("<data>")[1].split("</data>")[0])
+    assert payload["levels"] == ["وحدة", "درس"] and len(payload["lines"]) == 4
+
+
+def test_an_unusable_or_missing_ai_layout_falls_back_to_the_rules(world, ai, ask, monkeypatch):
+    from apps.agents import importing
+    from apps.agents.tests.test_importing import LOOSE, ai_answer
+
+    ai(answer(json.dumps(ai_answer(blocks=[]))))
+    response = ask(signed_in(), world["version"], kind="import", text=LOOSE)
+    body = signed_in().get(f"/api/suggestions/{response.json()['id']}/").json()
+    assert body["status"] == "ready" and body["reason"] == "ai_rejected" and body["result"]["source"] == "rules"
+
+    provider = ai()
+    monkeypatch.setattr(importing, "MAX_AI_LINES", 2)
+    response = ask(signed_in(), world["version"], kind="import", text=LOOSE + "أن يصف المتدرب الخطر.\n")
+    body = signed_in().get(f"/api/suggestions/{response.json()['id']}/").json()
+    assert body["reason"] == "too_long" and body["result"]["source"] == "rules"
+    assert provider.requests == []
+
+
+def test_text_harak1_cannot_read_is_refused(world, ask):
+    client = signed_in()
+    response = ask(client, world["version"], kind="import", text="no arabic text here at all, only english words")
+    assert response.status_code == 409 and response.json()["error"]["code"] == "import_no_text"
+    assert ask(client, world["version"], kind="import").status_code == 400

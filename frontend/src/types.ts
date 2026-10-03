@@ -220,6 +220,16 @@ export interface OutlineResult {
   explanation: string
 }
 
+export interface ImportResult {
+  source: 'rules' | 'ai'
+  nodes: Array<{ ref: string; parent: string; title: string }>
+  blocks: Array<{ node: string; type: BlockType; text: string }>
+  unplaced: string[]
+  warnings: string[]
+  confidence?: 'high' | 'medium' | 'low'
+  explanation?: string
+}
+
 export interface RewriteResult {
   objective: string
   confidence: 'high' | 'medium' | 'low'
@@ -230,12 +240,12 @@ export interface RewriteResult {
 export interface Suggestion {
   id: number
   version: number
-  kind: 'rewrite' | 'outline'
+  kind: 'rewrite' | 'outline' | 'import'
   subject: string
   status: SuggestionStatus
   reason: string
   original: string | null
-  result: RewriteResult | OutlineResult | null
+  result: RewriteResult | OutlineResult | ImportResult | null
   model: string
   prompt_version: string
   created_at: string

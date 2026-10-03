@@ -29,7 +29,7 @@ import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../..
 import { announceCommentsChanged, type LiveDocument, useLiveDocument } from '../../live/useLiveDocument'
 import { BLOCK_TYPES, type BlockType, type FrameworkVersionDetail, type ProgramComment, type ProgramVersionDetail } from '../../types'
 import { CommentCard, type CommentContext, NewComment, placementOf } from './Comments'
-import { OutlineSuggestion, RewriteSuggestion, type SuggestionContext } from './Suggestions'
+import { ImportSuggestion, OutlineSuggestion, RewriteSuggestion, type SuggestionContext } from './Suggestions'
 
 interface Ctx {
   comments: CommentContext
@@ -209,7 +209,12 @@ export function LiveVersionPage({
       </ul>
 
       <h2>{t('tree.title')}</h2>
-      {ctx?.editable && <OutlineSuggestion ctx={ctx.suggestions} />}
+      {ctx?.editable && (
+        <div className="row suggestions">
+          <OutlineSuggestion ctx={ctx.suggestions} />
+          <ImportSuggestion ctx={ctx.suggestions} />
+        </div>
+      )}
       {ctx && live?.everSynced && (
         <div className="tree" data-testid="tree">
           {roots.length === 0 && <p className="muted">{t('tree.empty', { level: ctx.levelName(0) })}</p>}

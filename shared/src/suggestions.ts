@@ -3,7 +3,7 @@ import * as Y from 'yjs'
 import { plainText } from './anchors'
 import { setBlockContent } from './materialize'
 import { addBlock, addLink, addNode, DocumentRuleError } from './operations'
-import { blocksOf } from './schema'
+import { type BlockType, blocksOf } from './schema'
 
 /**
  * Writing an accepted AI suggestion into the live document (task 4.8). The author's own editor applies it, as an
@@ -63,36 +63,54 @@ export interface OutlineSuggestion {
   objectives: Array<{ node: string; text: string; competency_key: string | null }>
 }
 
-function write(doc: Y.Doc, outline: OutlineSuggestion, levelCount: number) {
+export interface ImportSuggestion {
+  nodes: Array<{ ref: string; parent: string; title: string }>
+  blocks: Array<{ node: string; type: BlockType; text: string }>
+}
+
+interface Layout {
+  nodes: Array<{ ref: string; parent: string; title: string }>
+  blocks: Array<{ node: string; type: BlockType; text: string; competency_key?: string | null }>
+}
+
+function write(doc: Y.Doc, layout: Layout, levelCount: number) {
   const keys = new Map<string, string>()
-  for (const node of outline.nodes) {
+  for (const node of layout.nodes) {
     const parent = node.parent ? keys.get(node.parent) : null
     if (parent === undefined) throw new DocumentRuleError('node_parent_invalid')
     keys.set(node.ref, addNode(doc, { parent, title: node.title }, levelCount))
   }
-  for (const objective of outline.objectives) {
-    const nodeKey = keys.get(objective.node)
+  for (const item of layout.blocks) {
+    const nodeKey = keys.get(item.node)
     if (!nodeKey) throw new DocumentRuleError('block_node_invalid')
-    const block = addBlock(doc, { node_key: nodeKey, type: 'objective' })
-    setBlockContent(doc, block, paragraphs(objective.text))
-    if (objective.competency_key) addLink(doc, { kind: 'objective_competency', source_key: block, competency_key: objective.competency_key })
+    const block = addBlock(doc, { node_key: nodeKey, type: item.type })
+    setBlockContent(doc, block, paragraphs(item.text))
+    if (item.competency_key) addLink(doc, { kind: 'objective_competency', source_key: block, competency_key: item.competency_key })
   }
+}
+
+/** Writes a layout as one change. It is tried on a copy first, so a rule that refuses any part of it leaves the
+ * document untouched (a Yjs transaction cannot be rolled back). New nodes come after the top-level nodes there. */
+function writeAll(doc: Y.Doc, layout: Layout, levelCount: number): void {
+  const trial = new Y.Doc()
+  Y.applyUpdate(trial, Y.encodeStateAsUpdate(doc))
+  try {
+    write(trial, layout, levelCount)
+  } finally {
+    trial.destroy()
+  }
+  doc.transact(() => write(doc, layout, levelCount))
+}
+
+/** Adds an outline's nodes, its objectives and their links to the competencies. */
+export function applyOutline(doc: Y.Doc, outline: OutlineSuggestion, levelCount: number): { nodes: number; objectives: number } {
+  const blocks = outline.objectives.map((o) => ({ node: o.node, type: 'objective' as const, text: o.text, competency_key: o.competency_key }))
+  writeAll(doc, { nodes: outline.nodes, blocks }, levelCount)
   return { nodes: outline.nodes.length, objectives: outline.objectives.length }
 }
 
-/**
- * Adds an outline's nodes (after the top-level nodes already there), its objectives and their links to the
- * competencies, as one change. It is tried on a copy first, so a rule that refuses any part leaves the
- * document untouched (a Yjs transaction cannot be rolled back).
- */
-export function applyOutline(doc: Y.Doc, outline: OutlineSuggestion, levelCount: number): { nodes: number; objectives: number } {
-  const trial = new Y.Doc()
-  Y.applyUpdate(trial, Y.encodeStateAsUpdate(doc))
-  write(trial, outline, levelCount)
-  trial.destroy()
-  let counts = { nodes: 0, objectives: 0 }
-  doc.transact(() => {
-    counts = write(doc, outline, levelCount)
-  })
-  return counts
+/** Adds an imported layout's nodes and blocks, each block of its type with its lines as paragraphs. */
+export function applyImport(doc: Y.Doc, layout: ImportSuggestion, levelCount: number): { nodes: number; blocks: number } {
+  writeAll(doc, layout, levelCount)
+  return { nodes: layout.nodes.length, blocks: layout.blocks.length }
 }

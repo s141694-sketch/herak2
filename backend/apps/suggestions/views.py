@@ -29,7 +29,9 @@ class VersionSuggestionsView(APIView):
         serializer = SuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        suggestion = services.request(version, data["kind"], actor=request.user, block_key=data.get("block_key"))
+        suggestion = services.request(
+            version, data["kind"], actor=request.user, block_key=data.get("block_key"), text=data.get("text", "")
+        )
         return Response(
             SuggestionSerializer(_suggestions().get(pk=suggestion.pk)).data, status=status.HTTP_202_ACCEPTED
         )

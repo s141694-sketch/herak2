@@ -16,6 +16,7 @@ class Suggestion(OrganizationScopedModel):
     class Kind(models.TextChoices):
         REWRITE = "rewrite", "rewrite"
         OUTLINE = "outline", "outline"
+        IMPORT = "import", "import"
 
     class Status(models.TextChoices):
         PENDING = "pending", "pending"

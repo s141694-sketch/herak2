@@ -78,6 +78,10 @@ describe('translations', () => {
       expect(lookup(ar as Tree, `suggestions.failed.${reason}`), reason).toBeDefined()
     }
     for (const level of ['high', 'medium', 'low']) expect(lookup(ar as Tree, `suggestions.confidence.${level}`), level).toBeDefined()
+    for (const reason of ['default', 'rules_only', 'not_released', 'not_configured', 'quota_exceeded', 'too_long', 'ai_rejected']) {
+      expect(lookup(ar as Tree, `suggestions.importFallback.${reason}`), reason).toBeDefined()
+    }
+    expect(lookup(ar as Tree, 'suggestions.warnings.NO_UNITS_DETECTED')).toBeDefined()
   })
 
   it('every reason a live save can fail for has a translated explanation', () => {

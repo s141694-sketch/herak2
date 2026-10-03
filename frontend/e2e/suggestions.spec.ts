@@ -137,3 +137,62 @@ test('an accepted outline adds its nodes, objectives and competency links for ev
   await expect(admin.getByTestId('block-objective').getByTestId('alignment')).toContainText(competency.code)
   expect(decisions).toEqual([{ decision: 'accepted', body: null }])
 })
+
+// Task 4.9: an import is laid out by Harak 1's rules (here without any model), previewed, and reaches the
+// document only when the author accepts it.
+const CURRICULUM = `برنامج السلامة المهنية للفنيين
+
+الوحدة الأولى: مخاطر بيئة العمل
+
+الدرس الأول: تحديد المخاطر
+الأهداف:
+أن يعدد المتدرب أنواع المخاطر في موقع العمل.
+أن يصف المتدرب مصدر كل خطر بدقة.
+الأنشطة:
+نشاط 1: جولة ميدانية في الورشة لرصد المخاطر.
+التقويم:
+اختبار قصير من عشرة أسئلة.
+`
+
+test('an import is laid out by the rules, previewed, and added only when accepted', async ({ browser }) => {
+  test.setTimeout(90_000)
+  const admin = await signIn(browser, 'multi@example.com')
+  const author = await signIn(browser, 'author@example.com')
+  const { versionId } = await freshProgram(admin)
+  await openLive(admin, versionId)
+  await openLive(author, versionId)
+
+  // Rejected: nothing reaches the document.
+  await author.getByTestId('import-open').click()
+  await author.getByTestId('import-text').fill(CURRICULUM)
+  await author.getByTestId('import-submit').click()
+  await expect(author.getByTestId('import-suggestion')).toHaveAttribute('data-source', 'rules')
+  await author.getByTestId('suggestion-dismiss').click()
+  await author.getByTestId('suggestion-dismiss-confirm').click()
+  await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'dismissed')
+  await expect(admin.getByTestId('node-الوحدة الأولى: مخاطر بيئة العمل')).toHaveCount(0)
+
+  // Accepted: the layout becomes the document for everyone.
+  await author.getByTestId('suggestion-outcome').getByRole('button').click()
+  await author.getByTestId('import-open').click()
+  await author.getByTestId('import-text').fill(CURRICULUM)
+  await author.getByTestId('import-submit').click()
+  const preview = author.getByTestId('import-suggestion')
+  await expect(preview.getByTestId('import-rules-note')).toContainText('الذكاء الاصطناعي غير مُعدّ')
+  await expect(preview.getByTestId('import-node')).toHaveCount(2)
+  await expect(preview.locator('[data-testid="import-block"][data-type="objective"]')).toHaveCount(2)
+  await expect(preview.getByTestId('import-unplaced')).toContainText('1')
+  await author.screenshot({ path: 'e2e/screenshots/62-import-preview-ar.png', fullPage: true })
+  await author.getByTestId('suggestion-accept').click()
+  await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'accepted')
+  await expect(admin.getByTestId('node-الوحدة الأولى: مخاطر بيئة العمل')).toBeVisible()
+  await expect(admin.getByTestId('node-الدرس الأول: تحديد المخاطر')).toBeVisible()
+  await expect(admin.getByTestId('block-objective')).toHaveCount(2)
+  await expect(admin.getByTestId('block-activity')).toHaveCount(1)
+
+  const listed = await api<Array<{ kind: string; status: string }>>(admin, 'GET', `/api/program-versions/${versionId}/suggestions/`)
+  expect(listed.map((s) => [s.kind, s.status])).toEqual([
+    ['import', 'accepted'],
+    ['import', 'dismissed'],
+  ])
+})
