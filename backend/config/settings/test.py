@@ -10,6 +10,9 @@ os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 os.environ.setdefault("COLLAB_TOKEN_SECRET", "test-collab-token-secret-0123456789")
 os.environ.setdefault("COLLAB_SERVICE_SECRET", "test-collab-service-secret-0123456789")
+# Tests never call a real model; the ones that exercise the gateway give it a provider explicitly.
+os.environ.setdefault("AI_PROVIDER", "")
+os.environ.setdefault("AI_BACKOFF_SECONDS", "0")
 
 from .base import *  # noqa: E402, F403
 

@@ -20,6 +20,13 @@ env = environ.Env(
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
+    AI_PROVIDER=(str, "claude"),
+    AI_MODEL=(str, "claude-opus-5-5"),
+    AI_TIMEOUT_SECONDS=(float, 60.0),
+    AI_MAX_ATTEMPTS=(int, 3),
+    AI_BACKOFF_SECONDS=(float, 1.0),
+    AI_MONTHLY_TOKEN_QUOTA=(int, 2_000_000),
+    AI_RECORDINGS_DIR=(str, ""),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -46,6 +53,7 @@ INSTALLED_APPS = [
     "apps.collab",
     "apps.comments",
     "apps.quality",
+    "apps.ai",
 ]
 
 MIDDLEWARE = [
@@ -121,6 +129,16 @@ COLLAB_SERVICE_SECRET = env("COLLAB_SERVICE_SECRET")
 COLLAB_TOKEN_TTL_SECONDS = env("COLLAB_TOKEN_TTL_SECONDS")
 COLLAB_INTERNAL_URL = env("COLLAB_INTERNAL_URL")
 COLLAB_TIMEOUT_SECONDS = env("COLLAB_TIMEOUT_SECONDS")
+
+# AI gateway (apps.ai, decision D37). The provider needs ANTHROPIC_API_KEY in the environment; without it,
+# or with AI_PROVIDER empty, the product runs on rules only. The key is read by the SDK, never stored here.
+AI_PROVIDER = env("AI_PROVIDER")
+AI_MODEL = env("AI_MODEL")
+AI_TIMEOUT_SECONDS = env("AI_TIMEOUT_SECONDS")
+AI_MAX_ATTEMPTS = env("AI_MAX_ATTEMPTS")
+AI_BACKOFF_SECONDS = env("AI_BACKOFF_SECONDS")
+AI_MONTHLY_TOKEN_QUOTA = env("AI_MONTHLY_TOKEN_QUOTA")
+AI_RECORDINGS_DIR = env("AI_RECORDINGS_DIR")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 AUTH_USER_MODEL = "accounts.User"
