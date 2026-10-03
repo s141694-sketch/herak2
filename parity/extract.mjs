@@ -144,13 +144,14 @@ async function extract(outDir) {
 
   const corpus = JSON.parse(readFileSync(join(here, 'corpus', 'objectives.json'), 'utf8')).items
   const competencies = JSON.parse(readFileSync(join(here, 'corpus', 'competencies.json'), 'utf8')).items
+  const edge = JSON.parse(readFileSync(join(here, 'corpus', 'edge-cases.json'), 'utf8'))
   const dictionary = [
     ...data.bloomLevels.flatMap((l) => l.verbs),
     ...data.affective.levels.flatMap((l) => l.verbs.map((v) => v.split(' ')[0])),
     ...data.psychomotor.levels.flatMap((l) => l.verbs.map((v) => v.split(' ')[0])),
   ]
-  const objectives = [...new Set([...corpus, ...verbVariants([...new Set(dictionary)])])]
-  const texts = [...new Set([...fuzzTexts(400, 20261003), ...corpus, ...competencies.map((c) => c.text)])]
+  const objectives = [...new Set([...corpus, ...edge.objectives, ...verbVariants([...new Set(dictionary)])])]
+  const texts = [...new Set([...fuzzTexts(400, 20261003), ...edge.texts, ...corpus, ...edge.objectives, ...competencies.map((c) => c.text)])]
 
   const textResults = await page.evaluate(
     (texts) =>
@@ -210,6 +211,18 @@ async function extract(outDir) {
     { objectives: corpus, competencies },
   )
 
+  const edgePairs = await page.evaluate(
+    (pairs) =>
+      pairs.map(({ note, objective, competency }) => {
+        const score = jaccard(tokenSet(objective), tokenSet(competency))
+        const matches = matchStandards(mkStruct([objective]), [{ id: 'X', code: '', text: competency }], [])
+          .filter((m) => m.source === 'user')
+          .map((m) => ({ score: m.score, confidence: m.confidence }))
+        return { note, objective, competency, score, rounded: Math.round(score * 100) / 100, confidence: scoreConfidence(score), matches }
+      }),
+    edge.pairs,
+  )
+
   const files = readdirSync(join(here, 'corpus', 'curricula')).filter((f) => f.endsWith('.txt')).sort()
   const curricula = [
     ...files.map((f) => ({ name: f, text: readFileSync(join(here, 'corpus', 'curricula', f), 'utf8') })),
@@ -248,12 +261,13 @@ async function extract(outDir) {
   await browser.close()
 
   delete data.samples
-  writeJson(outDir, 'meta.json', { harak1: lock, chromium: chromiumVersion, counts: { texts: texts.length, objectives: objectives.length, pairs: matching.pairs.length, documents: documents.length } })
+  writeJson(outDir, 'meta.json', { harak1: lock, chromium: chromiumVersion, counts: { texts: texts.length, objectives: objectives.length, pairs: matching.pairs.length, edgePairs: edgePairs.length, documents: documents.length } })
   writeJson(outDir, 'data.json', data)
   writeLines(outDir, 'text.json', textResults)
   writeLines(outDir, 'objectives.json', objectiveResults)
   writeJson(outDir, 'matching.json', { ...matching, pairs: undefined })
   writeLines(outDir, 'matching-pairs.json', matching.pairs)
+  writeLines(outDir, 'matching-edge.json', edgePairs)
   writeLines(outDir, 'documents.json', documents)
   writeLines(outDir, 'pagination.json', pagination)
 }

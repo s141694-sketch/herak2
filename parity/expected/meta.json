@@ -7,9 +7,10 @@
   },
   "chromium": "141.0.7390.37",
   "counts": {
-    "texts": 499,
-    "objectives": 1689,
+    "texts": 694,
+    "objectives": 1794,
     "pairs": 1800,
-    "documents": 12
+    "edgePairs": 10,
+    "documents": 15
   }
 }

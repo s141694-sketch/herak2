@@ -1,0 +1,12 @@
+[
+{"note":"1/8 = 0.125","objective":"قبب عبب عةة عتت","competency":"قبب غبب غةة غتت غثث","score":0.125,"rounded":0.13,"confidence":null,"matches":[]},
+{"note":"3/8 = 0.375","objective":"قبب قةة قتت عبب عةة","competency":"قبب قةة قتت غبب غةة غتت","score":0.375,"rounded":0.38,"confidence":"medium","matches":[{"score":0.38,"confidence":"medium"}]},
+{"note":"5/8 = 0.625","objective":"قبب قةة قتت قثث قجج عبب","competency":"قبب قةة قتت قثث قجج غبب غةة","score":0.625,"rounded":0.63,"confidence":"high","matches":[{"score":0.63,"confidence":"high"}]},
+{"note":"1/16 = 0.0625","objective":"قبب عبب عةة عتت عثث عجج عحح عخخ","competency":"قبب غبب غةة غتت غثث غجج غحح غخخ غدد","score":0.0625,"rounded":0.06,"confidence":null,"matches":[]},
+{"note":"7/16 = 0.4375","objective":"قبب قةة قتت قثث قجج قحح قخخ عبب عةة عتت عثث","competency":"قبب قةة قتت قثث قجج قحح قخخ غبب غةة غتت غثث غجج","score":0.4375,"rounded":0.44,"confidence":"medium","matches":[{"score":0.44,"confidence":"medium"}]},
+{"note":"1/2 = 0.5 is medium, not high","objective":"قبب","competency":"قبب غبب","score":0.5,"rounded":0.5,"confidence":"medium","matches":[{"score":0.5,"confidence":"medium"}]},
+{"note":"3/10 = 0.3 is medium","objective":"قبب قةة قتت عبب عةة عتت","competency":"قبب قةة قتت غبب غةة غتت غثث","score":0.3,"rounded":0.3,"confidence":"medium","matches":[{"score":0.3,"confidence":"medium"}]},
+{"note":"3/20 = 0.15 is low","objective":"قبب قةة قتت عبب عةة عتت عثث عجج عحح عخخ عدد","competency":"قبب قةة قتت غبب غةة غتت غثث غجج غحح غخخ غدد غذذ","score":0.15,"rounded":0.15,"confidence":"low","matches":[{"score":0.15,"confidence":"low"}]},
+{"note":"2/13 just above 0.15","objective":"قبب قةة عبب عةة عتت عثث عجج","competency":"قبب قةة غبب غةة غتت غثث غجج غحح","score":0.15384615384615385,"rounded":0.15,"confidence":"low","matches":[{"score":0.15,"confidence":"low"}]},
+{"note":"nothing shared","objective":"عبب عةة عتت","competency":"غبب غةة غتت","score":0,"rounded":0,"confidence":null,"matches":[]}
+]
