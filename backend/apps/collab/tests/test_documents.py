@@ -190,7 +190,11 @@ def test_invalid_links_are_skipped_and_reported_not_fatal(world):
         assert AlignmentLink.objects.filter(version=v).count() == 2
 
 
-def test_a_failed_materialization_keeps_the_last_good_rows_and_records_the_error(world):
+def test_a_failed_materialization_keeps_the_last_good_rows_and_records_the_error(world, monkeypatch):
+    alerts = []
+    monkeypatch.setattr(
+        "apps.collab.internal_views.sentry_sdk.capture_message", lambda message, level: alerts.append((message, level))
+    )
     v = world["version"]
     assert (
         service()
@@ -209,6 +213,7 @@ def test_a_failed_materialization_keeps_the_last_good_rows_and_records_the_error
         draft = DraftDocument.objects.get(version=v)
         assert bytes(draft.state) == b"\x01", "the state that failed is not stored over the last good one"
         assert "content" in draft.last_error and draft.last_error_at
+    assert alerts and alerts[0][1] == "error", "a technical alert is raised"
 
 
 def test_nodes_deeper_than_the_template_fail_materialization(world):

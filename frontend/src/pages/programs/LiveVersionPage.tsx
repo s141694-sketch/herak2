@@ -211,14 +211,16 @@ function LiveStatusBar({ live, version }: { live: LiveDocument | null; version: 
   else if (live.mode === 'read') message = t('live.readOnly')
   else message = t('live.connected')
   const savedAt = version.live.materialized_at
+  // Live news from the service wins over what the page loaded with.
+  const saveError = live.saveError !== undefined ? live.saveError : version.live.last_error
   return (
     <div className="live-status">
       <p className={tone} data-testid="live-status" data-state={live.locked ? 'locked' : live.status} data-mode={live.mode ?? ''}>
         {message}
       </p>
-      {version.live.last_error && (
+      {saveError && (
         <p className="error" data-testid="live-save-error">
-          {t('live.saveError', { error: version.live.last_error })}
+          {t('live.saveError', { error: saveError })}
         </p>
       )}
       {savedAt && <p className="muted">{t('live.lastSaved', { time: new Date(savedAt).toLocaleString(i18n.language) })}</p>}

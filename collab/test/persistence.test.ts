@@ -97,6 +97,10 @@ describe('loading and saving through Django', () => {
     a.doc.getMap<Y.Map<unknown>>('nodes').forEach((node) => node.set('title', 'تعديل'))
     await eventually(() => service.statusOf(NAME)?.lastSave === 'failed')
     expect(service.statusOf(NAME)?.lastError).toBe('block x: content invalid')
+    await eventually(() => a.stateless.includes(JSON.stringify({ type: 'save-failed', error: 'block x: content invalid' })))
+    store.nextSave = { status: 'saved' }
+    a.doc.getMap<Y.Map<unknown>>('nodes').forEach((node) => node.set('title', 'إصلاح'))
+    await eventually(() => a.stateless.includes(JSON.stringify({ type: 'saved' })))
     a.provider.destroy()
   })
 })

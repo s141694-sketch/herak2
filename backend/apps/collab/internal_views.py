@@ -4,6 +4,8 @@ import base64
 import binascii
 import hmac
 
+import sentry_sdk
+import structlog
 from django.conf import settings
 from django.db import transaction
 from django.http import Http404
@@ -20,6 +22,8 @@ from apps.tenancy.context import organization_context
 
 from .materialization import MaterializationError, apply_rows, rows_from_version
 from .models import DraftDocument
+
+log = structlog.get_logger("harak2.collab")
 
 
 class IsCollabService(permissions.BasePermission):
@@ -47,6 +51,9 @@ class _ServiceView(APIView):
 
 
 def _record_failure(version: ProgramVersion, error: str) -> None:
+    """Keeps the last good rows (the failed apply rolled back), raises a technical alert, blocks submission."""
+    log.error("collab.materialization_failed", version=version.pk, organization=version.organization_id, error=error)
+    sentry_sdk.capture_message(f"materialization failed for version {version.pk}: {error}", level="error")
     draft, _ = DraftDocument.objects.get_or_create(version=version, defaults={"state": b""})
     draft.last_error = error[:2000]
     draft.last_error_at = timezone.now()

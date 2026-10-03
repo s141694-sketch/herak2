@@ -19,6 +19,8 @@ export interface LiveDocument {
   locked: boolean
   /** Bumped when another client announces that comments changed. */
   commentsVersion: number
+  /** Last save news from the service: an error, null once saving works again, undefined before any news. */
+  saveError: string | null | undefined
 }
 
 interface TokenResponse {
@@ -59,13 +61,15 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
         try {
           const type = JSON.parse(payload).type
           if (type === 'locked') update({ locked: true, mode: 'read' })
+          if (type === 'save-failed') update({ saveError: String(JSON.parse(payload).error ?? '') })
+          if (type === 'saved') update({ saveError: null })
           if (type === 'comments-changed') setLive((current) => (current && current.doc === doc ? { ...current, commentsVersion: current.commentsVersion + 1 } : current))
         } catch {
           // Ignore messages this client does not understand.
         }
       },
     })
-    setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, mode: null, authFailed: false, locked: false, commentsVersion: 0 })
+    setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, mode: null, authFailed: false, locked: false, commentsVersion: 0, saveError: undefined })
     return () => {
       provider.destroy()
       doc.destroy()

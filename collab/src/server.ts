@@ -96,7 +96,8 @@ export class CollabService {
       },
       onRequest: async ({ request, response }) => {
         const reply = (status: number, body: unknown) => {
-          response.writeHead(status, { 'Content-Type': 'application/json' })
+          // Internal calls are rare; closing avoids clients reusing a socket to a restarted service.
+          response.writeHead(status, { 'Content-Type': 'application/json', Connection: 'close' })
           response.end(JSON.stringify(body))
         }
         if (request.url === '/health') {
@@ -142,6 +143,9 @@ export class CollabService {
   async store(documentName: string, document: Y.Doc, actorId: string | null): Promise<DocumentStatus | undefined> {
     const status = this.status.get(documentName)
     if (!status || status.locked || !this.options.store) return status
+    const before = status.lastSave
+    const tell = (message: Record<string, unknown>) =>
+      this.server.hocuspocus.documents.get(documentName)?.broadcastStateless(JSON.stringify(message))
     let rows
     try {
       rows = materialize(document)
@@ -150,18 +154,22 @@ export class CollabService {
       status.lastError = `materialize: ${(error as Error).message}`
       this.log('collab.materialize_failed', { document: documentName, error: status.lastError })
       await this.options.store.reportFailure(status.versionId, status.lastError).catch(() => undefined)
+      tell({ type: 'save-failed', error: status.lastError })
       return status
     }
     const result = await this.options.store.save(status.versionId, Y.encodeStateAsUpdate(document), rows, actorId)
     if (result.status === 'saved') {
       status.lastSave = 'saved'
       status.lastError = null
+      if (before === 'failed') tell({ type: 'saved' })
     } else if (result.status === 'locked') {
       this.lock(documentName)
     } else {
       status.lastSave = 'failed'
       status.lastError = result.error
       this.log('collab.save_failed', { document: documentName, error: result.error })
+      // Editors show it at once; submission stays blocked until a later save succeeds.
+      tell({ type: 'save-failed', error: result.error })
     }
     return status
   }
