@@ -15,7 +15,15 @@ from apps.tenancy.isolation import EXEMPT_ROUTES, PROBES
 from apps.tenancy.models import OrganizationScopedManager, OrganizationScopedModel
 
 # Global tables that cannot carry a single organization (decision D10 in the decisions log).
-GLOBAL_MODELS = {"accounts.User", "accounts.Organization"}
+# Tables without an organization, and why (decision D10, and D41 for the evaluation records).
+GLOBAL_MODELS = {
+    "accounts.User": "a user may belong to several organizations",
+    "accounts.Organization": "the tenant itself",
+    "evals.GoldenSet": "the golden set is the product's, built by the owner's experts (spec 8.2)",
+    "evals.GoldenItem": "part of a golden set",
+    "evals.AgentThreshold": "the owner's release thresholds apply to every organization (spec 5.5)",
+    "evals.AgentEvaluation": "an agent version is released for all organizations or none",
+}
 PROJECT_APP_PREFIX = "apps."
 
 

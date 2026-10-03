@@ -74,13 +74,13 @@ BY_DECISION = {"rules_only", "not_released", "not_configured"}
 
 
 class ReleaseGate:
-    """Whether an agent may run with this prompt version and model (spec 5.5).
-
-    Closed: no agent runs until an evaluation on the golden set shows it passes the owner's threshold.
-    """
+    """Whether an agent may run with this prompt version and model (spec 5.5, D40): only after an evaluation of
+    that exact version on the golden set reached every threshold the owner set."""
 
     def is_released(self, spec: AgentSpec, model: str) -> bool:
-        return False
+        from apps.evals.release import is_released
+
+        return is_released(spec.name, spec.prompt_version, model)
 
 
 @dataclass
@@ -99,13 +99,7 @@ class Gateway:
         if not self.release_gate.is_released(spec, provider.model):
             raise AIUnavailable("not_released", f"{spec.name} {spec.prompt_version} on {provider.model}")
 
-        request = providers.ProviderRequest(
-            system=spec.system,
-            user=f"<data>\n{json.dumps(payload, ensure_ascii=False, sort_keys=True)}\n</data>",
-            schema=spec.schema,
-            max_tokens=spec.max_tokens,
-            effort=spec.effort,
-        )
+        request = _request(spec, payload)
         key = cache_key(spec, provider.model, payload)
         usage = AIUsage(agent=spec.name, prompt_version=spec.prompt_version, model=provider.model, cache_key=key)
 
@@ -123,53 +117,101 @@ class Gateway:
             _alert_quota_once(organization_id, quota)
             raise AIUnavailable("quota_exceeded")
 
-        started = time.monotonic()
-        result: AIResult | None = None
-        status, detail = AIUsage.Status.ERROR, ""
-        for attempt in range(settings.AI_MAX_ATTEMPTS):
-            usage.attempts = attempt + 1
-            try:
-                response = provider.complete(request)
-            except providers.ProviderTimeout as exc:
-                status, detail = AIUsage.Status.TIMEOUT, str(exc)
-            except providers.ProviderTransient as exc:
-                status, detail = AIUsage.Status.ERROR, str(exc)
-            except providers.ProviderRefused as exc:
-                status, detail = AIUsage.Status.REFUSED, str(exc)
-                break
-            except providers.ProviderError as exc:
-                status, detail = AIUsage.Status.ERROR, str(exc)
-                break
-            except Exception as exc:  # a defect in a provider must not take the rules down with it
-                status, detail = AIUsage.Status.ERROR, f"unexpected: {exc!r}"
-                sentry_sdk.capture_exception(exc)
-                break
-            else:
-                _add_tokens(usage, response)
-                usage.served_model = response.model
-                try:
-                    output = parse_output(response, spec.schema)
-                except InvalidOutput as exc:
-                    status, detail = AIUsage.Status.INVALID_OUTPUT, str(exc)
-                else:
-                    result = AIResult(output=output, model=response.model, cached=False, usage_id=None)
-                    break
-            if attempt + 1 < settings.AI_MAX_ATTEMPTS:
-                self.sleep(backoff(attempt))
-        usage.latency_ms = int((time.monotonic() - started) * 1000)
-
-        if result is not None:
+        attempt = self._attempts(provider, spec, request)
+        _add_tokens(usage, attempt)
+        usage.attempts, usage.served_model, usage.latency_ms = attempt.attempts, attempt.model, attempt.latency_ms
+        if attempt.output is not None:
             usage.status = AIUsage.Status.OK
             usage.save()
             AICacheEntry.objects.update_or_create(
-                key=key, defaults={"agent": spec.name, "output": result.output, "model": result.model}
+                key=key, defaults={"agent": spec.name, "output": attempt.output, "model": attempt.model}
             )
-            return AIResult(output=result.output, model=result.model, cached=False, usage_id=usage.pk)
-        usage.status = status
-        usage.error = detail[:2000]
+            return AIResult(output=attempt.output, model=attempt.model, cached=False, usage_id=usage.pk)
+        usage.status = attempt.status
+        usage.error = attempt.detail[:2000]
         usage.save()
-        log.warning("ai.call_failed", agent=spec.name, status=status, attempts=usage.attempts, error=detail)
-        raise AIUnavailable(status, detail)
+        log.warning(
+            "ai.call_failed", agent=spec.name, status=attempt.status, attempts=attempt.attempts, error=attempt.detail
+        )
+        raise AIUnavailable(attempt.status, attempt.detail)
+
+    def evaluate(self, spec: AgentSpec, payload: dict, *, provider: providers.ProviderBase | None = None) -> dict:
+        """The evaluation path (spec 8.2): the same prompt, retries and validation as ``call``, without an
+        organization, its policy, cache, quota or the release gate, which this run exists to decide."""
+        provider = provider or self.provider_factory()
+        if provider is None:
+            raise AIUnavailable("not_configured")
+        attempt = self._attempts(provider, spec, _request(spec, payload))
+        if attempt.output is None:
+            raise AIUnavailable(attempt.status, attempt.detail)
+        return attempt.output
+
+    def _attempts(self, provider: providers.ProviderBase, spec: AgentSpec, request) -> "Attempts":
+        started = time.monotonic()
+        result = Attempts()
+        for attempt in range(settings.AI_MAX_ATTEMPTS):
+            result.attempts = attempt + 1
+            try:
+                response = provider.complete(request)
+            except providers.ProviderTimeout as exc:
+                result.status, result.detail = AIUsage.Status.TIMEOUT, str(exc)
+            except providers.ProviderTransient as exc:
+                result.status, result.detail = AIUsage.Status.ERROR, str(exc)
+            except providers.ProviderRefused as exc:
+                result.status, result.detail = AIUsage.Status.REFUSED, str(exc)
+                break
+            except providers.ProviderError as exc:
+                result.status, result.detail = AIUsage.Status.ERROR, str(exc)
+                break
+            except Exception as exc:  # a defect in a provider must not take the rules down with it
+                result.status, result.detail = AIUsage.Status.ERROR, f"unexpected: {exc!r}"
+                sentry_sdk.capture_exception(exc)
+                break
+            else:
+                result.add(response)
+                try:
+                    result.output = parse_output(response, spec.schema)
+                except InvalidOutput as exc:
+                    result.status, result.detail = AIUsage.Status.INVALID_OUTPUT, str(exc)
+                else:
+                    break
+            if attempt + 1 < settings.AI_MAX_ATTEMPTS:
+                self.sleep(backoff(attempt))
+        result.latency_ms = int((time.monotonic() - started) * 1000)
+        return result
+
+
+@dataclass
+class Attempts:
+    """What the attempts of one call produced: the validated output, or the last failure; tokens of all attempts."""
+
+    output: dict | None = None
+    model: str = ""
+    status: str = AIUsage.Status.ERROR
+    detail: str = ""
+    attempts: int = 0
+    latency_ms: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+    def add(self, response: providers.ProviderResponse) -> None:
+        self.model = response.model
+        self.input_tokens += response.input_tokens
+        self.output_tokens += response.output_tokens
+        self.cache_read_tokens += response.cache_read_tokens
+        self.cache_write_tokens += response.cache_write_tokens
+
+
+def _request(spec: AgentSpec, payload: dict) -> providers.ProviderRequest:
+    return providers.ProviderRequest(
+        system=spec.system,
+        user=f"<data>\n{json.dumps(payload, ensure_ascii=False, sort_keys=True)}\n</data>",
+        schema=spec.schema,
+        max_tokens=spec.max_tokens,
+        effort=spec.effort,
+    )
 
 
 class InvalidOutput(ValueError):
@@ -215,11 +257,11 @@ def used_this_month(organization_id: int) -> int:
     return (totals["i"] or 0) + (totals["o"] or 0)
 
 
-def _add_tokens(usage: AIUsage, response: providers.ProviderResponse) -> None:
-    usage.input_tokens += response.input_tokens
-    usage.output_tokens += response.output_tokens
-    usage.cache_read_tokens += response.cache_read_tokens
-    usage.cache_write_tokens += response.cache_write_tokens
+def _add_tokens(usage: AIUsage, attempt: Attempts) -> None:
+    usage.input_tokens += attempt.input_tokens
+    usage.output_tokens += attempt.output_tokens
+    usage.cache_read_tokens += attempt.cache_read_tokens
+    usage.cache_write_tokens += attempt.cache_write_tokens
 
 
 def _alert_quota_once(organization_id: int, quota: int) -> None:

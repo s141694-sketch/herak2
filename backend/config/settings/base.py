@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "apps.comments",
     "apps.quality",
     "apps.ai",
+    "apps.evals",
 ]
 
 MIDDLEWARE = [
