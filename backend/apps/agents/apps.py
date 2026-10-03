@@ -7,4 +7,4 @@ class AgentsConfig(AppConfig):
     verbose_name = "AI agents"
 
     def ready(self):
-        from . import classification  # noqa: F401 - registers the agent for evaluation
+        from . import alignment, classification  # noqa: F401 - registers the agents for evaluation

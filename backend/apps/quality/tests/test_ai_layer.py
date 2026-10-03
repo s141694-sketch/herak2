@@ -34,18 +34,47 @@ def reading(domain, level_id, verb="", explanation="قراءة"):
     )
 
 
+def verdict(value, explanation="شرح"):
+    return answer(
+        json.dumps({"verdict": value, "confidence": "medium", "explanation": explanation}, ensure_ascii=False)
+    )
+
+
+def suggestion(objective, explanation="اقتراح"):
+    return answer(
+        json.dumps({"objective": objective, "confidence": "medium", "explanation": explanation}, ensure_ascii=False)
+    )
+
+
 class Model(FakeProvider):
-    """Answers by objective text, so the order of calls does not matter; counts calls per objective."""
+    """Answers by request content, so the order of calls does not matter.
+
+    Classification: by objective text (``asked`` records them). Link checks: by (objective, competency code),
+    "aligned" unless set. Suggestions: by competency code, a sound objective unless set (``suggested``)."""
 
     def __init__(self, answers):
         super().__init__(model="claude-opus-5-5")
         self.answers = answers
         self.asked = []
+        self.links = {}
+        self.suggestions = {}
+        self.checked = []
+        self.suggested = []
 
     def complete(self, request):
-        objective = json.loads(request.user.removeprefix("<data>\n").removesuffix("\n</data>"))["objective"]
-        self.asked.append(objective)
-        outcome = self.answers[objective]
+        payload = json.loads(request.user.removeprefix("<data>\n").removesuffix("\n</data>"))
+        if "competency" in payload and "objective" in payload:
+            key = (payload["objective"], payload["competency"]["code"])
+            self.checked.append(key)
+            outcome = self.links.get(key, verdict("aligned"))
+        elif "competency" in payload:
+            self.suggested.append(payload["competency"]["code"])
+            outcome = self.suggestions.get(
+                payload["competency"]["code"], suggestion("أن يطبق المتدرب إجراء العزل باستخدام قائمة التحقق بدقة")
+            )
+        else:
+            self.asked.append(payload["objective"])
+            outcome = self.answers[payload["objective"]]
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome
@@ -97,9 +126,8 @@ def test_unsure_objectives_get_the_agents_reading_and_sure_ones_are_never_sent(w
     assert CLEAR not in world["model"].asked
     state = report(world)
     assert (state.status, state.ai_state["status"]) == ("complete", "done")
-    assert state.ai_prompts == {"classification": "2026-10-03.1"} and state.ai_models == {
-        "classification": "claude-opus-5-5"
-    }
+    assert state.ai_prompts == {"classification": "2026-10-03.1", "alignment_suggestion": "2026-10-03.1"}
+    assert state.ai_models == {"classification": "claude-opus-5-5", "alignment_suggestion": "claude-opus-5-5"}
 
 
 def test_a_disagreement_is_shown_with_both_readings_at_low_confidence(world):
@@ -146,6 +174,7 @@ def test_rules_only_mode_is_a_complete_report(world, django_capture_on_commit_ca
             services.update_block(world["blocks"][UNKNOWN], content=doc("أن يتأمل المتدرب"), actor=world["owner"])
     state = report(world)
     assert (state.status, state.ai_state) == ("complete", {"status": "skipped", "reasons": ["rules_only"]})
+    assert ai_findings(world) == {}, "earlier AI results are not shown in rules-only mode"
 
 
 def test_an_exhausted_quota_is_partial_and_says_why(world, django_capture_on_commit_callbacks, monkeypatch):

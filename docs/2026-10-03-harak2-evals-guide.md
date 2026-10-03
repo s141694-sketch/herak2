@@ -28,7 +28,15 @@
 
 التصنيف المعتمد لكل بند: تصنيف `adjudicator` إن وُجد، وإلا الأكثر تكرارًا. التعادل يترك البند بلا تصنيف معتمد: يُحسب في اتفاق الخبراء ولا يدخل في دقة الوكيل.
 
-قوالب الملفات لكل وكيل تُضاف في `evals/templates/` مع بناء الوكيل نفسه (المهام 4.6–4.9).
+قوالب الملفات في `evals/templates/`:
+
+| الوكيل | الملف | التصنيفات المسموحة |
+|---|---|---|
+| `classification` | `classification.csv` | `cognitive:1`…`cognitive:6`، `affective:1`…`affective:5`، `psychomotor:1`…`psychomotor:7`، `unclear` |
+| `alignment` | `alignment.csv` | `aligned`، `weak`، `misaligned` |
+| `alignment_suggestion` | `alignment_suggestion.csv` | `ok` للكفاية التي يمكن كتابة هدف سليم لها |
+
+المقاييس: `classification` الدقة (accuracy)؛ `alignment` دقة وشمول كشف `misaligned` (precision وrecall) والدقة العامة؛ `alignment_suggestion` نسبة الاقتراحات التي تقبلها قواعد حراك (`well_formed`)، ويُقاس المعنى من قبول المؤلفين ورفضهم أثناء الاستخدام. كل وكيل يُضاف قالبه مع بنائه.
 
 ## 4. الأوامر (يشغّلها المسؤول التقني)
 

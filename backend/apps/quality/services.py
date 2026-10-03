@@ -21,7 +21,7 @@ from apps.programs.services import can_edit
 from apps.tenancy.context import organization_context
 
 from . import ai_layer
-from .models import Finding, ObjectiveAnalysis, QualityReport, ReportLocked, Severity, engine_write
+from .models import AICheck, Finding, ObjectiveAnalysis, QualityReport, ReportLocked, Severity, engine_write
 from .rules import program as program_rules
 from .snapshot import load_snapshot
 
@@ -115,12 +115,21 @@ def _schedule_ai(report_id: int, run_id: str) -> None:
 def run_ai(report_id: int, run_id: str) -> None:
     """The AI layer of a run. The calls happen outside any transaction; the results are written only if the run
     is still the latest (otherwise they stay in the gateway's cache for the next run)."""
-    report = QualityReport.all_organizations.get(pk=report_id)
+    report = QualityReport.all_organizations.select_related("version").get(pk=report_id)
     with organization_context(report.organization_id):
         if str(report.run_id) != run_id:
             return
-        pending = [a for a in report.objectives.all() if ai_layer.needs_classification(a)]
-        updates, state = ai_layer.classify(pending, organization_id=report.organization_id)
+        organization_id = report.organization_id
+        subjects = ai_layer.alignment_subjects(report)
+        if ai_layer.rules_only(organization_id):
+            updates, judged, state = {}, [], {"status": "skipped", "reasons": ["rules_only"]}
+        else:
+            pending = [a for a in report.objectives.all() if ai_layer.needs_classification(a)]
+            updates, classification_state = ai_layer.classify(pending, organization_id=organization_id)
+            judged, alignment_state = ai_layer.judge(
+                ai_layer.needs_judgement(report, subjects), organization_id=organization_id
+            )
+            state = ai_layer.combine(classification_state, alignment_state)
         with transaction.atomic(), engine_write():
             report = QualityReport.objects.select_for_update().select_related("version").get(pk=report_id)
             if str(report.run_id) != run_id:
@@ -130,19 +139,41 @@ def run_ai(report_id: int, run_id: str) -> None:
                 for name, value in updates.get(analysis.pk, {}).items():
                     setattr(analysis, name, value)
             ObjectiveAnalysis.objects.bulk_update(analyses, ai_layer.AI_FIELDS)
-            _replace_ai_findings(report, analyses, _carried_dismissals(report))
+            for row in judged:
+                AICheck.objects.update_or_create(
+                    report=report,
+                    kind=row["kind"],
+                    subject=row["subject"],
+                    defaults={
+                        "organization_id": report.organization_id,
+                        **{k: row[k] for k in ("basis_hash", "status", "result", "model")},
+                    },
+                )
+            gone = [c.pk for c in report.checks.all() if (c.kind, c.subject) not in subjects]
+            AICheck.objects.filter(pk__in=gone).delete()
+            _replace_ai_findings(report, analyses, _carried_dismissals(report), subjects)
             report.ai_state = state
-            if updates:
-                from apps.agents import classification
-
-                report.ai_prompts = {**report.ai_prompts, classification.NAME: classification.PROMPT_VERSION}
-                models = sorted({a.ai_model for a in analyses if a.ai_model})
-                if models:
-                    report.ai_models = {**report.ai_models, classification.NAME: models[-1]}
+            _record_agents(report, analyses, judged)
             report.status = S.PARTIAL_RULES_ONLY if state["status"] == "partial" else S.COMPLETE
             report.finished_at = timezone.now()
             report.counts = counts(report.findings.all())
             report.save()
+
+
+def _record_agents(report: QualityReport, analyses, judged) -> None:
+    """Which prompt version and model each agent ran with in this report (spec 4.4)."""
+    from apps.agents import alignment, classification
+
+    models = sorted({a.ai_model for a in analyses if a.ai_status == "done" and a.ai_model})
+    if models:
+        report.ai_prompts = {**report.ai_prompts, classification.NAME: classification.PROMPT_VERSION}
+        report.ai_models = {**report.ai_models, classification.NAME: models[-1]}
+    for row in judged:
+        if not row["model"]:
+            continue
+        spec = alignment.CHECK if row["kind"] == "link" else alignment.SUGGEST
+        report.ai_prompts = {**report.ai_prompts, spec.name: spec.prompt_version}
+        report.ai_models = {**report.ai_models, spec.name: row["model"]}
 
 
 def _finish(report_id: int, run_id: str, *, status: str, error: str = "") -> None:
@@ -197,9 +228,12 @@ def _competencies(report, findings) -> dict:
     }
 
 
-def _replace_ai_findings(report, analyses, carried) -> None:
+def _replace_ai_findings(report, analyses, carried, subjects=None) -> None:
+    subjects = ai_layer.alignment_subjects(report) if subjects is None else subjects
     Finding.objects.filter(report=report, source=Finding.Source.AI).delete()
-    found = ai_layer.findings_from(analyses)
+    if ai_layer.rules_only(report.organization_id):
+        return
+    found = ai_layer.findings_from(analyses, ai_layer.current_checks(report, subjects), subjects)
     competencies = _competencies(report, found)
     Finding.objects.bulk_create(_finding_row(report, f, Finding.Source.AI, carried, competencies) for f in found)
 
@@ -245,10 +279,17 @@ def _write_rules(report_id: int, run_id: str, objectives, findings, *, finish: b
         Finding.objects.bulk_create(
             _finding_row(report, f, Finding.Source.RULE, carried, competencies) for f in findings
         )
-        _replace_ai_findings(report, analyses, carried)
-        pending = any(ai_layer.needs_classification(a) for a in analyses)
+        subjects = ai_layer.alignment_subjects(report)
+        _replace_ai_findings(report, analyses, carried, subjects)
+        rules_only = ai_layer.rules_only(report.organization_id)
+        pending = not rules_only and (
+            any(ai_layer.needs_classification(a) for a in analyses) or bool(ai_layer.needs_judgement(report, subjects))
+        )
         report.rules_version = program_rules.RULES_VERSION
-        report.ai_state = {"status": "pending", "reasons": []} if pending else {"status": "done", "reasons": []}
+        if rules_only:
+            report.ai_state = {"status": "skipped", "reasons": ["rules_only"]}
+        else:
+            report.ai_state = {"status": "pending" if pending else "done", "reasons": []}
         if finish:
             report.status = S.COMPLETE
             report.finished_at = timezone.now()

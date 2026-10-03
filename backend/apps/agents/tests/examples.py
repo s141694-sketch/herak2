@@ -1,6 +1,9 @@
 """Inputs and hand-written answers the agent tests replay (see recordings.py)."""
 
-from apps.agents import classification
+from apps.agents import alignment, classification
+
+ISOLATION = alignment.Competency("EL-01", "عزل الدوائر الكهربائية وإقفالها قبل الصيانة")
+FIRST_AID = alignment.Competency("FA-01", "تقديم الإسعافات الأولية للمصابين")
 
 
 def EXAMPLES():
@@ -36,6 +39,25 @@ def EXAMPLES():
                 "verb": "",
                 "confidence": "low",
                 "explanation": "الهدف بلا سلوك ملاحظ؛ يحتاج فعلًا قابلًا للقياس.",
+            },
+        ),
+        (
+            alignment.CHECK,
+            alignment.check_payload("أن يطبق المتدرب إجراء العزل والإقفال على لوحة كهربائية", ISOLATION),
+            {"verdict": "aligned", "confidence": "high", "explanation": "تطبيق العزل والإقفال هو جوهر الكفاية."},
+        ),
+        (
+            alignment.CHECK,
+            alignment.check_payload("أن يعدد المتدرب أنواع طفايات الحريق", ISOLATION),
+            {"verdict": "misaligned", "confidence": "high", "explanation": "طفايات الحريق لا تتصل بعزل الدوائر."},
+        ),
+        (
+            alignment.SUGGEST,
+            alignment.suggest_payload(FIRST_AID),
+            {
+                "objective": "أن يقدم المتدرب الإسعافات الأولية لمصاب بنزيف وفق دليل الإسعاف خلال دقيقتين",
+                "confidence": "medium",
+                "explanation": "يجعل الكفاية سلوكًا ملاحظًا بشرط ومعيار.",
             },
         ),
     ]

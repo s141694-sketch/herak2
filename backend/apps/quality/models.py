@@ -193,3 +193,27 @@ class Finding(_ReportRow):
     @property
     def dismissed(self) -> bool:
         return self.dismissed_at is not None
+
+
+class AICheck(_ReportRow):
+    """An agent's judgement that is not about one objective's level: a link's meaning, or a suggested objective
+    for an uncovered competency. Kept for the inputs it was made for (basis_hash) and reused while they hold."""
+
+    class Kind(models.TextChoices):
+        LINK = "link", "link"
+        SUGGESTION = "suggestion", "suggestion"
+
+    report = models.ForeignKey(QualityReport, on_delete=models.CASCADE, related_name="checks")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    subject = models.CharField(max_length=100)
+    basis_hash = models.CharField(max_length=64)
+    status = models.CharField(max_length=20)  # done, failed or rejected (an answer Harak's rules refuse)
+    result = models.JSONField(default=dict, blank=True)
+    model = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ["report", "id"]
+        constraints = [models.UniqueConstraint(fields=["report", "kind", "subject"], name="quality_check_unique")]
+
+    def __str__(self) -> str:
+        return f"{self.kind} {self.subject}: {self.status}"

@@ -68,7 +68,9 @@ def test_the_agent_is_registered_for_evaluation_with_every_label():
 def test_recordings_exist_for_the_current_prompt_and_replay_in_ci(org, through):
     """A prompt change changes every recording key; this fails until the recordings are rebuilt."""
     through(providers.RecordedProvider(model="claude-opus-5-5", directory=DIRECTORY / "classification"))
-    for _spec, payload, expected in EXAMPLES():
+    for spec, payload, expected in EXAMPLES():
+        if spec is not classification.SPEC:
+            continue
         reading = classification.classify(payload["objective"], organization_id=org.pk)
         assert (reading.domain or "unclear", reading.level_id) == (expected["domain"], expected["level_id"])
 
