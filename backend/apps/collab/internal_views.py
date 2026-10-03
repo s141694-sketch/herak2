@@ -3,6 +3,7 @@
 import base64
 import binascii
 import hmac
+import json
 
 import sentry_sdk
 import structlog
@@ -31,6 +32,37 @@ class IsCollabService(permissions.BasePermission):
         header = request.headers.get("Authorization", "")
         scheme, _, secret = header.partition(" ")
         return scheme == "Service" and hmac.compare_digest(secret.encode(), settings.COLLAB_SERVICE_SECRET.encode())
+
+
+class SaveTooLarge(exceptions.APIException):
+    status_code = 413
+    default_code = "document_too_large"
+    default_detail = "the live document is larger than the server accepts"
+
+
+def json_body(request, limit: int) -> dict:
+    """The JSON body of a collab save, read with its own size limit.
+
+    A save carries every block twice (rows and Yjs state), so it outgrows the 5 MB limit Django applies to
+    request.body (DATA_UPLOAD_MAX_MEMORY_SIZE) long before any block reaches its own limit.
+    """
+    raw = request._request
+    try:
+        length = int(raw.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        length = 0
+    if length > limit:
+        raise SaveTooLarge()
+    data = raw.read(limit + 1)
+    if len(data) > limit:
+        raise SaveTooLarge()
+    try:
+        body = json.loads(data or b"{}")
+    except ValueError as exc:
+        raise exceptions.ParseError("the body must be JSON") from exc
+    if not isinstance(body, dict):
+        raise exceptions.ParseError("the body must be a JSON object")
+    return body
 
 
 class MaterializationFailed(Conflict):
@@ -82,13 +114,14 @@ class DocumentView(_ServiceView):
 
     def put(self, request, pk):
         version = self.version(pk)
+        body = json_body(request, settings.COLLAB_SAVE_MAX_BYTES)
         with organization_context(version.organization_id):
             try:
-                state = base64.b64decode(request.data.get("state", ""), validate=True)
+                state = base64.b64decode(body.get("state", ""), validate=True)
             except (binascii.Error, ValueError) as exc:
                 raise exceptions.ValidationError("state must be base64") from exc
             actor = None
-            actor_id = request.data.get("actor_id")
+            actor_id = body.get("actor_id")
             if actor_id and Membership.objects.filter(user_id=actor_id).exists():
                 actor = User.objects.get(pk=actor_id)
             try:
@@ -98,12 +131,12 @@ class DocumentView(_ServiceView):
                     version = ProgramVersion.objects.select_for_update().get(pk=version.pk)
                     if not version.is_editable:
                         raise VersionLocked()
-                    result = apply_rows(version, request.data.get("rows"), actor=actor)
+                    result = apply_rows(version, body.get("rows"), actor=actor)
                     draft, _ = DraftDocument.objects.get_or_create(version=version, defaults={"state": b""})
                     draft.state = state
                     draft.state_hash = DraftDocument.hash_of(state)
                     draft.materialized_at = timezone.now()
-                    draft.issues = list((request.data.get("rows") or {}).get("issues", []))
+                    draft.issues = list((body.get("rows") or {}).get("issues", []))
                     draft.last_error = ""
                     draft.last_error_at = None
                     draft.save()

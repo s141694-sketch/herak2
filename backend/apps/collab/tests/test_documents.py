@@ -280,3 +280,50 @@ def test_loading_a_locked_version_makes_no_live_draft(world):
     service().get(url(world["version"]))
     with organization_context(world["org"]):
         assert not DraftDocument.objects.filter(version=world["version"]).exists()
+
+
+def test_unchanged_links_keep_their_row_author_and_time_across_saves(world):
+    """Review finding: every save recreated every link, rewriting who made it and when."""
+    first = service().put(url(world["version"]), {"state": "AA==", "rows": rows_for(world)}, format="json")
+    assert first.status_code == 200
+    with organization_context(world["org"]):
+        before = {
+            str(link.link_key): (link.pk, link.created_by_id, link.created_at) for link in AlignmentLink.objects.all()
+        }
+        other = member("editor@example.com", Role.AUTHOR)
+    second = service().put(
+        url(world["version"]),
+        {"state": "AA==", "rows": rows_for(world, objective_text="نص آخر"), "actor_id": other.pk},
+        format="json",
+    )
+    assert second.status_code == 200
+    with organization_context(world["org"]):
+        after = {
+            str(link.link_key): (link.pk, link.created_by_id, link.created_at) for link in AlignmentLink.objects.all()
+        }
+    assert after == before and len(after) == 2
+
+
+def test_a_dropped_link_is_removed_and_a_new_one_created_under_its_key(world):
+    service().put(url(world["version"]), {"state": "AA==", "rows": rows_for(world)}, format="json")
+    service().put(url(world["version"]), {"state": "AA==", "rows": rows_for(world, drop_link=True)}, format="json")
+    with organization_context(world["org"]):
+        assert [str(k) for k in AlignmentLink.objects.values_list("link_key", flat=True)] == [
+            "11111111-1111-4111-8111-111111111111"
+        ]
+
+
+def test_a_save_above_five_megabytes_is_accepted_up_to_its_own_limit(world, settings):
+    big = base64.b64encode(b"x" * (6 * 1024 * 1024)).decode()
+    response = service().put(url(world["version"]), {"state": big, "rows": rows_for(world)}, format="json")
+    assert response.status_code == 200, response.content[:200]
+    settings.COLLAB_SAVE_MAX_BYTES = 1024 * 1024
+    refused = service().put(url(world["version"]), {"state": big, "rows": rows_for(world)}, format="json")
+    assert refused.status_code == 413 and refused.json()["error"]["code"] == "document_too_large"
+
+
+def test_internal_calls_are_not_redirected_to_https(world, settings):
+    """In production SECURE_SSL_REDIRECT is on, but the collaboration service calls Django over plain HTTP."""
+    settings.SECURE_SSL_REDIRECT = True
+    assert service().get(url(world["version"])).status_code == 200
+    assert APIClient().get("/api/health/").status_code == 301

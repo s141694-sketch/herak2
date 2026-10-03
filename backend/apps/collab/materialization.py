@@ -150,10 +150,12 @@ def apply_rows(version: ProgramVersion, rows: dict, *, actor=None) -> dict:
             changed.append(key)
 
     # Links follow the document exactly; invalid ones are skipped and reported, never fatal (decision D29).
+    # They are matched by link_key, so an unchanged link keeps its row, author and creation time.
     competencies = {str(c.competency_key): c for c in version.framework_version.competencies.all()}
-    AlignmentLink.objects.filter(version=version).delete()
+    existing_links = {str(link.link_key): link for link in AlignmentLink.objects.filter(version=version)}
     skipped: list[str] = []
     seen_links: set[tuple] = set()
+    wanted: dict[str, dict] = {}
     for row in rows.get("links", []):
         key = _uuid(row.get("link_key"), "link_key")
         source = blocks.get(str(row.get("source_key")))
@@ -171,22 +173,29 @@ def apply_rows(version: ProgramVersion, rows: dict, *, actor=None) -> dict:
             or (row.get("competency_key") and competency is None)
         )
         if (
-            missing_end
+            key in wanted
+            or missing_end
             or identity in seen_links
             or program_services.link_problem(version, row.get("kind"), source, target, competency)
         ):
             skipped.append(key)
             continue
         seen_links.add(identity)
-        AlignmentLink.objects.create(
-            version=version,
-            link_key=key,
-            kind=row["kind"],
-            source=source,
-            target_block=target,
-            target_competency=competency,
-            created_by=actor or version.created_by,
-        )
+        wanted[key] = {"kind": row["kind"], "source": source, "target_block": target, "target_competency": competency}
+    # Remove first: a link replaced under a new key may share the unique identity of the one it replaces.
+    gone = [link.pk for key, link in existing_links.items() if key not in wanted]
+    if gone:
+        AlignmentLink.objects.filter(pk__in=gone).delete()
+    for key, fields in wanted.items():
+        link = existing_links.get(key)
+        if link is None:
+            AlignmentLink.objects.create(
+                version=version, link_key=key, created_by=actor or version.created_by, **fields
+            )
+        elif any(getattr(link, name) != value for name, value in fields.items()):
+            for name, value in fields.items():
+                setattr(link, name, value)
+            link.save()
 
     if changed:
         record("program_version.materialized", actor=actor, target=version, payload={"changed_blocks": changed})

@@ -28,6 +28,7 @@ env = environ.Env(
     AI_MONTHLY_TOKEN_QUOTA=(int, 2_000_000),
     AI_RECORDINGS_DIR=(str, ""),
     QUALITY_AI_DELAY_SECONDS=(int, 60),
+    COLLAB_SAVE_MAX_BYTES=(int, 64 * 1024 * 1024),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -132,6 +133,10 @@ COLLAB_SERVICE_SECRET = env("COLLAB_SERVICE_SECRET")
 COLLAB_TOKEN_TTL_SECONDS = env("COLLAB_TOKEN_TTL_SECONDS")
 COLLAB_INTERNAL_URL = env("COLLAB_INTERNAL_URL")
 COLLAB_TIMEOUT_SECONDS = env("COLLAB_TIMEOUT_SECONDS")
+# A live save carries the whole document twice (rows and Yjs state); it has its own limit (internal endpoint only).
+COLLAB_SAVE_MAX_BYTES = env("COLLAB_SAVE_MAX_BYTES")
+# The collaboration service calls Django directly over the private network, not through the TLS proxy.
+SECURE_REDIRECT_EXEMPT = [r"^api/internal/"]
 
 # AI gateway (apps.ai, decision D37). The provider needs ANTHROPIC_API_KEY in the environment; without it,
 # or with AI_PROVIDER empty, the product runs on rules only. The key is read by the SDK, never stored here.
