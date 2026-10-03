@@ -58,6 +58,51 @@ class ProviderBase:
         raise NotImplementedError
 
 
+#: JSON Schema keywords structured outputs do not support (platform.claude.com/docs/en/build-with-claude/
+#: structured-outputs: string, numerical and complex array constraints). minItems is supported only as 0 or 1.
+_UNSUPPORTED = (
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "minProperties",
+    "maxProperties",
+)
+
+
+def wire_schema(schema):
+    """The schema as the API accepts it: unsupported constraints removed and stated in the description instead,
+    as the official SDKs do. The gateway validates every answer against the full schema, so nothing is lost."""
+    if isinstance(schema, list):
+        return [wire_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    sent: dict = {}
+    constraints: list[str] = []
+    for key, value in schema.items():
+        if key in ("enum", "const"):
+            sent[key] = value
+        elif key == "properties" or key == "$defs":
+            sent[key] = {name: wire_schema(sub) for name, sub in value.items()}
+        elif key == "minItems" and value in (0, 1):
+            sent[key] = value
+        elif key in _UNSUPPORTED:
+            constraints.append(f"{key} {value}")
+        else:
+            sent[key] = wire_schema(value)
+    if constraints:
+        note = f"Constraints: {', '.join(constraints)}."
+        sent["description"] = f"{sent['description']} {note}" if sent.get("description") else note
+    return sent
+
+
 @dataclass
 class ClaudeProvider(ProviderBase):
     """Claude through the official SDK, with structured JSON output and the default refusal fallback."""
@@ -90,7 +135,7 @@ class ClaudeProvider(ProviderBase):
                 messages=[{"role": "user", "content": request.user}],
                 output_config={
                     "effort": request.effort,
-                    "format": {"type": "json_schema", "schema": request.schema},
+                    "format": {"type": "json_schema", "schema": wire_schema(request.schema)},
                 },
             )
         except anthropic.APITimeoutError as exc:

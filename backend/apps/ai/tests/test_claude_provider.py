@@ -90,3 +90,74 @@ def test_sdk_errors_map_to_retryable_or_final(error, expected):
     with pytest.raises(expected) as raised:
         provider.complete(REQUEST)
     assert type(raised.value) is expected
+
+
+# Structured outputs accept a subset of JSON Schema: string lengths, numeric bounds and array sizes above one are not
+# supported (platform.claude.com/docs/en/build-with-claude/structured-outputs). The provider sends the supported part
+# and states the rest in descriptions; the gateway still validates every answer against the full schema.
+UNSUPPORTED = {
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "maxItems",
+    "uniqueItems",
+    "minProperties",
+    "maxProperties",
+}
+
+
+def _keys(schema):
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key not in ("properties", "$defs"):
+                yield key, value
+            yield from _keys(value) if key not in ("enum", "const") else ()
+    elif isinstance(schema, list):
+        for value in schema:
+            yield from _keys(value)
+
+
+def _unsupported(schema):
+    return sorted(
+        {key for key, value in _keys(schema) if key in UNSUPPORTED or (key == "minItems" and value not in (0, 1))}
+    )
+
+
+def test_only_supported_schema_keywords_are_sent_and_the_rest_is_described():
+    schema = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "minLength": 8, "maxLength": 400, "description": "The objective."},
+            "items": {"type": "array", "minItems": 2, "maxItems": 30, "items": {"type": "string", "maxLength": 9}},
+            "level": {"type": "integer", "minimum": 0, "maximum": 7},
+            "kind": {"type": "string", "enum": ["a", "b"]},
+        },
+        "required": ["text", "items", "level", "kind"],
+        "additionalProperties": False,
+    }
+    client = FakeClient(message())
+    providers.ClaudeProvider(model="claude-opus-5-5", client=client).complete(
+        providers.ProviderRequest(system="s", user="u", schema=schema, max_tokens=100, effort="low")
+    )
+    sent = client.calls[0]["output_config"]["format"]["schema"]
+    assert _unsupported(sent) == []
+    text = sent["properties"]["text"]
+    assert text["type"] == "string" and "8" in text["description"] and "400" in text["description"]
+    assert text["description"].startswith("The objective.")
+    assert "30" in sent["properties"]["items"]["description"] and "minItems" not in sent["properties"]["items"]
+    assert sent["properties"]["kind"] == {"type": "string", "enum": ["a", "b"]}
+    assert sent["additionalProperties"] is False and sent["required"] == ["text", "items", "level", "kind"]
+    assert schema["properties"]["text"]["maxLength"] == 400, "the agent's own schema is left whole"
+
+
+def test_every_agent_schema_reaches_the_api_in_its_supported_form():
+    from apps.evals.evaluation import REGISTRY
+
+    assert REGISTRY
+    for agent in REGISTRY.values():
+        assert _unsupported(providers.wire_schema(agent.spec.schema)) == [], agent.name
