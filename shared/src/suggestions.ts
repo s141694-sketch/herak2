@@ -25,6 +25,7 @@ export function blockPlainText(doc: Y.Doc, blockKey: string): string {
   }
   const walk = (node: Y.XmlElement | Y.XmlText | Y.XmlHook) => {
     if (node instanceof Y.XmlText) current += plainText(node)
+    else if (node instanceof Y.XmlElement && node.nodeName === 'hardBreak') current += '\n'
     else if (node instanceof Y.XmlElement) {
       const line = LINES.has(node.nodeName)
       if (line) flush()
@@ -51,10 +52,18 @@ const paragraphs = (text: string) => ({
  * Replaces an objective's text with its rewrite, only if the text is still the one the rewrite was made for:
  * 'changed' when someone edited it since, 'missing' when the block is gone.
  */
-export function applyRewrite(doc: Y.Doc, blockKey: string, original: string, rewrite: string): 'applied' | 'changed' | 'missing' {
+export function applyRewrite(doc: Y.Doc, blockKey: string, original: string, rewrite: string): RewriteState {
+  const state = rewriteState(doc, blockKey, original)
+  if (state === 'applied') setBlockContent(doc, blockKey, paragraphs(rewrite))
+  return state
+}
+
+export type RewriteState = 'applied' | 'changed' | 'missing'
+
+/** What applyRewrite would do, without writing anything. */
+export function rewriteState(doc: Y.Doc, blockKey: string, original: string): RewriteState {
   if (!blocksOf(doc).has(blockKey)) return 'missing'
   if (normalized(blockPlainText(doc, blockKey)) !== normalized(original)) return 'changed'
-  setBlockContent(doc, blockKey, paragraphs(rewrite))
   return 'applied'
 }
 
@@ -92,6 +101,12 @@ function write(doc: Y.Doc, layout: Layout, levelCount: number) {
 /** Writes a layout as one change. It is tried on a copy first, so a rule that refuses any part of it leaves the
  * document untouched (a Yjs transaction cannot be rolled back). New nodes come after the top-level nodes there. */
 function writeAll(doc: Y.Doc, layout: Layout, levelCount: number): void {
+  check(doc, layout, levelCount)
+  doc.transact(() => write(doc, layout, levelCount))
+}
+
+/** Writes a layout on a copy of the document: throws what a rule refuses, and leaves the document as it is. */
+function check(doc: Y.Doc, layout: Layout, levelCount: number): void {
   const trial = new Y.Doc()
   Y.applyUpdate(trial, Y.encodeStateAsUpdate(doc))
   try {
@@ -99,18 +114,31 @@ function writeAll(doc: Y.Doc, layout: Layout, levelCount: number): void {
   } finally {
     trial.destroy()
   }
-  doc.transact(() => write(doc, layout, levelCount))
 }
+
+const outlineLayout = (outline: OutlineSuggestion): Layout => ({
+  nodes: outline.nodes,
+  blocks: outline.objectives.map((o) => ({ node: o.node, type: 'objective' as const, text: o.text, competency_key: o.competency_key })),
+})
 
 /** Adds an outline's nodes, its objectives and their links to the competencies. */
 export function applyOutline(doc: Y.Doc, outline: OutlineSuggestion, levelCount: number): { nodes: number; objectives: number } {
-  const blocks = outline.objectives.map((o) => ({ node: o.node, type: 'objective' as const, text: o.text, competency_key: o.competency_key }))
-  writeAll(doc, { nodes: outline.nodes, blocks }, levelCount)
+  writeAll(doc, outlineLayout(outline), levelCount)
   return { nodes: outline.nodes.length, objectives: outline.objectives.length }
+}
+
+/** Throws what applyOutline would refuse, without changing the document. */
+export function checkOutline(doc: Y.Doc, outline: OutlineSuggestion, levelCount: number): void {
+  check(doc, outlineLayout(outline), levelCount)
 }
 
 /** Adds an imported layout's nodes and blocks, each block of its type with its lines as paragraphs. */
 export function applyImport(doc: Y.Doc, layout: ImportSuggestion, levelCount: number): { nodes: number; blocks: number } {
   writeAll(doc, layout, levelCount)
   return { nodes: layout.nodes.length, blocks: layout.blocks.length }
+}
+
+/** Throws what applyImport would refuse, without changing the document. */
+export function checkImport(doc: Y.Doc, layout: ImportSuggestion, levelCount: number): void {
+  check(doc, layout, levelCount)
 }

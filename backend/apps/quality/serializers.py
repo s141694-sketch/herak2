@@ -6,11 +6,13 @@ from .models import Finding, ObjectiveAnalysis, QualityReport
 class FindingSerializer(serializers.ModelSerializer):
     competency = serializers.SerializerMethodField()
     dismissal = serializers.SerializerMethodField()
+    key = serializers.SerializerMethodField()
 
     class Meta:
         model = Finding
         fields = [
             "id",
+            "key",
             "kind",
             "severity",
             "source",
@@ -22,6 +24,10 @@ class FindingSerializer(serializers.ModelSerializer):
             "explanation",
             "dismissal",
         ]
+
+    def get_key(self, finding) -> str:
+        # Runs recreate findings with new ids; the same finding keeps its source and fingerprint.
+        return f"{finding.source}:{finding.fingerprint}"
 
     def get_competency(self, finding):
         c = finding.competency

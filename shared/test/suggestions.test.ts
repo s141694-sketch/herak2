@@ -3,7 +3,7 @@ import * as Y from 'yjs'
 
 import { hydrate, materialize, setBlockContent } from '../src/materialize'
 import { addBlock, addNode } from '../src/operations'
-import { applyImport, applyOutline, applyRewrite, blockPlainText } from '../src/suggestions'
+import { applyImport, applyOutline, applyRewrite, blockPlainText, checkImport, checkOutline, rewriteState } from '../src/suggestions'
 
 const paragraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
 
@@ -24,6 +24,25 @@ describe('a rewrite', () => {
     expect(blockPlainText(doc, block)).toBe('أن يفهم المتدرب الإسعافات')
     setBlockContent(doc, block, { type: 'doc', content: [paragraph('سطر أول'), paragraph('سطر ثان')] })
     expect(blockPlainText(doc, block)).toBe('سطر أول\nسطر ثان')
+  })
+
+  it('reads a hard line break as the server does, as a new line', () => {
+    const { doc, block } = draft()
+    setBlockContent(doc, block, {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'أن يعدد' }, { type: 'hardBreak' }, { type: 'text', text: 'المتدرب' }] }],
+    })
+    expect(blockPlainText(doc, block)).toBe('أن يعدد\nالمتدرب')
+    expect(applyRewrite(doc, block, 'أن يعدد\nالمتدرب', 'أن يعدد المتدرب المخاطر')).toBe('applied')
+  })
+
+  it('tells, without writing, whether the rewrite still fits the text', () => {
+    const { doc, block } = draft()
+    const before = Y.encodeStateAsUpdate(doc)
+    expect(rewriteState(doc, block, 'أن يفهم المتدرب الإسعافات')).toBe('applied')
+    expect(rewriteState(doc, block, 'نص آخر')).toBe('changed')
+    expect(rewriteState(doc, 'missing-block', 'x')).toBe('missing')
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
   })
 
   it('replaces the text it was made for', () => {
@@ -78,6 +97,15 @@ describe('an outline', () => {
     expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
     expect(materialize(hydrate(materialize(doc))).nodes).toHaveLength(3)
   })
+
+  it('is checked on a copy without changing the document', () => {
+    const { doc } = draft()
+    const before = Y.encodeStateAsUpdate(doc)
+    expect(() => checkOutline(doc, outline, 2)).not.toThrow()
+    const tooDeep = { ...outline, nodes: [...outline.nodes, { ref: 'n3', parent: 'n2', title: 'أعمق' }] }
+    expect(() => checkOutline(doc, tooDeep, 2)).toThrow()
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
+  })
 })
 
 describe('an import', () => {
@@ -111,6 +139,13 @@ describe('an import', () => {
   it('changes nothing when the template refuses part of it', () => {
     const doc = new Y.Doc()
     expect(() => applyImport(doc, layout, 1)).toThrow()
+    expect(materialize(doc).nodes).toEqual([])
+  })
+
+  it('is checked on a copy without changing the document', () => {
+    const doc = new Y.Doc()
+    expect(() => checkImport(doc, layout, 2)).not.toThrow()
+    expect(() => checkImport(doc, layout, 1)).toThrow()
     expect(materialize(doc).nodes).toEqual([])
   })
 })

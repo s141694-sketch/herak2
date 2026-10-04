@@ -47,7 +47,8 @@ test('findings appear beside the editor and on the tree, and can be dismissed wi
 
   // The full check on request.
   await admin.getByTestId('quality-run').click()
-  await expect(admin.getByTestId('quality-status')).toContainText('فحص كامل', { timeout: 20_000 })
+  await expect(admin.getByTestId('quality-status')).toHaveAttribute('data-status', 'complete', { timeout: 20_000 })
+  await expect(admin.getByTestId('quality-status')).toContainText('فحص كامل')
 })
 
 test('the report reads in English, with the language of the interface', async ({ browser }) => {
@@ -88,6 +89,7 @@ test('where the rule and the AI read an objective differently, both readings are
         findings: [
           {
             id: 7,
+            key: 'ai:7',
             kind: 'bloom_disagreement',
             severity: 'info',
             source: 'ai',

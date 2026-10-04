@@ -103,7 +103,15 @@
     "objective_already_sound": "This objective already passes Harak's rules, so it needs no rewrite.",
     "suggestion_subject_invalid": "A rewrite can be suggested only for an objective saved in this version. Wait for your changes to save, then try again.",
     "no_target_competencies": "Choose the competencies this version targets first.",
-    "suggestion_not_open": "This suggestion is no longer open."
+    "suggestion_not_open": "This suggestion is no longer open.",
+    "dismissal_reason_required": "Write why the finding is dismissed.",
+    "dismissal_reason_too_long": "The reason is longer than allowed.",
+    "finding_outdated": "The report changed since it was shown (a new check). Try again on the finding as it appears now.",
+    "import_no_text": "There is no text to import.",
+    "import_text_invalid": "This text could not be read for import.",
+    "quality_not_allowed": "You may not change the quality report of this version.",
+    "report_locked": "The quality report of a locked version cannot be changed.",
+    "rules_only": "Your organization works with rules only, so no AI suggestion is applied."
   },
   "common": {
     "create": "Create",
@@ -348,7 +356,11 @@
     "accept": "Accept",
     "dismiss": "Reject",
     "dismissReason": "Why you reject it (optional)",
-    "accepted": "Accepted and added to the document.",
+    "accepted": {
+      "rewrite": "Accepted; the objective now reads as suggested.",
+      "outline": "Accepted; the outline was added to the document.",
+      "import": "Accepted; the text was added to the document."
+    },
     "dismissed": "Rejected; the rejection is recorded to measure the agent's accuracy.",
     "rejected": "The agent's answer did not pass Harak's rules, so it is not shown.",
     "changed": "The objective changed since the suggestion was requested, so it was not applied. Request a new one.",
@@ -365,7 +377,9 @@
       "rules_only": "Your organization works with rules only, so no AI suggestions are requested.",
       "not_released": "The drafting agent is not released yet: it has not passed its evaluation on the golden set at the owner's threshold.",
       "not_configured": "AI is not set up on this server.",
-      "quota_exceeded": "Your organization's AI quota for this month is used up."
+      "quota_exceeded": "Your organization's AI quota for this month is used up.",
+      "unavailable": "The request could not be completed because the processing service was unavailable. Request it again.",
+      "version_locked": "The version left draft before the suggestion was prepared, so it was not requested."
     },
     "import": "Import from text",
     "importText": "Paste the curriculum text here",
@@ -385,7 +399,10 @@
     },
     "warnings": {
       "NO_UNITS_DETECTED": "No units were found; the whole text was treated as one unit titled “المستند”."
-    }
+    },
+    "notWritten": "The acceptance was recorded, but the document changed before it could be written, so nothing was written. Request a new suggestion.",
+    "hide": "Hide",
+    "importRulesAccuracy": "Harak's rules read headings and sections as written; review the nodes and block types before accepting."
   },
   "quality": {
     "title": "Quality report",
@@ -486,6 +503,7 @@
       "link_semantic_mismatch": "The objective's meaning does not serve the linked competency {{competency}}.",
       "link_semantic_weak": "The objective only touches the competency {{competency}}.",
       "competency_objective_suggestion": "Suggested objective for the competency {{competency}}: {{objective}}"
-    }
+    },
+    "countOf": "{{severity}}: {{count}}"
   }
 }

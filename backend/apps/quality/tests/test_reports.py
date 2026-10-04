@@ -83,6 +83,9 @@ def test_the_report_api_lists_findings_objectives_and_the_roll_up(world):
     root, lesson = str(world["root"].node_key), str(world["lesson"].node_key)
     assert body["rollup"][lesson] == {"critical": 0, "warning": 3, "info": 3}
     assert body["rollup"][root] == {"critical": 2, "warning": 3, "info": 3}
+    # A finding keeps its key across runs (its id does not), so the page can keep what is being typed about it.
+    assert all(len(f["key"]) > 64 and f["key"].startswith(f["source"] + ":") for f in body["findings"])
+    assert len({f["key"] for f in body["findings"]}) == len(body["findings"])
 
 
 def test_a_version_without_a_report_says_so(world, django_capture_on_commit_callbacks):

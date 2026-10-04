@@ -246,6 +246,7 @@ export interface Suggestion {
   reason: string
   original: string | null
   result: RewriteResult | OutlineResult | ImportResult | null
+  requested_by: { id: number } | null
   model: string
   prompt_version: string
   created_at: string
@@ -264,6 +265,8 @@ export interface BloomReading {
 
 export interface Finding {
   id: number
+  /** The same across runs, which recreate findings with new ids. */
+  key: string
   kind: string
   severity: Severity
   source: 'rule' | 'ai'

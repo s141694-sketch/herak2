@@ -18,15 +18,20 @@ async function draftWithObjective(admin: Page, author: Page, text: string) {
   await expect.poll(() => textOf(author.getByTestId('block-objective').locator('.ProseMirror'))).toBe(text)
 }
 
-/** Serves one suggestion through its life: the request, the polls, and the decision. Returns the decisions sent. */
+/** Serves one suggestion through its life: the request, the polls, the list it is in once asked for, and the
+ * decision. Returns the decisions sent. */
 async function mockSuggestion(page: Page, ready: Record<string, unknown>) {
   const decisions: Array<{ decision: string; body: unknown }> = []
-  const base = { id: 901, version: 0, subject: '', reason: '', model: 'claude-opus-5-5', prompt_version: 't', created_at: '', decided_at: null, decision_reason: '' }
-  await page.route(/\/api\/program-versions\/\d+\/suggestions\/$/, (route) =>
-    route.request().method() === 'POST'
-      ? route.fulfill({ status: 202, json: { ...base, ...ready, status: 'pending', result: null } })
-      : route.fallback(),
-  )
+  const me = await api<{ user: { id: number } }>(page, 'GET', '/api/auth/me/')
+  const base = { id: 901, version: 0, subject: '', reason: '', model: 'claude-opus-5-5', prompt_version: 't', requested_by: me.user, created_at: '', decided_at: null, decision_reason: '' }
+  let asked = false
+  await page.route(/\/api\/program-versions\/\d+\/suggestions\/$/, (route) => {
+    if (route.request().method() === 'POST') {
+      asked = true
+      return route.fulfill({ status: 202, json: { ...base, ...ready, status: 'pending', result: null } })
+    }
+    return asked && !decisions.length ? route.fulfill({ json: [{ ...base, ...ready, status: 'ready' }] }) : route.fallback()
+  })
   await page.route(/\/api\/suggestions\/901\/$/, (route) => route.fulfill({ json: { ...base, ...ready, status: 'ready' } }))
   await page.route(/\/api\/suggestions\/901\/(accept|dismiss)\/$/, (route) => {
     const request: Request = route.request()
@@ -60,7 +65,7 @@ test('without a model the request is answered plainly, and a sound objective is 
   await expect(author.getByTestId('suggestion-error')).toHaveText('هذا الهدف سليم وفق قواعد حراك، فلا يحتاج إلى إعادة صياغة.')
 })
 
-test('an accepted rewrite replaces the objective for everyone; a rejection is sent with its reason', async ({ browser }) => {
+test('a rejected rewrite changes nothing; an accepted one replaces the objective for everyone', async ({ browser }) => {
   test.setTimeout(90_000)
   const admin = await signIn(browser, 'multi@example.com')
   const author = await signIn(browser, 'author@example.com')
@@ -79,24 +84,30 @@ test('an accepted rewrite replaces the objective for everyone; a rejection is se
   await expect(author.getByTestId('rewrite-suggestion')).toContainText('اقتراح من الذكاء الاصطناعي')
   await expect(author.getByTestId('rewrite-suggestion')).toContainText('ثقة متوسطة')
   await author.screenshot({ path: 'e2e/screenshots/60-rewrite-suggestion-ar.png', fullPage: true })
+
+  // Rejecting can be taken back before it is sent; once sent, it carries its reason and leaves the text as it is.
+  await author.getByTestId('suggestion-dismiss').click()
+  await author.getByTestId('suggestion-dismiss-cancel').click()
+  await expect(author.getByTestId('suggestion-accept')).toBeVisible()
+  await author.getByTestId('suggestion-dismiss').click()
+  await author.getByTestId('suggestion-dismiss-reason').fill('غيّر المعنى')
+  await author.getByTestId('suggestion-dismiss-confirm').click()
+  await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'dismissed')
+  expect(decisions).toEqual([{ decision: 'dismissed', body: { reason: 'غيّر المعنى' } }])
+  expect(await textOf(author.getByTestId('block-objective').locator('.ProseMirror'))).toBe(WEAK)
+  expect(await textOf(admin.getByTestId('block-objective').locator('.ProseMirror'))).toBe(WEAK)
+
+  await author.getByTestId('suggestion-outcome').getByRole('button').click()
+  await author.getByTestId('suggest-rewrite').click()
   await author.getByTestId('suggestion-accept').click()
   await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'accepted')
+  await expect(author.getByTestId('suggestion-outcome')).toContainText('استُبدلت به صياغة الهدف')
   await expect.poll(() => textOf(admin.getByTestId('block-objective').locator('.ProseMirror'))).toBe(SOUND)
   // The live document is the content: the rows follow it.
   await api(admin, 'GET', `/api/program-versions/${versionId}/diff/${versionId}/`)
   const tree = await api<{ blocks: Array<{ content: unknown }> }>(admin, 'GET', `/api/program-versions/${versionId}/tree/`)
   expect(JSON.stringify(tree.blocks[0].content)).toContain(SOUND)
-  expect(decisions).toEqual([{ decision: 'accepted', body: null }])
-
-  // Rejecting leaves the document as it is and sends the reason.
-  await author.getByTestId('suggestion-outcome').getByRole('button').click()
-  await author.getByTestId('suggest-rewrite').click()
-  await author.getByTestId('suggestion-dismiss').click()
-  await author.getByTestId('suggestion-dismiss-reason').fill('غيّر المعنى')
-  await author.getByTestId('suggestion-dismiss-confirm').click()
-  await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'dismissed')
-  expect(decisions[1]).toEqual({ decision: 'dismissed', body: { reason: 'غيّر المعنى' } })
-  expect(await textOf(author.getByTestId('block-objective').locator('.ProseMirror'))).toBe(SOUND)
+  expect(decisions[1]).toEqual({ decision: 'accepted', body: null })
 })
 
 test('an accepted outline adds its nodes, objectives and competency links for everyone', async ({ browser }) => {
@@ -129,6 +140,23 @@ test('an accepted outline adds its nodes, objectives and competency links for ev
   await expect(author.getByTestId('outline-objective')).toContainText(competency.code)
   await expect(author.getByTestId('outline-suggestion')).toContainText('أهداف 1')
   await author.screenshot({ path: 'e2e/screenshots/61-outline-suggestion-ar.png', fullPage: true })
+
+  // The answer being read survives a reload of the page.
+  await author.reload()
+  await expect(author.getByTestId('tree')).toBeVisible()
+  await expect(author.getByTestId('outline-node')).toHaveCount(2)
+
+  // Accepting is recorded before anything is written: when the server refuses it (another editor accepted it
+  // first), the document is left as it is.
+  await author.route(
+    /\/api\/suggestions\/901\/accept\/$/,
+    (route) => route.fulfill({ status: 409, json: { error: { code: 'suggestion_not_open', message: '' } } }),
+    { times: 1 },
+  )
+  await author.getByTestId('suggestion-accept').click()
+  await expect(author.getByTestId('suggestion-error')).toBeVisible()
+  await expect(author.getByTestId('tree')).toContainText('الشجرة فارغة')
+  expect(await author.getByTestId('node-السلامة في الموقع').count()).toBe(0)
   await author.getByTestId('suggestion-accept').click()
   await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'accepted')
   await expect(admin.getByTestId('node-السلامة في الموقع')).toBeVisible()
@@ -170,7 +198,9 @@ test('an import is laid out by the rules, previewed, and added only when accepte
   await author.getByTestId('suggestion-dismiss').click()
   await author.getByTestId('suggestion-dismiss-confirm').click()
   await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'dismissed')
-  await expect(admin.getByTestId('node-الوحدة الأولى: مخاطر بيئة العمل')).toHaveCount(0)
+  const empty = await api<{ nodes: unknown[] }>(admin, 'GET', `/api/program-versions/${versionId}/tree/`)
+  expect(empty.nodes).toEqual([])
+  expect(await author.getByTestId('tree').getByTestId(/^node-/).count()).toBe(0)
 
   // Accepted: the layout becomes the document for everyone.
   await author.getByTestId('suggestion-outcome').getByRole('button').click()

@@ -38,7 +38,7 @@ import {
 } from '../../types'
 import { CommentCard, type CommentContext, NewComment, placementOf } from './Comments'
 import { QualityPanel, RollupBadges, useQualityReport } from './QualityPanel'
-import { ImportSuggestion, OutlineSuggestion, RewriteSuggestion, type SuggestionContext } from './Suggestions'
+import { ImportSuggestion, OutlineSuggestion, RewriteSuggestion, type SuggestionContext, useOpenSuggestions } from './Suggestions'
 
 interface Ctx {
   comments: CommentContext
@@ -49,6 +49,8 @@ interface Ctx {
   others: Presence[]
   snapshot: Snapshot
   editable: boolean
+  /** May write this draft, even while the connection is coming back. */
+  writer: boolean
   levelCount: number
   framework: FrameworkVersionDetail | undefined
   levelName: (level: number) => string
@@ -94,9 +96,12 @@ export function LiveVersionPage({
   const [ruleError, setRuleError] = useState<string | null>(null)
   const [showResolved, setShowResolved] = useState(false)
   const quality = useQualityReport(version.id, live?.doc)
+  const restoreSuggestion = useOpenSuggestions(version.id, session?.user.id)
 
   const levels = version.template.levels
   const editable = Boolean(live && !live.locked && !live.frozen && live.mode === 'write' && live.status === 'connected' && live.synced)
+  // A writer keeps the suggestion panels while the connection comes back, so an answer being read is not lost.
+  const writer = Boolean(live && !live.locked && live.mode === 'write')
   // Submitting while this editor holds changes the service has not confirmed could leave them out.
   const caughtUp = Boolean(live && live.status === 'connected' && live.synced && live.unsynced === 0 && !live.frozen)
   const role = session?.organization?.role
@@ -146,6 +151,7 @@ export function LiveVersionPage({
     others,
     snapshot,
     editable,
+    writer,
     levelCount: levels.length,
     framework,
     levelName: (level) => {
@@ -153,7 +159,7 @@ export function LiveVersionPage({
       return found ? (i18n.language === 'ar' ? found.name_ar : found.name_en) : ''
     },
     edit,
-    suggestions: { versionId: version.id, doc: live.doc, levelCount: levels.length, framework, edit },
+    suggestions: { versionId: version.id, doc: live.doc, levelCount: levels.length, framework, editable, edit, restore: restoreSuggestion },
     rollup: quality.report?.rollup ?? {},
   }
   const describe = (finding: Finding) => {
@@ -228,7 +234,7 @@ export function LiveVersionPage({
       <div className="live-layout">
         <div className="live-main">
           <h2>{t('tree.title')}</h2>
-          {ctx?.editable && (
+          {writer && ctx && (
             <div className="row suggestions">
               <OutlineSuggestion ctx={ctx.suggestions} />
               <ImportSuggestion ctx={ctx.suggestions} />
@@ -247,6 +253,7 @@ export function LiveVersionPage({
         <QualityPanel
           versionId={version.id}
           report={quality.report}
+          failure={quality.failure}
           reload={() => void quality.reload()}
           canChange={version.permissions.edit && version.status === 'draft'}
           describe={describe}
@@ -440,7 +447,7 @@ function BlockView({ block, ctx }: { block: LiveBlock; ctx: Ctx }) {
       {!block.deleted && (
         <>
           <LiveBlockEditor doc={ctx.doc} provider={ctx.provider} blockKey={block.key} editable={ctx.editable} me={ctx.me} onEditor={ctx.onEditor} />
-          {ctx.editable && block.type === 'objective' && <RewriteSuggestion blockKey={block.key} ctx={ctx.suggestions} />}
+          {ctx.writer && block.type === 'objective' && <RewriteSuggestion blockKey={block.key} ctx={ctx.suggestions} />}
           <Alignment block={block} ctx={ctx} />
           <BlockComments block={block} ctx={ctx} />
         </>
