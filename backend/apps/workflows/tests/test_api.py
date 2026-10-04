@@ -62,7 +62,9 @@ def test_a_version_goes_through_review_over_the_api(world):
     admin.post("/api/workflow-templates/", {"name": "المسار", "stages": STAGES, "is_default": True}, format="json")
     assert reviewer.post(f"/api/program-versions/{version_id}/submit/").status_code == 403
 
-    submitted = author.post(f"/api/program-versions/{version_id}/submit/").json()
+    unexplained = author.post(f"/api/program-versions/{version_id}/submit/")
+    assert unexplained.json()["error"]["code"] == "critical_findings_reason_required"
+    submitted = author.post(f"/api/program-versions/{version_id}/submit/", {"reason": "سبب"}, format="json").json()
     assert (submitted["status"], submitted["current_stage"]) == ("in_stage", 1)
     [task] = reviewer.get("/api/tasks/").json()
     assert task["permissions"] == {"can_claim": True, "can_release": False, "can_decide": False}
@@ -111,7 +113,7 @@ def test_an_admin_cancels_and_follows_every_open_task(world):
     admin, author = login("admin@example.com"), login("author@example.com")
     admin.post("/api/workflow-templates/", {"name": "المسار", "stages": STAGES, "is_default": True}, format="json")
     version_id = world["version"].pk
-    author.post(f"/api/program-versions/{version_id}/submit/")
+    author.post(f"/api/program-versions/{version_id}/submit/", {"reason": "سبب"}, format="json")
     assert admin.get("/api/tasks/").json() == []
     assert len(admin.get("/api/tasks/?scope=all").json()) == 1
     assert author.post(f"/api/program-versions/{version_id}/cancel/").status_code == 403

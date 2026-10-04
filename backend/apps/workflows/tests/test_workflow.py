@@ -7,7 +7,9 @@ import pytest
 
 from apps.accounts.models import Organization, Role
 from apps.audit.models import AuditLog
+from apps.comments import services as comments
 from apps.core.errors import Conflict
+from apps.programs import services as programs
 from apps.programs.models import ProgramVersion
 from apps.programs.tests.factories import member, program
 from apps.tenancy.context import organization_context
@@ -33,7 +35,9 @@ def world():
             "approver": member("approver@example.com", Role.APPROVER),
         }
         template = two_stage_template(people["admin"], approver=people["approver"])
-        version = program(people["author"]).versions.get()
+        # No target competencies: no critical finding to explain at submission (task 5.4 has its own tests).
+        version = program(people["author"], targets=[]).versions.get()
+        programs.add_node(version, title="الوحدة", actor=people["author"])
         yield {"org": org, "template": template, "version": version, **people}
 
 
@@ -51,10 +55,20 @@ def open_task(version) -> StageTask:
 
 
 def claim_and_decide(world, user, decision, note="", version=None):
-    task = open_task(version or world["version"])
+    version = version or world["version"]
+    task = open_task(version)
+    if decision == "return":  # a return needs an open comment on the version (task 5.5, D55)
+        comment_on(version, user)
     if task.assignee_role:
         services.claim(task, actor=user, role=role(user))
     return services.decide(task, actor=user, role=role(user), decision=decision, note=note)
+
+
+def comment_on(version, user, category="suggestion"):
+    node = version.nodes.first()
+    return comments.create_comment(
+        program=version.program, version=version, author=user, body="ملاحظة", category=category, node_key=node.node_key
+    )
 
 
 def draft_of(version):

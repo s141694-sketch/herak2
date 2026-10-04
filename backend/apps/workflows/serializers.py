@@ -4,6 +4,7 @@ from rest_framework import serializers
 from apps.accounts.models import User
 from apps.accounts.serializers import UserSerializer
 
+from . import rules
 from .models import StageDecision, StageTask, WorkflowInstance, WorkflowTemplate
 
 
@@ -112,6 +113,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     tasks = serializers.SerializerMethodField()
     decisions = serializers.SerializerMethodField()
     previous = serializers.SerializerMethodField()
+    resolved_must_fix = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -128,6 +130,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "tasks",
             "decisions",
             "previous",
+            "resolved_must_fix",
         ]
 
     def get_stages(self, instance):
@@ -150,3 +153,17 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "version": {"id": previous.version_id, "number": previous.version.number},
             "decisions": StageDecisionSerializer(previous.decisions.select_related("user"), many=True).data,
         }
+
+    def get_resolved_must_fix(self, instance):
+        # Spec 6.2.7: what the authors say they fixed since the return; the reviewer may reopen any of them.
+        return [
+            {
+                "id": c.pk,
+                "body": c.body,
+                "quoted": c.quoted,
+                "author": UserSerializer(c.author).data,
+                "resolved_by": UserSerializer(c.resolved_by).data if c.resolved_by else None,
+                "resolved_at": c.resolved_at,
+            }
+            for c in rules.resolved_must_fix(instance)
+        ]

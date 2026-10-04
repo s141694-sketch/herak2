@@ -24,7 +24,7 @@ def _task(org):
     template = _template(org)
     version = _version(org)
     services.choose_template(version.program, template, actor=version.program.owner)
-    services.submit(version, actor=version.program.owner, role=Role.AUTHOR)
+    services.submit(version, actor=version.program.owner, role=Role.AUTHOR, reason="probe")
     return StageTask.objects.get(instance__version=version)
 
 

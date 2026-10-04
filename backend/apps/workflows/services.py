@@ -15,6 +15,7 @@ from apps.programs import lifecycle
 from apps.programs.models import Program, ProgramVersion
 from apps.programs.services import can_edit
 
+from . import rules
 from .models import (
     STAGE_ROLES,
     ProgramWorkflow,
@@ -185,11 +186,18 @@ def _open_task(instance: WorkflowInstance, stage: int, now) -> StageTask:
     )
 
 
-def submit(version: ProgramVersion, *, actor, role: str, reason: str = "", check=None) -> ProgramVersion:
+def _ruled(check, *args):
+    try:
+        return check(*args)
+    except rules.RuleRefused as refused:
+        raise WorkflowError(str(refused), code=refused.code) from refused
+
+
+def submit(version: ProgramVersion, *, actor, role: str, reason: str = "") -> ProgramVersion:
     """Sends a draft for review: it becomes submitted, then enters its first stage, in one transaction (D52).
 
-    ``check`` is the pre-submit check (task 5.4), run on the version's rows under its lock; it returns what
-    is kept on the submission for the reviewer."""
+    The pre-submit check (task 5.4) runs on the version's rows under its lock, after the live editor handed over
+    its latest content; what it keeps (the critical findings and the author's reason) goes with the submission."""
     if not can_edit(version.program, actor, role):
         raise NotAllowed("only the program's collaborators submit it")
     previous = _returned_from(version)
@@ -205,10 +213,12 @@ def submit(version: ProgramVersion, *, actor, role: str, reason: str = "", check
             raise WorkflowError("choose an approval workflow first", code="no_workflow")
         start, template_id = 1, template.pk
     kept: dict = {}
+    payload: dict = {"start_stage": start}
 
     def checks(locked: ProgramVersion) -> None:
-        if check is not None:
-            kept.update(check(locked, reason) or {})
+        kept.update(_ruled(rules.pre_submit, locked, reason))
+        if kept:
+            payload["pre_submit"] = kept
 
     def enter(submitted: ProgramVersion) -> None:
         instance = WorkflowInstance.objects.create(
@@ -223,9 +233,8 @@ def submit(version: ProgramVersion, *, actor, role: str, reason: str = "", check
         lifecycle.transition(submitted, S.IN_STAGE, actor=actor, stage=start)
         _open_task(instance, start, timezone.now())
 
-    lifecycle.transition(
-        version, S.SUBMITTED, actor=actor, check=checks, then=enter, payload={"start_stage": start, **kept}
-    )
+    # The payload is read when the transition is recorded, after the check filled it.
+    lifecycle.transition(version, S.SUBMITTED, actor=actor, check=checks, then=enter, payload=payload)
     return ProgramVersion.objects.get(pk=version.pk)
 
 
@@ -283,11 +292,9 @@ def release(task: StageTask, *, actor, role: str) -> StageTask:
 
 
 @transaction.atomic
-def decide(task: StageTask, *, actor, role: str, decision: str, note: str = "", check=None) -> ProgramVersion:
-    """Approve (the next stage, or final approval after the last) or return (a new draft for the authors).
-
-    ``check`` adds the conditions on comments (task 5.5): it is called with the version, the instance, the
-    task and the decision, under the locks."""
+def decide(task: StageTask, *, actor, role: str, decision: str, note: str = "") -> ProgramVersion:
+    """Approve (the next stage, or final approval after the last) or return (a new draft for the authors), under
+    the conditions on comments (task 5.5)."""
     version, instance, task = _lock_task(task)
     if task.assignee_role and task.claimed_by_id is None:
         raise WorkflowError("take the task before deciding", code="task_not_claimed")
@@ -300,8 +307,7 @@ def decide(task: StageTask, *, actor, role: str, decision: str, note: str = "", 
         raise WorkflowError("the note is too long", code="note_too_long")
     if decision == StageDecision.Decision.RETURN and not note:
         raise WorkflowError("say why the version is returned", code="return_note_required")
-    if check is not None:
-        check(version, instance, task, decision)
+    _ruled(rules.decision, version, instance, task, decision)
 
     now = timezone.now()
     StageDecision.objects.create(

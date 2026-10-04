@@ -61,7 +61,10 @@ def test_author_creates_and_submits_and_withdraws_a_program(world):
         author.put(f"/api/program-versions/{version_id}/targets/", world["competencies"], format="json").status_code
         == 200
     )
-    assert author.post(f"/api/program-versions/{version_id}/submit/").json()["status"] == "in_stage"
+    assert (
+        author.post(f"/api/program-versions/{version_id}/submit/", {"reason": "سبب"}, format="json").json()["status"]
+        == "in_stage"
+    )
     locked = author.put(f"/api/program-versions/{version_id}/targets/", [], format="json")
     assert locked.status_code == 409 and locked.json()["error"]["code"] == "version_locked"
 
@@ -157,6 +160,6 @@ def test_responses_say_what_the_caller_may_do(world):
     }
     admin = login("admin@example.com")
     assert admin.get(f"/api/programs/{program['id']}/").json()["permissions"]["manage"] is True
-    author.post(f"/api/program-versions/{version_id}/submit/")
+    author.post(f"/api/program-versions/{version_id}/submit/", {"reason": "سبب"}, format="json")
     locked = author.get(f"/api/program-versions/{version_id}/").json()["permissions"]
     assert (locked["edit"], locked["collaborate"]) == (False, True)
