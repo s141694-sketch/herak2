@@ -1,9 +1,12 @@
 """The single point through which a program version changes status (spec 6.1).
 
-Phase 5 adds the conditions that guard some transitions (pre-submit check,
-open must_fix comments, workflow stages); the table of what is possible at all
-lives here.
+The table of what is possible at all lives here. The conditions of the approval workflow (pre-submit check,
+open must_fix comments, who decides at which stage) live in apps.workflows, which passes them in as ``check``,
+run under the version's row lock before anything changes, and ``then``, run in the same transaction after the
+change was recorded (opening the next stage task, closing the submission).
 """
+
+from collections.abc import Callable
 
 from django.db import transaction
 from django.dispatch import Signal
@@ -62,33 +65,60 @@ draft_kept = Signal()
 rows_requested = Signal()
 
 
-def transition(version: ProgramVersion, to: str, *, actor, stage: int | None = None, payload: dict | None = None):
+Hook = Callable[[ProgramVersion], None] | None
+
+
+def transition(
+    version: ProgramVersion,
+    to: str,
+    *,
+    actor,
+    stage: int | None = None,
+    payload: dict | None = None,
+    check: Hook = None,
+    then: Hook = None,
+):
     current = ProgramVersion.objects.get(pk=version.pk)
+    hooks = {"check": check, "then": then}
     if not (current.status == S.DRAFT and (S.DRAFT, to) in ALLOWED):
-        return _transition(version, to, actor=actor, stage=stage, payload=payload, held={})
+        return _transition(version, to, actor=actor, stage=stage, payload=payload, held={}, **hooks)
     held: dict = {}
     try:
         # Receivers may call other services (the live editor hands over its latest content), so this runs
         # before any row lock is taken. The locked step below re-checks the status.
         leaving_draft.send(sender=ProgramVersion, version=current, target=to, held=held)
-        return _transition(version, to, actor=actor, stage=stage, payload=payload, held=held)
+        return _transition(version, to, actor=actor, stage=stage, payload=payload, held=held, **hooks)
     except BaseException:
         draft_kept.send_robust(sender=ProgramVersion, version=current, held=held)
         raise
 
 
 @transaction.atomic
-def _transition(version: ProgramVersion, to: str, *, actor, stage: int | None, payload: dict | None, held: dict):
+def _transition(
+    version: ProgramVersion,
+    to: str,
+    *,
+    actor,
+    stage: int | None,
+    payload: dict | None,
+    held: dict,
+    check: Hook = None,
+    then: Hook = None,
+):
     # NO KEY UPDATE: rows that reference this version (nodes, blocks, audit entries) can still be written.
     version = ProgramVersion.objects.select_for_update(no_key=True).get(pk=version.pk)
     source = version.status
     if (source, to) not in ALLOWED:
         raise TransitionRefused(f"a {source} version cannot become {to}")
     if to == S.IN_STAGE:
-        expected = (version.current_stage or 0) + 1 if source == S.IN_STAGE else 1
-        if stage != expected:
-            raise TransitionRefused(f"the next stage is {expected}", code="stage_out_of_order")
+        # From one stage only to the next; a submission enters at the stage its workflow names (D54).
+        if source == S.IN_STAGE and stage != (version.current_stage or 0) + 1:
+            raise TransitionRefused(f"the next stage is {version.current_stage + 1}", code="stage_out_of_order")
+        if source == S.SUBMITTED and (stage is None or stage < 1):
+            raise TransitionRefused("a submission enters a stage numbered from 1", code="stage_out_of_order")
         version.current_stage = stage
+    if check is not None:
+        check(version)
 
     now = timezone.now()
     version.status = to
@@ -114,4 +144,6 @@ def _transition(version: ProgramVersion, to: str, *, actor, stage: int | None, p
         left_draft.send(sender=ProgramVersion, version=version, target=to, held=held)
     if to in CREATES_DRAFT:
         create_draft_copy(version, actor=actor)
+    if then is not None:
+        then(version)
     return version

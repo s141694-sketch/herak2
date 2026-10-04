@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "apps.evals",
     "apps.agents",
     "apps.suggestions",
+    "apps.workflows",
 ]
 
 MIDDLEWARE = [

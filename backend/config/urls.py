@@ -13,4 +13,5 @@ urlpatterns = [
     path("api/", include("apps.quality.urls")),
     path("api/", include("apps.ai.urls")),
     path("api/", include("apps.suggestions.urls")),
+    path("api/", include("apps.workflows.urls")),
 ]

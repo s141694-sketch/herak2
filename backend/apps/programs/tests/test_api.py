@@ -3,6 +3,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import Organization, Role
 from apps.tenancy.context import organization_context
+from apps.workflows.tests.factories import one_stage_template
 
 from .factories import member, published_framework, published_template
 
@@ -26,6 +27,7 @@ def world():
         template = published_template(admin)
         framework = published_framework(admin)
         competency_ids = list(framework.competencies.values_list("pk", flat=True))
+        one_stage_template(admin)
     return {"template": template, "framework": framework, "competencies": competency_ids}
 
 
@@ -59,7 +61,7 @@ def test_author_creates_and_submits_and_withdraws_a_program(world):
         author.put(f"/api/program-versions/{version_id}/targets/", world["competencies"], format="json").status_code
         == 200
     )
-    assert author.post(f"/api/program-versions/{version_id}/submit/").json()["status"] == "submitted"
+    assert author.post(f"/api/program-versions/{version_id}/submit/").json()["status"] == "in_stage"
     locked = author.put(f"/api/program-versions/{version_id}/targets/", [], format="json")
     assert locked.status_code == 409 and locked.json()["error"]["code"] == "version_locked"
 

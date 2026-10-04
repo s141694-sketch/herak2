@@ -192,10 +192,53 @@ def test_stages_advance_one_at_a_time(ctx):
     version = program(owner).versions.get()
     lifecycle.transition(version, S.SUBMITTED, actor=owner)
     with pytest.raises(lifecycle.TransitionRefused):
-        lifecycle.transition(version, S.IN_STAGE, actor=owner, stage=2)
+        lifecycle.transition(version, S.IN_STAGE, actor=owner, stage=0)
     lifecycle.transition(version, S.IN_STAGE, actor=owner, stage=1)
     with pytest.raises(lifecycle.TransitionRefused):
         lifecycle.transition(version, S.IN_STAGE, actor=owner, stage=3)
     lifecycle.transition(version, S.IN_STAGE, actor=owner, stage=2)
     version.refresh_from_db()
     assert version.current_stage == 2
+
+
+def test_a_submission_may_enter_a_later_stage_but_a_stage_only_leads_to_the_next(ctx):
+    _, owner = ctx
+    submitted = version_in(S.SUBMITTED, owner)
+    with pytest.raises(lifecycle.TransitionRefused):
+        lifecycle.transition(submitted, S.IN_STAGE, actor=owner)
+    assert lifecycle.transition(submitted, S.IN_STAGE, actor=owner, stage=3).current_stage == 3
+    with pytest.raises(lifecycle.TransitionRefused):
+        lifecycle.transition(submitted, S.IN_STAGE, actor=owner, stage=5)
+    assert lifecycle.transition(submitted, S.IN_STAGE, actor=owner, stage=4).current_stage == 4
+
+
+def test_a_check_runs_under_the_lock_and_can_refuse(ctx):
+    _, owner = ctx
+    version = program(owner).versions.get()
+    seen = []
+
+    def check(locked):
+        seen.append(locked.status)
+        raise lifecycle.TransitionRefused("not now", code="not_now")
+
+    with pytest.raises(lifecycle.TransitionRefused):
+        lifecycle.transition(version, S.SUBMITTED, actor=owner, check=check)
+    version.refresh_from_db()
+    assert seen == [S.DRAFT] and version.status == S.DRAFT
+    assert not AuditLog.objects.filter(event="program_version.transition").exists()
+
+
+def test_then_runs_after_the_change_in_the_same_transaction(ctx):
+    _, owner = ctx
+    version = program(owner).versions.get()
+
+    def then(changed):
+        assert changed.status == S.SUBMITTED
+        assert AuditLog.objects.filter(event="program_version.transition").count() == 1
+        raise RuntimeError("the follow-up failed")
+
+    with pytest.raises(RuntimeError):
+        lifecycle.transition(version, S.SUBMITTED, actor=owner, then=then)
+    version.refresh_from_db()
+    assert version.status == S.DRAFT  # rolled back with it
+    assert not AuditLog.objects.filter(event="program_version.transition").exists()

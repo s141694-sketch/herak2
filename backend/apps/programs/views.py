@@ -159,25 +159,6 @@ class VersionTargetsView(APIView):
         return Response(VersionDetailSerializer(version).data["targets"])
 
 
-class _TransitionView(APIView):
-    permission_classes = [HasActiveOrganization]
-    target_status: str
-
-    def post(self, request, pk):
-        version = get_object_or_404(ProgramVersion.objects, pk=pk)
-        require_edit(request, version.program)
-        version = lifecycle.transition(version, self.target_status, actor=request.user)
-        return Response(VersionSummarySerializer(version).data)
-
-
-class SubmitVersionView(_TransitionView):
-    target_status = S.SUBMITTED
-
-
-class WithdrawVersionView(_TransitionView):
-    target_status = S.WITHDRAWN
-
-
 # --- Tree, nodes and blocks (task 2.5) ---------------------------------------------------------
 
 

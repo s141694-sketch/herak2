@@ -19,6 +19,7 @@ from apps.programs import lifecycle, services
 from apps.programs.models import Block, ProgramVersion
 from apps.programs.tests.factories import member, program
 from apps.tenancy.context import organization_context
+from apps.workflows.tests.factories import one_stage_template
 
 pytestmark = pytest.mark.django_db
 S = ProgramVersion.Status
@@ -66,6 +67,7 @@ def world(monkeypatch):
         version = program(owner).versions.get()
         root = services.add_node(version, title="البرنامج", actor=owner)
         objective = services.add_block(version, node=root, type="objective", content=doc("هدف"), actor=owner)
+        one_stage_template(owner)
     fake = FakeCollab()
     monkeypatch.setattr(collab_client, "call", fake)
     return {"org": org, "owner": owner, "version": version, "root": root, "objective": objective, "fake": fake}

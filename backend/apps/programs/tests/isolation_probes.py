@@ -26,8 +26,6 @@ register(Probe(route="program-collaborator-detail", kind="detail", make=_collabo
 register(Probe(route="program-versions", kind="nested", make=_program))
 register(Probe(route="program-version-detail", kind="detail", make=_version))
 register(Probe(route="program-version-targets", kind="nested", make=_version))
-register(Probe(route="program-version-submit", kind="action", make=_version))
-register(Probe(route="program-version-withdraw", kind="action", make=_version))
 
 
 def _node(org):
