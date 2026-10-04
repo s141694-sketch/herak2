@@ -60,6 +60,8 @@ export async function openLive(page: Page, versionId: number, mode: 'read' | 'wr
   await page.goto(`/program-versions/${versionId}`)
   await expect(page.getByTestId('live-status')).toHaveAttribute('data-mode', mode)
   await expect(page.getByTestId('live-status')).toHaveAttribute('data-state', 'connected')
+  // Connected is not synced: the tree (and its block editors) appear after the first sync.
+  await expect(page.getByTestId('tree')).toBeVisible()
 }
 
 /** The editor's text without other people's caret labels, which are drawn inside it. */
@@ -93,6 +95,7 @@ export const RANGE_OF = `
 
 /** Comments on a quote in the first objective block, through the selection button as a person would. */
 export async function comment(page: Page, quote: string, body: string, category: 'must_fix' | 'suggestion') {
+  await expect(page.getByTestId('block-objective').locator('.ProseMirror').first()).toBeVisible()
   const range = await inEditor(page, 'objective', RANGE_OF, { quote })
   await inEditor(page, 'objective', 'editor.commands.setTextSelection(args)', range)
   await page.getByTestId('block-objective').getByTestId('comment-selection').click()
