@@ -7,6 +7,7 @@ import { BlockEditor } from '../../components/BlockEditor'
 import { ErrorMessage, Loading } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
+import { ReviewPanel } from '../workflows/ReviewPanel'
 import { LiveVersionPage } from './LiveVersionPage'
 import {
   type AlignmentLink,
@@ -92,6 +93,8 @@ export function VersionPage() {
           </button>
         )}
       </div>
+
+      <ReviewPanel versionId={version.data.id} onChanged={refresh} />
 
       <h2>{t('programs.targets')}</h2>
       <ul className="plain" data-testid="version-targets">

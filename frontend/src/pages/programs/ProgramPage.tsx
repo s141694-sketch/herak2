@@ -7,6 +7,7 @@ import { ErrorMessage, Loading } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
 import type { Collaborator, Program, ProgramVersionSummary } from '../../types'
+import { ProgramWorkflow } from '../workflows/ProgramWorkflow'
 
 export function ProgramPage() {
   const { t } = useTranslation()
@@ -108,6 +109,8 @@ export function ProgramPage() {
           </button>
         </div>
       )}
+
+      <ProgramWorkflow programId={program.data.id} canChoose={permissions.edit && versions.some((v) => v.status === 'draft')} />
 
       <h2>{t('programs.collaborators')}</h2>
       <ul className="plain" data-testid="collaborators">

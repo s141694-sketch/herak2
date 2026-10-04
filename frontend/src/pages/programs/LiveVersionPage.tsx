@@ -23,6 +23,7 @@ import { useAuth } from '../../auth'
 import { ErrorMessage } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
+import { ReviewPanel } from '../workflows/ReviewPanel'
 import { LiveBlockEditor } from '../../live/LiveBlockEditor'
 import { type Presence, usePresence } from '../../live/presence'
 import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../../live/snapshot'
@@ -169,10 +170,15 @@ export function LiveVersionPage({
   }
   const roots = snapshot.nodes.filter((n) => n.parent === null)
 
+  // The pre-submit check (spec 6.2.1): with critical findings the server asks for a reason, or refuses.
+  const [reason, setReason] = useState<string | null>(null)
   async function submit() {
-    const done = await action.run(() => http.post(`/api/program-versions/${version.id}/submit/`))
+    const done = await action.run(() => http.post(`/api/program-versions/${version.id}/submit/`, reason === null ? {} : { reason }))
     if (done) onSubmitted()
   }
+  useEffect(() => {
+    if (action.error === 'critical_findings_reason_required') setReason((current) => current ?? '')
+  }, [action.error])
 
   async function withdraw() {
     const done = await action.run(() => http.post(`/api/program-versions/${version.id}/withdraw/`))
@@ -200,9 +206,21 @@ export function LiveVersionPage({
       <ErrorMessage code={action.error ?? ruleError} testId="version-error" />
       {version.permissions.collaborate && (
         <div className="row">
+          {version.status === 'draft' && reason !== null && (
+            <label className="field submit-reason">
+              <span>{t('workflow.criticalReason')}</span>
+              <textarea rows={3} maxLength={2000} value={reason} data-testid="submit-reason" onChange={(e) => setReason(e.target.value)} />
+            </label>
+          )}
           {version.status === 'draft' && (
-            <button type="button" className="primary-inline" data-testid="submit-version" disabled={action.busy || !caughtUp} onClick={() => void submit()}>
-              {t('programs.submit')}
+            <button
+              type="button"
+              className="primary-inline"
+              data-testid="submit-version"
+              disabled={action.busy || !caughtUp || (reason !== null && !reason.trim())}
+              onClick={() => void submit()}
+            >
+              {reason === null ? t('programs.submit') : t('workflow.submitWithReason')}
             </button>
           )}
           {version.status === 'draft' && !caughtUp && <span className="muted">{t('live.submitWaits')}</span>}
@@ -213,6 +231,7 @@ export function LiveVersionPage({
           )}
         </div>
       )}
+      {version.status !== 'draft' && <ReviewPanel versionId={version.id} onChanged={onSubmitted} />}
       {resolvedCount > 0 && (
         <p>
           <button type="button" className="link-button" data-testid="toggle-resolved" onClick={() => setShowResolved((shown) => !shown)}>

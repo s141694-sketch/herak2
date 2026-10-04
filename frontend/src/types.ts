@@ -291,3 +291,94 @@ export interface QualityReport {
   findings: Finding[]
   rollup: Record<string, Record<Severity, number>>
 }
+
+/** Approval workflows (phase 5). */
+export type StageRole = 'reviewer' | 'approver' | 'admin'
+export interface UserRef {
+  id: number
+  email: string
+  full_name: string
+}
+
+export interface WorkflowStage {
+  order: number
+  name: string
+  assignee_user: UserRef | null
+  assignee_role: StageRole | ''
+  due_work_days: number
+  resubmit: 'same_stage' | 'restart'
+}
+
+export interface WorkflowTemplate {
+  id: number
+  name: string
+  is_default: boolean
+  stages: WorkflowStage[]
+  created_at: string
+  updated_at: string
+}
+
+export interface StageTask {
+  id: number
+  stage: number
+  stage_name: string
+  stage_count: number
+  assignee_user: UserRef | null
+  assignee_role: StageRole | ''
+  claimed_by: UserRef | null
+  claimed_at: string | null
+  entered_at: string
+  due_at: string
+  overdue: boolean
+  closed_at: string | null
+  outcome: string
+  version: { id: number; number: number; program: { id: number; title: string } }
+  permissions: { can_claim: boolean; can_release: boolean; can_decide: boolean }
+}
+
+export interface StageDecision {
+  id: number
+  stage: number
+  user: UserRef
+  decision: 'approve' | 'return'
+  note: string
+  created_at: string
+}
+
+export interface Submission {
+  id: number
+  version: number
+  stages: WorkflowStage[]
+  start_stage: number
+  pre_submit: { reason?: string; critical?: Array<{ kind: string; node_key: string | null; block_key: string | null; competency_key: string | null }> }
+  submitted_by: UserRef
+  created_at: string
+  outcome: '' | 'approved' | 'returned' | 'withdrawn' | 'cancelled'
+  closed_at: string | null
+  tasks: StageTask[]
+  decisions: StageDecision[]
+  previous: { version: { id: number; number: number }; decisions: StageDecision[] } | null
+  resolved_must_fix: Array<{ id: number; body: string; quoted: string; author: UserRef; resolved_by: UserRef | null; resolved_at: string }>
+}
+
+export interface Member {
+  id: number
+  user: UserRef
+  role: string
+  created_at: string
+}
+
+export interface AppNotification {
+  id: number
+  event: 'task_assigned' | 'version_returned' | 'version_approved' | 'task_due_soon' | 'task_due' | 'task_overdue'
+  version: number | null
+  params: { program?: string; number?: number; stage_name?: string; due_at?: string | null; note?: string; responsible?: string }
+  created_at: string
+  read_at: string | null
+}
+
+export interface NotificationList {
+  items: AppNotification[]
+  unread: number
+  email: 'immediate' | 'daily' | 'off'
+}

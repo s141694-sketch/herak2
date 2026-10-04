@@ -14,6 +14,8 @@ import { ProgramPage } from './pages/programs/ProgramPage'
 import { VersionPage } from './pages/programs/VersionPage'
 import { TemplateListPage } from './pages/templates/TemplateListPage'
 import { TemplatePage } from './pages/templates/TemplatePage'
+import { TasksPage } from './pages/workflows/TasksPage'
+import { WorkflowsPage } from './pages/workflows/WorkflowsPage'
 
 function Loading() {
   const { t } = useTranslation()
@@ -32,6 +34,8 @@ function OrganizationRoutes() {
       <Route path="/competencies/:id" element={<FrameworkPage />} />
       <Route path="/templates" element={<TemplateListPage />} />
       <Route path="/templates/:id" element={<TemplatePage />} />
+      <Route path="/tasks" element={<TasksPage />} />
+      <Route path="/workflows" element={<WorkflowsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

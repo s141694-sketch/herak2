@@ -41,7 +41,9 @@
     "home": "Home",
     "programs": "Programs",
     "competencies": "Competency frameworks",
-    "templates": "Structure templates"
+    "templates": "Structure templates",
+    "workflows": "Approval workflows",
+    "tasks": "My tasks"
   },
   "errors": {
     "invalid_credentials": "The email or password is incorrect. Check them and try again.",
@@ -111,7 +113,27 @@
     "import_text_invalid": "This text could not be read for import.",
     "quality_not_allowed": "You may not change the quality report of this version.",
     "report_locked": "The quality report of a locked version cannot be changed.",
-    "rules_only": "Your organization works with rules only, so no AI suggestion is applied."
+    "rules_only": "Your organization works with rules only, so no AI suggestion is applied.",
+    "no_workflow": "This program has no approval workflow. Ask an admin to define one.",
+    "critical_findings_reason_required": "The content has critical findings: write why you submit it anyway.",
+    "critical_findings_block": "Your organization does not allow submitting with critical findings: fix them or dismiss them with a reason first.",
+    "open_must_fix": "The version cannot be approved while must-fix comments are open.",
+    "return_comment_required": "Write at least one comment on this version before returning it.",
+    "return_note_required": "Say why the version is returned in the decision note.",
+    "task_not_claimed": "Take the task first.",
+    "not_your_task": "This task is not yours.",
+    "task_claimed": "Someone else has taken this task.",
+    "task_closed": "This task has been decided; refresh the page.",
+    "withdraw_after_decision": "A decision was taken on this submission, so it can no longer be withdrawn.",
+    "not_in_review": "This version is not under review.",
+    "workflow_stages_required": "Add at least one stage.",
+    "workflow_stages_too_many": "The workflow is too long (at most 20 stages).",
+    "workflow_stage_invalid": "A stage is incomplete: its name, who is responsible and the time allowed are required.",
+    "workflow_name_invalid": "Name the workflow.",
+    "workflow_in_use": "Programs follow this workflow; change their choice first.",
+    "decision_invalid": "Choose approve or return.",
+    "note_too_long": "The note is longer than allowed.",
+    "not_draft": "The workflow is chosen while the program has a draft."
   },
   "common": {
     "create": "Create",
@@ -136,7 +158,8 @@
     "deleted": "Deleted",
     "confirm": "Confirm",
     "empty": "Nothing here yet.",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "edit": "Edit"
   },
   "status": {
     "draft": "Draft",
@@ -505,5 +528,87 @@
       "competency_objective_suggestion": "Suggested objective for the competency {{competency}}: {{objective}}"
     },
     "countOf": "{{severity}}: {{count}}"
+  },
+  "workflow": {
+    "title": "Approval workflows",
+    "intro": "A submitted program goes through the workflow's stages in order. Each stage has someone responsible (a person, or a role whose holders claim the task) and a time allowed in work days.",
+    "none": "There is no approval workflow yet; programs cannot be submitted for review until an admin defines one.",
+    "new": "New workflow",
+    "edit": "Edit “{{name}}”",
+    "default": "Default",
+    "isDefault": "The organization's default workflow",
+    "stages": "Stages",
+    "stageName": "Stage name",
+    "who": "Responsible",
+    "byRole": "A role",
+    "byPerson": "A person",
+    "role": "Role",
+    "person": "Person",
+    "choosePerson": "Choose a person",
+    "dueDays": "Time allowed (work days)",
+    "resubmit": "On resubmission",
+    "resubmitSame": "returns to this stage",
+    "resubmitRestart": "starts again from the first stage",
+    "addStage": "Add a stage",
+    "snapshotNote": "Editing a workflow does not change a review in progress; each review follows the workflow as it was when submitted.",
+    "anyRole": "Any {{role}}",
+    "dueIn": "Time allowed: {{count}} work day(s)",
+    "inbox": "My tasks",
+    "allOpen": "Every open task in the organization",
+    "noTasks": "No tasks are waiting for you.",
+    "stageOf": "Stage {{stage}} of {{count}}",
+    "takenBy": "Taken by {{name}}",
+    "due": "Due {{date}}",
+    "overdue": "Late — was due {{date}}",
+    "claim": "Take the task",
+    "release": "Give the task back",
+    "review": "Review and approval",
+    "submittedBy": "Submitted by {{name}} on {{date}}",
+    "submittedWithCritical": "Submitted with unresolved critical findings ({{count}}).",
+    "authorReason": "The author's reason:",
+    "previous": "Decisions on the previous submission (version {{number}})",
+    "resolvedMustFix": "Must-fix comments marked resolved since the return ({{count}})",
+    "resolvedBy": "Marked resolved by {{name}}",
+    "note": "Decision note",
+    "returnRule": "Returning needs a decision note and at least one open comment on this version.",
+    "approve": "Approve the stage",
+    "return": "Return for changes",
+    "decision": {
+      "approve": "Approved",
+      "return": "Returned"
+    },
+    "decidedBy": "Stage {{stage}}: {{name}} on {{date}}",
+    "outcome": {
+      "approved": "This version is approved.",
+      "returned": "This version was returned for changes; a new draft was created.",
+      "withdrawn": "The author withdrew this submission.",
+      "cancelled": "An admin cancelled this version."
+    },
+    "criticalReason": "The content has critical findings. Write why you submit it anyway; the reviewer will see it.",
+    "submitWithReason": "Submit with this reason",
+    "programWorkflow": "Approval workflow",
+    "noneForProgram": "There is no approval workflow; ask an admin to define one.",
+    "choose": "Choose the approval workflow",
+    "useDefault": "The organization's default workflow"
+  },
+  "notifications": {
+    "bell": "Notifications",
+    "title": "Notifications (unread: {{count}})",
+    "none": "No notifications.",
+    "readAll": "Mark all as read",
+    "email": "Email",
+    "emailMode": {
+      "immediate": "At once",
+      "daily": "Daily digest",
+      "off": "In the platform only"
+    },
+    "events": {
+      "task_assigned": "Review requested: stage “{{stage}}” of version {{number}} of “{{program}}” — due {{due}}",
+      "version_returned": "Version {{number}} of “{{program}}” was returned for changes: {{note}}",
+      "version_approved": "Version {{number}} of “{{program}}” was approved",
+      "task_due_soon": "Reminder: the stage “{{stage}}” of “{{program}}” is due {{due}}",
+      "task_due": "The stage “{{stage}}” of “{{program}}” is due now",
+      "task_overdue": "Escalation: the stage “{{stage}}” of “{{program}}” is late (responsible: {{responsible}})"
+    }
   }
 }

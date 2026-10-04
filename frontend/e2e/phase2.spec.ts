@@ -110,6 +110,9 @@ test('a program on a four-level template, two versions, and a correct comparison
 
   // 5. Submit, withdraw: version 1 is locked and version 2 is a draft copy.
   await page.getByTestId('submit-version').click()
+  // A targeted competency without an assessment is a critical finding: the submission needs a reason (task 5.4).
+  await page.getByTestId('submit-reason').fill('التقويم يُضاف في النسخة التالية')
+  await page.getByTestId('submit-version').click()
   // The submitted version reopens read-only on its frozen live state.
   await expect(page.getByTestId('live-status')).toHaveAttribute('data-mode', 'read')
   await page.getByTestId('withdraw-version').click()

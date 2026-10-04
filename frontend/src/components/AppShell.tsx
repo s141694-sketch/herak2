@@ -4,6 +4,7 @@ import { NavLink, useNavigate } from 'react-router'
 
 import { useAuth } from '../auth'
 import { LanguageToggle } from './LanguageToggle'
+import { NotificationBell } from './NotificationBell'
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
@@ -28,6 +29,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <NavLink to="/templates" data-testid="nav-templates">
               {t('nav.templates')}
             </NavLink>
+            <NavLink to="/workflows" data-testid="nav-workflows">
+              {t('nav.workflows')}
+            </NavLink>
+            <NavLink to="/tasks" data-testid="nav-tasks">
+              {t('nav.tasks')}
+            </NavLink>
           </nav>
         )}
         {session.memberships.length > 1 && (
@@ -48,6 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </label>
         )}
         <span className="spacer" />
+        {session.organization && session.organization.role !== 'pending' && <NotificationBell key={session.organization.id} />}
         <span data-testid="user-name">{session.user.full_name || session.user.email}</span>
         <LanguageToggle />
         <button
