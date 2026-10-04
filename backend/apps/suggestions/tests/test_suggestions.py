@@ -339,3 +339,91 @@ def test_text_harak1_cannot_read_is_refused(world, ask):
     response = ask(client, world["version"], kind="import", text="no arabic text here at all, only english words")
     assert response.status_code == 409 and response.json()["error"]["code"] == "import_no_text"
     assert ask(client, world["version"], kind="import").status_code == 400
+
+
+# Findings of the independent review of phase 4.
+
+
+def test_rules_only_mode_hides_ai_suggestions_already_made(world, ai, ask):
+    ai(rewrite_answer())
+    client = signed_in()
+    made = ask(client, world["version"], kind="rewrite", block_key=str(world["weak"].block_key)).json()
+    with organization_context(world["org"]):
+        AIPolicy.objects.create(mode=AIPolicy.Mode.RULES_ONLY)
+    body = client.get(f"/api/suggestions/{made['id']}/").json()
+    assert (body["status"], body["reason"], body["result"]) == ("failed", "rules_only", None)
+    refused = client.post(f"/api/suggestions/{made['id']}/accept/")
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "rules_only"
+
+
+def test_a_rules_layout_of_an_import_stays_usable_in_rules_only_mode(world, ask):
+    from apps.agents.tests.test_importing import SAFETY
+
+    with organization_context(world["org"]):
+        AIPolicy.objects.create(mode=AIPolicy.Mode.RULES_ONLY)
+    made = ask(signed_in(), world["version"], kind="import", text=SAFETY).json()
+    body = signed_in().get(f"/api/suggestions/{made['id']}/").json()
+    assert body["status"] == "ready" and body["result"]["source"] == "rules"
+
+
+def test_a_task_that_runs_after_the_version_left_draft_asks_no_model_and_can_still_be_dismissed(
+    world, ai, ask, monkeypatch
+):
+    from apps.suggestions import services as suggestion_services
+
+    monkeypatch.setattr(suggestion_services, "_enqueue", lambda suggestion: None)
+    provider = ai(rewrite_answer())
+    client = signed_in()
+    pending = ask(client, world["version"], kind="rewrite", block_key=str(world["weak"].block_key)).json()
+    with organization_context(world["org"]):
+        lifecycle.transition(world["version"], S.SUBMITTED, actor=world["owner"])
+        suggestion_services.run(pending["id"])
+        stored = Suggestion.objects.get(pk=pending["id"])
+    assert provider.requests == [] and (stored.status, stored.reason) == ("failed", "version_locked")
+    pending_two = None
+    with organization_context(world["org"]):
+        pending_two = Suggestion.objects.create(
+            version=world["version"], kind="outline", basis_hash="x", request={}, requested_by=world["owner"]
+        )
+    assert client.post(f"/api/suggestions/{pending_two.pk}/dismiss/", {}, format="json").status_code == 200
+
+
+def test_an_outline_whose_competencies_left_the_targets_is_rejected(world, ai, ask, monkeypatch):
+    from apps.suggestions import services as suggestion_services
+
+    monkeypatch.setattr(suggestion_services, "_enqueue", lambda suggestion: None)
+    ai(answer(json.dumps(outline_answer())))
+    pending = ask(signed_in(), world["version"], kind="outline").json()
+    with organization_context(world["org"]):
+        world["version"].targets.all().delete()
+        suggestion_services.run(pending["id"])
+        stored = Suggestion.objects.get(pk=pending["id"])
+    assert (stored.status, stored.reason) == ("rejected", "nothing_usable")
+
+
+def test_asking_again_after_a_rejected_rewrite_asks_the_model_again(world, ai, ask):
+    provider = ai(rewrite_answer(WEAK), rewrite_answer(SOUND))
+    client = signed_in()
+    first = ask(client, world["version"], kind="rewrite", block_key=str(world["weak"].block_key)).json()
+    second = ask(client, world["version"], kind="rewrite", block_key=str(world["weak"].block_key)).json()
+    assert len(provider.requests) == 2
+    assert client.get(f"/api/suggestions/{first['id']}/").json()["status"] == "rejected"
+    assert client.get(f"/api/suggestions/{second['id']}/").json()["status"] == "ready"
+
+
+def test_a_pending_suggestion_whose_worker_was_lost_is_replaced(world, ai, ask, monkeypatch, settings):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.suggestions import services as suggestion_services
+
+    monkeypatch.setattr(suggestion_services, "_enqueue", lambda suggestion: None)
+    client = signed_in()
+    stuck = ask(client, world["version"], kind="rewrite", block_key=str(world["weak"].block_key)).json()
+    Suggestion.all_organizations.filter(pk=stuck["id"]).update(
+        created_at=timezone.now() - timedelta(minutes=settings.QUALITY_STALE_RUN_MINUTES + 1)
+    )
+    again = ask(client, world["version"], kind="rewrite", block_key=str(world["weak"].block_key)).json()
+    assert again["id"] != stuck["id"]
+    assert client.get(f"/api/suggestions/{stuck['id']}/").json()["reason"] == "unavailable"

@@ -148,14 +148,33 @@ def outline_payload(title: str, target_role: str, levels: list[str], competencie
 
 
 def rewrite(objective: str, competencies: list[Competency], *, organization_id: int) -> tuple[dict, str]:
-    result = call(REWRITE, rewrite_payload(objective, competencies), organization_id=organization_id)
+    result = call(
+        REWRITE,
+        rewrite_payload(objective, competencies),
+        organization_id=organization_id,
+        accept=lambda output: judge_rewrite(objective, output)[0] == "ready",
+    )
     return result.output, result.model
 
 
 def outline(
     title: str, target_role: str, levels: list[str], competencies: list[Competency], *, organization_id: int
 ) -> tuple[dict, str]:
-    result = call(OUTLINE, outline_payload(title, target_role, levels, competencies), organization_id=organization_id)
+    codes = {competency.code for competency in competencies}
+
+    def usable(output: dict) -> bool:
+        try:
+            shape_outline(output, level_count=len(levels), competency_codes=codes)
+        except OutlineRejected:
+            return False
+        return True
+
+    result = call(
+        OUTLINE,
+        outline_payload(title, target_role, levels, competencies),
+        organization_id=organization_id,
+        accept=usable,
+    )
     return result.output, result.model
 
 

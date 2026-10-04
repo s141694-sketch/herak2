@@ -94,8 +94,16 @@ def interpret(output: dict, model: str = "") -> Classification:
 
 
 def classify(text: str, *, organization_id: int) -> Classification:
-    result: AIResult = call(SPEC, payload(text), organization_id=organization_id)
+    result: AIResult = call(SPEC, payload(text), organization_id=organization_id, accept=plausible)
     return interpret(result.output, result.model)
+
+
+def plausible(output: dict) -> bool:
+    try:
+        interpret(output)
+    except ImplausibleAnswer:
+        return False
+    return True
 
 
 def payload(text: str) -> dict:

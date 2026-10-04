@@ -2,8 +2,10 @@
 
 import hashlib
 import json
+from datetime import timedelta
 
 import structlog
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -16,6 +18,7 @@ from apps.core.locking import VersionLocked
 from apps.programs import lifecycle
 from apps.programs.content import plain_text
 from apps.programs.models import AlignmentLink, Block, ProgramVersion
+from apps.quality.ai_layer import rules_only
 
 from .models import Suggestion
 
@@ -94,6 +97,12 @@ def _record_request(version: ProgramVersion, kind: str, *, actor, block_key, tex
     existing = Suggestion.objects.filter(
         version=version, kind=kind, subject=subject, basis_hash=basis, status__in=Suggestion.OPEN
     ).first()
+    if existing is not None and existing.status == Suggestion.Status.PENDING and _stale(existing):
+        # Its worker was lost: it is closed as failed and a new request is made.
+        Suggestion.objects.filter(pk=existing.pk, status=Suggestion.Status.PENDING).update(
+            status=Suggestion.Status.FAILED, reason="unavailable", finished_at=timezone.now()
+        )
+        existing = None
     if existing is not None:
         return existing
     suggestion = Suggestion.objects.create(
@@ -101,6 +110,18 @@ def _record_request(version: ProgramVersion, kind: str, *, actor, block_key, tex
     )
     transaction.on_commit(lambda: _enqueue(suggestion))
     return suggestion
+
+
+def _stale(suggestion: Suggestion) -> bool:
+    return suggestion.created_at < timezone.now() - timedelta(minutes=settings.QUALITY_STALE_RUN_MINUTES)
+
+
+def ai_hidden(suggestion: Suggestion) -> bool:
+    """In rules-only mode no AI result is shown or applied, not even an earlier one (spec 5.1.4). An import's
+    layout by Harak's rules stays usable."""
+    if not rules_only(suggestion.organization_id):
+        return False
+    return suggestion.kind != Suggestion.Kind.IMPORT
 
 
 def _enqueue(suggestion: Suggestion) -> None:
@@ -171,7 +192,12 @@ def _answer(suggestion: Suggestion) -> tuple[str, str, dict, str]:
     }
     for objective in shaped["objectives"]:
         objective["competency_key"] = keys.get(objective["competency"])
-    shaped["objectives"] = [o for o in shaped["objectives"] if o["competency_key"]]
+    kept = [o for o in shaped["objectives"] if o["competency_key"]]
+    # A competency may have left the targets since the request: its objectives go, and are counted as dropped.
+    dropped["objectives"] += len(shaped["objectives"]) - len(kept)
+    shaped["objectives"] = kept
+    if not kept:
+        return Suggestion.Status.REJECTED, "nothing_usable", output, model
     result = {
         **shaped,
         "dropped": dropped,
@@ -185,6 +211,12 @@ def run(suggestion_id: int) -> None:
     """Asks the agent for a pending suggestion. A suggestion the author dismissed meanwhile stays dismissed."""
     suggestion = Suggestion.objects.select_related("version__program").filter(pk=suggestion_id).first()
     if suggestion is None or suggestion.status != Suggestion.Status.PENDING:
+        return
+    if not suggestion.version.is_editable:
+        # The version left draft before a worker took the request: no model is asked for a locked version.
+        Suggestion.objects.filter(pk=suggestion.pk, status=Suggestion.Status.PENDING).update(
+            status=Suggestion.Status.FAILED, reason="version_locked", finished_at=timezone.now()
+        )
         return
     spec = {
         Suggestion.Kind.REWRITE: drafting.REWRITE,
@@ -213,8 +245,11 @@ def _decide(suggestion: Suggestion, status: str, *, actor, reason: str = "", all
         locked = Suggestion.objects.select_for_update().select_related("version").get(pk=suggestion.pk)
         if locked.status not in allowed:
             raise SuggestionError("this suggestion is no longer open", code="suggestion_not_open")
-        if not locked.version.is_editable:
+        # Rejecting changes nothing in the version, so it is recorded even after the version left draft.
+        if status == Suggestion.Status.ACCEPTED and not locked.version.is_editable:
             raise VersionLocked()
+        if status == Suggestion.Status.ACCEPTED and ai_hidden(locked):
+            raise SuggestionError("the organization works with rules only", code="rules_only")
         locked.status = status
         locked.decided_by = actor
         locked.decided_at = timezone.now()

@@ -90,7 +90,11 @@ class Gateway:
     release_gate: ReleaseGate = field(default_factory=ReleaseGate)
     sleep: Callable[[float], None] = time.sleep
 
-    def call(self, spec: AgentSpec, payload: dict, *, organization_id: int) -> AIResult:
+    def call(
+        self, spec: AgentSpec, payload: dict, *, organization_id: int, accept: Callable[[dict], bool] | None = None
+    ) -> AIResult:
+        """``accept`` is the agent's own check of a schema-valid answer (a plausible level, a sound rewrite). An
+        answer it refuses is returned for the record but never cached, so asking again asks the model again."""
         policy = AIPolicy.objects.filter(organization_id=organization_id).first()
         if policy is not None and policy.mode == AIPolicy.Mode.RULES_ONLY:
             raise AIUnavailable("rules_only")
@@ -105,6 +109,9 @@ class Gateway:
         usage = AIUsage(agent=spec.name, prompt_version=spec.prompt_version, model=provider.model, cache_key=key)
 
         cached = AICacheEntry.objects.filter(key=key).first()
+        if cached is not None and accept is not None and not accept(cached.output):
+            cached.delete()
+            cached = None
         if cached is not None:
             usage.status = AIUsage.Status.CACHED
             usage.served_model = cached.model
@@ -135,9 +142,10 @@ class Gateway:
         if attempt.output is not None:
             usage.status = AIUsage.Status.OK
             usage.save()
-            AICacheEntry.objects.update_or_create(
-                key=key, defaults={"agent": spec.name, "output": attempt.output, "model": attempt.model}
-            )
+            if accept is None or accept(attempt.output):
+                AICacheEntry.objects.update_or_create(
+                    key=key, defaults={"agent": spec.name, "output": attempt.output, "model": attempt.model}
+                )
             return AIResult(output=attempt.output, model=attempt.model, cached=False, usage_id=usage.pk)
         usage.status = attempt.status
         usage.error = attempt.detail[:2000]
@@ -297,5 +305,7 @@ def _alert_quota_once(organization_id: int, quota: int) -> None:
 gateway = Gateway()
 
 
-def call(spec: AgentSpec, payload: dict, *, organization_id: int) -> AIResult:
-    return gateway.call(spec, payload, organization_id=organization_id)
+def call(
+    spec: AgentSpec, payload: dict, *, organization_id: int, accept: Callable[[dict], bool] | None = None
+) -> AIResult:
+    return gateway.call(spec, payload, organization_id=organization_id, accept=accept)

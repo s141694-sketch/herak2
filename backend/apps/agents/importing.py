@@ -121,13 +121,19 @@ def _is_section_heading(line: str) -> bool:
     return any(structure.match_pattern(line, section) for section in structure.SECTION_TYPES)
 
 
-def _unplaced(lines: list[str], nodes: list[dict], blocks: list[dict], cited: set[int] | None = None) -> list[str]:
-    """Lines that are in no block and are not a node's title or a section heading."""
+def _unplaced(
+    lines: list[str], nodes: list[dict], blocks: list[dict], cited: set[int] | None = None, orphans=frozenset()
+) -> list[str]:
+    """Lines that are in no block and are not a node's title or a section heading. ``orphans`` are the lines
+    Harak 1 itself left out: they are listed even when a block happens to contain the same words."""
     titles = {_normalized(node["title"]) for node in nodes}
     texts = [" ".join(block["text"].split()) for block in blocks]
     unplaced = []
     for index, line in enumerate(lines):
         if cited is not None and index in cited:
+            continue
+        if line in orphans:
+            unplaced.append(line)
             continue
         flat = " ".join(line.split())
         if _normalized(line) in titles or _is_section_heading(line):
@@ -161,7 +167,9 @@ def rules_proposal(read_result: dict, *, level_count: int) -> dict:
         "source": "rules",
         "nodes": nodes,
         "blocks": blocks,
-        "unplaced": _unplaced(read_result["lines"], nodes, blocks),
+        "unplaced": _unplaced(
+            read_result["lines"], nodes, blocks, orphans=set(read_result["struct"]["orphanText"].split("\n")) - {""}
+        ),
         "warnings": [warning["code"] for warning in read_result["struct"]["warnings"]],
     }
 
@@ -176,7 +184,15 @@ def payload(read_result: dict, levels: list[str], rules: dict) -> dict:
 
 def distribute(read_result: dict, levels: list[str], *, organization_id: int) -> tuple[dict, str]:
     rules = rules_proposal(read_result, level_count=len(levels))
-    result = call(SPEC, payload(read_result, levels, rules), organization_id=organization_id)
+
+    def usable(output: dict) -> bool:
+        try:
+            shape_import(output, lines=read_result["lines"], level_count=len(levels))
+        except ImportRejected:
+            return False
+        return True
+
+    result = call(SPEC, payload(read_result, levels, rules), organization_id=organization_id, accept=usable)
     return result.output, result.model
 
 

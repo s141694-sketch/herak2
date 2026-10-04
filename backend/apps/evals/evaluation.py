@@ -67,6 +67,15 @@ def passes(scores: dict[str, float], thresholds: dict[str, float]) -> bool:
     )
 
 
+def safe_payload(agent: EvaluatedAgent, item: dict) -> dict | None:
+    """The agent's payload for a golden-set item, or None when the item cannot be read (it counts as unanswered,
+    and the run goes on)."""
+    try:
+        return agent.payload(item)
+    except Exception:  # noqa: BLE001 - one unreadable cell must not abort an evaluation
+        return None
+
+
 def run(agent: EvaluatedAgent, golden_set: GoldenSet, gateway: Gateway) -> AgentEvaluation:
     if golden_set.agent != agent.name:
         raise ValueError(f"golden set {golden_set.pk} is for {golden_set.agent}, not {agent.name}")
@@ -79,7 +88,11 @@ def run(agent: EvaluatedAgent, golden_set: GoldenSet, gateway: Gateway) -> Agent
     gold, predicted, unanswered = [], [], 0
     for item in items:
         gold.append(item.gold)
-        payload = agent.payload(item.input)
+        payload = safe_payload(agent, item.input)
+        if payload is None:
+            predicted.append(None)
+            unanswered += 1
+            continue
         try:
             output = gateway.evaluate(agent.spec, payload, provider=provider)
         except AIUnavailable:
