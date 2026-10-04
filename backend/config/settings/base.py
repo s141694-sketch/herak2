@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -32,6 +33,8 @@ env = environ.Env(
     QUALITY_AI_DELAY_SECONDS=(int, 60),
     QUALITY_STALE_RUN_MINUTES=(int, 30),
     COLLAB_SAVE_MAX_BYTES=(int, 64 * 1024 * 1024),
+    APP_URL=(str, "http://localhost:5173"),
+    DEFAULT_FROM_EMAIL=(str, "Harak <no-reply@localhost>"),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -63,6 +66,7 @@ INSTALLED_APPS = [
     "apps.agents",
     "apps.suggestions",
     "apps.workflows",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [
@@ -109,7 +113,39 @@ CELERY_RESULT_BACKEND = REDIS_URL
 # Tasks run inside the request that queued them only where no worker runs (the browser tests).
 CELERY_TASK_ALWAYS_EAGER = env("CELERY_TASK_ALWAYS_EAGER")
 CELERY_TIMEZONE = "UTC"
-CELERY_BEAT_SCHEDULE: dict = {}
+CELERY_BEAT_SCHEDULE: dict = {
+    # Reminders and escalation (spec 6.3): every 15 minutes is well within a work day's precision.
+    "workflow-deadlines": {"task": "workflows.check_deadlines", "schedule": crontab(minute="*/15")},
+    # The daily digest at 07:00 in Muscat (03:00 UTC).
+    "notification-digest": {"task": "notifications.daily_digest", "schedule": crontab(hour=3, minute=0)},
+}
+
+# Email (D59): any SMTP provider, from EMAIL_URL (e.g. smtp+tls://user:password@host:587); the console by default.
+# Keep credentials in the environment, never in git. Django 6.1 configures mailers with MAILERS (the EMAIL_*
+# settings are deprecated).
+_email = env.email_url("EMAIL_URL", default="consolemail://")
+_smtp = {
+    "host": _email.get("EMAIL_HOST"),
+    "port": _email.get("EMAIL_PORT"),
+    "username": _email.get("EMAIL_HOST_USER"),
+    "password": _email.get("EMAIL_HOST_PASSWORD"),
+    "use_tls": _email.get("EMAIL_USE_TLS"),
+    "use_ssl": _email.get("EMAIL_USE_SSL"),
+    "timeout": 20,
+}
+MAILERS = {
+    "default": {
+        "BACKEND": _email["EMAIL_BACKEND"],
+        "OPTIONS": (
+            {k: v for k, v in _smtp.items() if v not in (None, "")}
+            if _email["EMAIL_BACKEND"].endswith(".smtp.EmailBackend")
+            else {}
+        ),
+    }
+}
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
+# Where links in emails lead: the web client, which asks for a sign-in.
+APP_URL = env("APP_URL")
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

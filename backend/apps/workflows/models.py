@@ -170,3 +170,24 @@ class StageDecision(OrganizationScopedModel):
 
     def __str__(self) -> str:
         return f"{self.instance.version} stage {self.stage}: {self.decision}"
+
+
+class Reminder(OrganizationScopedModel):
+    """A reminder or escalation sent for a task (spec 4.6, 6.3), so each is sent once. ``skipped`` marks an early
+    reminder that was not sent because the due time had already passed when it was first looked at."""
+
+    class Kind(models.TextChoices):
+        BEFORE_DUE = "before_due", "before_due"
+        AT_DUE = "at_due", "at_due"
+        ESCALATION = "escalation", "escalation"
+
+    task = models.ForeignKey(StageTask, on_delete=models.CASCADE, related_name="reminders")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    skipped = models.BooleanField(default=False)
+    sent_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["task", "kind"], name="workflows_reminder_once")]
+
+    def __str__(self) -> str:
+        return f"{self.task} {self.kind}"

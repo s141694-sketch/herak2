@@ -2,8 +2,13 @@
 
 import structlog
 from django.db import models
+from django.dispatch import Signal
 
 from .models import AuditLog, _write_allowed
+
+# Sent after an entry is written, inside the writer's transaction. The automations (spec 6.4) start here:
+# every event is written to the audit log first, and what follows is derived from the entry.
+recorded = Signal()
 
 
 def record(event: str, *, actor=None, target: models.Model | None = None, payload: dict | None = None) -> AuditLog:
@@ -23,4 +28,5 @@ def record(event: str, *, actor=None, target: models.Model | None = None, payloa
         entry.save()
     finally:
         _write_allowed.reset(token)
+    recorded.send(sender=AuditLog, entry=entry)
     return entry
