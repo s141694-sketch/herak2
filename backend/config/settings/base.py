@@ -30,6 +30,7 @@ env = environ.Env(
     AI_MONTHLY_TOKEN_QUOTA=(int, 2_000_000),
     AI_RECORDINGS_DIR=(str, ""),
     QUALITY_AI_DELAY_SECONDS=(int, 60),
+    QUALITY_STALE_RUN_MINUTES=(int, 30),
     COLLAB_SAVE_MAX_BYTES=(int, 64 * 1024 * 1024),
 )
 environ.Env.read_env(BASE_DIR / ".env")
@@ -155,6 +156,8 @@ AI_MONTHLY_TOKEN_QUOTA = env("AI_MONTHLY_TOKEN_QUOTA")
 AI_RECORDINGS_DIR = env("AI_RECORDINGS_DIR")
 # A light quality run asks the AI layer only after edits pause this long (cost control, spec 5.4).
 QUALITY_AI_DELAY_SECONDS = env("QUALITY_AI_DELAY_SECONDS")
+# A run still "running" after this long lost its worker; it may be asked for again, even after submission.
+QUALITY_STALE_RUN_MINUTES = env("QUALITY_STALE_RUN_MINUTES")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 AUTH_USER_MODEL = "accounts.User"

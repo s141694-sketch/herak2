@@ -19,8 +19,12 @@ def run_after_change(sender, version, **kwargs):
 
     def request():
         current = ProgramVersion.objects.filter(pk=version_id, status=S.DRAFT).first()
-        if current is not None:
+        if current is None:
+            return
+        try:
             services.request_run(current, QualityReport.Run.LIGHT)
+        except services.QualityError:
+            pass  # the version left draft meanwhile: its final run stands
 
     transaction.on_commit(request)
 

@@ -226,5 +226,5 @@ def test_a_broker_outage_does_not_fail_the_change_that_asked_for_a_run(
     monkeypatch.setattr(quality.sentry_sdk, "capture_exception", alerts.append)
     with organization_context(world["org"]), django_capture_on_commit_callbacks(execute=True):
         services.update_node(world["lesson"], title="عنوان جديد", actor=world["owner"])
-    assert report_of(world).status == "running"
+    assert report_of(world).status == "failed", "said, not left running"
     assert len(alerts) == 1

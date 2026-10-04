@@ -7,6 +7,7 @@ fingerprint, within the version and from the version it was copied from.
 """
 
 import uuid
+from datetime import timedelta
 
 import sentry_sdk
 import structlog
@@ -43,9 +44,11 @@ def request_run(version: ProgramVersion, kind: str, *, actor=None, final: bool =
     ``final`` is the run started when the version leaves draft for review; a report that failed may also
     be run again after that.
     """
+    # The report first, then the version's status: a request that read "draft" before the submission committed
+    # must not replace the final run.
+    report = QualityReport.objects.select_for_update().filter(version_id=version.pk).first()
     version = ProgramVersion.objects.get(pk=version.pk)
-    report = QualityReport.objects.select_for_update().filter(version=version).first()
-    if version.status != DRAFT and not final and not (report and report.status == S.FAILED):
+    if version.status != DRAFT and not final and not (report and _rerunnable(report)):
         raise QualityError("only a draft's report can be run again", code="report_locked")
     with engine_write():
         if report is None:
@@ -69,9 +72,19 @@ def request_run(version: ProgramVersion, kind: str, *, actor=None, final: bool =
         except Exception as exc:
             log.error("quality.enqueue_failed", report=report_id, error=str(exc))
             sentry_sdk.capture_exception(exc)
+            # Said, not left "running": a failed report may be run again, even after submission.
+            _finish(report_id, run_id, status=S.FAILED, error=f"the run could not be queued: {exc}"[:2000])
 
     transaction.on_commit(enqueue)
     return report
+
+
+def _rerunnable(report: QualityReport) -> bool:
+    """A report of a version that left draft is run again only if its last run failed or lost its worker."""
+    if report.status == S.FAILED:
+        return True
+    stale = timezone.now() - timedelta(minutes=settings.QUALITY_STALE_RUN_MINUTES)
+    return report.status == S.RUNNING and report.started_at is not None and report.started_at < stale
 
 
 def execute_run(report_id: int, run_id: str) -> None:
@@ -93,12 +106,18 @@ def execute_run(report_id: int, run_id: str) -> None:
             _finish(report_id, run_id, status=S.FAILED, error=str(exc)[:2000])
             return
         full = report.last_run == QualityReport.Run.FULL
-        pending = _write_rules(report_id, run_id, objectives, findings, finish=not full)
-        if pending is None:
+        try:
+            pending = _write_rules(report_id, run_id, objectives, findings, finish=not full)
+            if pending is None:
+                return
+            if full:
+                run_ai(report_id, run_id)
+        except Exception as exc:  # whatever happens, the report must not stay "running"
+            log.error("quality.run_failed", report=report_id, error=str(exc))
+            sentry_sdk.capture_exception(exc)
+            _finish(report_id, run_id, status=S.FAILED, error=str(exc)[:2000])
             return
-    if full:
-        run_ai(report_id, run_id)
-    elif pending:
+    if not full and pending:
         _schedule_ai(report_id, run_id)
 
 
@@ -157,6 +176,7 @@ def run_ai(report_id: int, run_id: str) -> None:
             report.status = S.PARTIAL_RULES_ONLY if state["status"] == "partial" else S.COMPLETE
             report.finished_at = timezone.now()
             report.counts = counts(report.findings.all())
+            _remember_inherited(report)
             report.save()
 
 
@@ -188,15 +208,33 @@ def _finish(report_id: int, run_id: str, *, status: str, error: str = "") -> Non
 
 
 def _carried_dismissals(report: QualityReport) -> dict[tuple[str, str], Finding]:
-    """Dismissed findings this report already had, or, on its first run, those of the version it was copied from."""
-    first_write = not report.rules_version
-    if first_write and report.version.source_version_id:
-        dismissed = Finding.objects.filter(
-            report__version_id=report.version.source_version_id, dismissed_at__isnull=False
-        )
-    else:
-        dismissed = Finding.objects.filter(report=report, dismissed_at__isnull=False)
-    return {(f.source, f.fingerprint): f for f in dismissed}
+    """Dismissed findings this report already had, and those of the version it was copied from for findings this
+    report has not had yet (rule findings on its first run, AI findings when the AI layer first produces them)."""
+    carried = {(f.source, f.fingerprint): f for f in Finding.objects.filter(report=report, dismissed_at__isnull=False)}
+    source = report.version.source_version_id
+    if source:
+        seen = {tuple(key) for key in report.inherited}
+        for f in Finding.objects.filter(report__version_id=source, dismissed_at__isnull=False):
+            key = (f.source, f.fingerprint)
+            if key not in seen and key not in carried:
+                carried[key] = f
+    return carried
+
+
+def _remember_inherited(report: QualityReport) -> None:
+    if not report.version.source_version_id:
+        return
+    keys = {tuple(key) for key in report.inherited}
+    keys.update(report.findings.values_list("source", "fingerprint"))
+    report.inherited = sorted(list(key) for key in keys)
+
+
+def _unique(found):
+    """One finding per fingerprint: the unique constraint must never fail a run."""
+    seen: dict[str, object] = {}
+    for f in found:
+        seen.setdefault(f.fingerprint, f)
+    return list(seen.values())
 
 
 def _finding_row(report, f, source, carried, competencies) -> Finding:
@@ -233,7 +271,7 @@ def _replace_ai_findings(report, analyses, carried, subjects=None) -> None:
     Finding.objects.filter(report=report, source=Finding.Source.AI).delete()
     if ai_layer.rules_only(report.organization_id):
         return
-    found = ai_layer.findings_from(analyses, ai_layer.current_checks(report, subjects), subjects)
+    found = _unique(ai_layer.findings_from(analyses, ai_layer.current_checks(report, subjects), subjects))
     competencies = _competencies(report, found)
     Finding.objects.bulk_create(_finding_row(report, f, Finding.Source.AI, carried, competencies) for f in found)
 
@@ -275,6 +313,7 @@ def _write_rules(report_id: int, run_id: str, objectives, findings, *, finish: b
             )
             for o in objectives
         )
+        findings = _unique(findings)
         competencies = _competencies(report, findings)
         Finding.objects.bulk_create(
             _finding_row(report, f, Finding.Source.RULE, carried, competencies) for f in findings
@@ -294,6 +333,7 @@ def _write_rules(report_id: int, run_id: str, objectives, findings, *, finish: b
             report.status = S.COMPLETE
             report.finished_at = timezone.now()
         report.counts = counts(report.findings.all())
+        _remember_inherited(report)
         report.save()
         return pending
 
@@ -328,7 +368,12 @@ def rollup(report: QualityReport) -> dict[str, dict[str, int]]:
 
 
 def _editable_finding(finding: Finding, actor, role: str) -> Finding:
-    finding = Finding.objects.select_related("report__version__program").get(pk=finding.pk)
+    # The report first, as a run takes it before replacing the findings: the same order, so no deadlock, and a
+    # finding a run has just replaced is said to be outdated instead of being written back.
+    QualityReport.objects.select_for_update().filter(pk=finding.report_id).first()
+    finding = Finding.objects.select_related("report__version__program").filter(pk=finding.pk).first()
+    if finding is None:
+        raise QualityError("the check ran again since this finding was shown", code="finding_outdated")
     version = finding.report.version
     if version.status != DRAFT:
         raise QualityError("findings of a version that left draft cannot change", code="report_locked")

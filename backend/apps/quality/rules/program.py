@@ -105,8 +105,12 @@ class Finding:
 
     @property
     def fingerprint(self) -> str:
-        """Identity of the problem across runs and versions (keys are stable); dismissals follow it."""
-        identity = json.dumps([self.kind, self.node_key, self.block_key, self.competency_key])
+        """Identity of the problem across runs and versions (keys are stable); dismissals follow it. A link's
+        target is part of it: one block can link to several deleted blocks."""
+        parts = [self.kind, self.node_key, self.block_key, self.competency_key]
+        if self.params.get("target_key"):
+            parts.append(self.params["target_key"])
+        identity = json.dumps(parts)
         return hashlib.sha256(identity.encode()).hexdigest()
 
 
@@ -242,10 +246,13 @@ def analyze(snapshot: Snapshot) -> tuple[list[ObjectiveResult], list[Finding]]:
                 )
 
     # Completeness of leaf nodes (Harak 1's lessons).
+    types_of: dict[str, set[str]] = {}
+    for b in blocks:
+        types_of.setdefault(b.node_key, set()).add(b.type)
     for node in nodes:
         if live_children[node.key]:
             continue
-        types = {b.type for b in blocks if b.node_key == node.key}
+        types = types_of.get(node.key, set())
         for kind, type_ in (
             ("node_missing_objective", "objective"),
             ("node_missing_assessment", "assessment"),

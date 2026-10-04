@@ -73,6 +73,9 @@ class QualityReport(OrganizationScopedModel):
     counts = models.JSONField(default=dict, blank=True)
     # The AI layer of the latest run: {"status": "none"|"pending"|"done"|"skipped"|"partial", "reasons": [...]}.
     ai_state = models.JSONField(default=dict, blank=True)
+    # Findings (source, fingerprint) this report has had: a dismissal from the version it was copied from is
+    # carried to each of them once, so a restore in this version sticks.
+    inherited = models.JSONField(default=list, blank=True)
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
