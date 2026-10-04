@@ -26,7 +26,11 @@ class ProviderTimeout(ProviderTransient):
 
 
 class ProviderRefused(ProviderError):
-    """The model declined the request (and any fallback model declined too)."""
+    """The model declined the request. ``response`` carries what the declined attempt cost, when known."""
+
+    def __init__(self, message: str, response: "ProviderResponse | None" = None):
+        super().__init__(message)
+        self.response = response
 
 
 @dataclass(frozen=True)
@@ -105,14 +109,15 @@ def wire_schema(schema):
 
 @dataclass
 class ClaudeProvider(ProviderBase):
-    """Claude through the official SDK, with structured JSON output and the default refusal fallback."""
+    """Claude through the official SDK, with structured JSON output.
+
+    No server-side fallback: a declined request is reported as declined. Another model answering would bypass the
+    release gate, which opens an agent only for the exact model it was evaluated on (spec 5.5, D49).
+    """
 
     timeout: float = 60.0
     client: object | None = None
     name: str = field(default="claude", init=False)
-
-    #: Server-side fallback: a declined request is re-run on Anthropic's recommended model for that category.
-    FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
     def _client(self):
         if self.client is None:
@@ -129,8 +134,6 @@ class ClaudeProvider(ProviderBase):
             response = self._client().beta.messages.create(
                 model=self.model,
                 max_tokens=request.max_tokens,
-                betas=[self.FALLBACK_BETA],
-                fallbacks="default",
                 system=[{"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": request.user}],
                 output_config={
@@ -143,15 +146,13 @@ class ClaudeProvider(ProviderBase):
         except (anthropic.RateLimitError, anthropic.APIConnectionError) as exc:
             raise ProviderTransient(str(exc)) from exc
         except anthropic.APIStatusError as exc:
-            if exc.status_code >= 500:
+            # 408 (request timeout) and 409 (conflict) are worth another attempt, as the SDK's own retries treat them.
+            if exc.status_code >= 500 or exc.status_code in (408, 409):
                 raise ProviderTransient(f"{exc.status_code}: {exc.message}") from exc
             raise ProviderError(f"{exc.status_code}: {exc.message}") from exc
-        if response.stop_reason == "refusal":
-            category = getattr(response.stop_details, "category", None) if response.stop_details else None
-            raise ProviderRefused(f"declined ({category or 'no category'})")
         text = next((block.text for block in response.content if block.type == "text"), "")
         usage = response.usage
-        return ProviderResponse(
+        result = ProviderResponse(
             text=text,
             model=response.model,
             input_tokens=usage.input_tokens or 0,
@@ -160,6 +161,11 @@ class ClaudeProvider(ProviderBase):
             cache_write_tokens=usage.cache_creation_input_tokens or 0,
             stop_reason=response.stop_reason or "",
         )
+        if response.stop_reason == "refusal":
+            category = getattr(response.stop_details, "category", None) if response.stop_details else None
+            # A declined attempt is billed too; its tokens count toward the quota (D39).
+            raise ProviderRefused(f"declined ({category or 'no category'})", response=result)
+        return result
 
 
 def recording_key(request: ProviderRequest) -> str:

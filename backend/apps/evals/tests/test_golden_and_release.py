@@ -59,6 +59,18 @@ def test_malformed_golden_sets_are_refused_with_the_line(csv_text, message):
         golden.parse(TOY, csv_text)
 
 
+def test_a_short_row_is_refused_with_its_line_and_lines_count_multiline_cells():
+    from apps.evals.golden import GoldenSetError, parse
+    from apps.evals.tests.toy import TOY
+
+    header = "item_key,expert,label," + ",".join(TOY.input_fields) + "\n"
+    with pytest.raises(GoldenSetError, match="line 2"):
+        parse(TOY, header + "o2,y\n")
+    multiline = header + "o1,a," + TOY.labels[0] + ',"سطر\nثان"\n' + "o2,a,nope,x\n"
+    with pytest.raises(GoldenSetError, match="line 4"):
+        parse(TOY, multiline)
+
+
 def test_expert_agreement_is_reported_as_the_ceiling():
     report = golden.agreement(golden.import_set(TOY, "أولى", CSV))
     assert report["items"] == 4 and report["without_agreed_label"] == 1

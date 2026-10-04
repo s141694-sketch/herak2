@@ -31,7 +31,11 @@ def parse(agent: EvaluatedAgent, text: str) -> dict[str, dict]:
     if missing:
         raise GoldenSetError(f"missing columns: {', '.join(sorted(missing))}")
     items: dict[str, dict] = {}
-    for line, row in enumerate(reader, start=2):
+    for row in reader:
+        # The line where the row ends (a quoted cell may span lines), as a spreadsheet shows it.
+        line = reader.line_num
+        if None in row.values() or None in row:
+            raise GoldenSetError(f"line {line}: the row does not have one cell per column")
         key, expert, label = row["item_key"].strip(), row["expert"].strip(), row["label"].strip()
         if not key or not expert:
             raise GoldenSetError(f"line {line}: item_key and expert are required")

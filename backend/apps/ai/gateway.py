@@ -4,7 +4,8 @@ It enforces, in order: the organization's rules-only mode, the release gate of t
 runs only after its prompt version and model passed the owner's accuracy threshold, spec 5.5), the
 cache keyed by content hash, prompt version and model, and the monthly token quota. It then asks the
 provider for JSON, validates it against the agent's schema and retries with growing pauses on
-timeouts, transient failures and invalid output. Every call is recorded in AIUsage.
+timeouts, transient failures and invalid output. Every call that reaches the cache or the provider is recorded
+in AIUsage; a decision not to call (rules-only, no provider, agent not released) is not a call and is not.
 
 AI only suggests: the gateway returns data to the caller, which decides what to show. Content is
 sent as data inside a delimited block and the system prompt tells the model to treat it so; the
@@ -120,6 +121,17 @@ class Gateway:
         attempt = self._attempts(provider, spec, request)
         _add_tokens(usage, attempt)
         usage.attempts, usage.served_model, usage.latency_ms = attempt.attempts, attempt.model, attempt.latency_ms
+        if (
+            attempt.output is not None
+            and attempt.model != provider.model
+            and not self.release_gate.is_released(spec, attempt.model)
+        ):
+            # Only a model the agent was evaluated on may answer (spec 5.5): another one's answer is never shown.
+            usage.status = AIUsage.Status.REFUSED
+            usage.error = f"answered by {attempt.model}, which {spec.name} {spec.prompt_version} was not released for"
+            usage.save()
+            log.warning("ai.unreleased_model_answered", agent=spec.name, model=attempt.model)
+            raise AIUnavailable("not_released", usage.error)
         if attempt.output is not None:
             usage.status = AIUsage.Status.OK
             usage.save()
@@ -159,6 +171,8 @@ class Gateway:
                 result.status, result.detail = AIUsage.Status.ERROR, str(exc)
             except providers.ProviderRefused as exc:
                 result.status, result.detail = AIUsage.Status.REFUSED, str(exc)
+                if exc.response is not None:
+                    result.add_tokens(exc.response)
                 break
             except providers.ProviderError as exc:
                 result.status, result.detail = AIUsage.Status.ERROR, str(exc)
@@ -198,6 +212,9 @@ class Attempts:
 
     def add(self, response: providers.ProviderResponse) -> None:
         self.model = response.model
+        self.add_tokens(response)
+
+    def add_tokens(self, response: providers.ProviderResponse) -> None:
         self.input_tokens += response.input_tokens
         self.output_tokens += response.output_tokens
         self.cache_read_tokens += response.cache_read_tokens
@@ -205,9 +222,11 @@ class Attempts:
 
 
 def _request(spec: AgentSpec, payload: dict) -> providers.ProviderRequest:
+    # "<" is escaped inside the JSON (still the same JSON), so no content can close the data block early.
+    data = json.dumps(payload, ensure_ascii=False, sort_keys=True).replace("<", "\\u003c")
     return providers.ProviderRequest(
         system=spec.system,
-        user=f"<data>\n{json.dumps(payload, ensure_ascii=False, sort_keys=True)}\n</data>",
+        user=f"<data>\n{data}\n</data>",
         schema=spec.schema,
         max_tokens=spec.max_tokens,
         effort=spec.effort,
@@ -250,7 +269,8 @@ def backoff(attempt: int) -> float:
 
 
 def used_this_month(organization_id: int) -> int:
-    start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # The month starts at midnight where the platform runs (TIME_ZONE), not at midnight UTC.
+    start = timezone.localtime().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     totals = AIUsage.objects.filter(organization_id=organization_id, created_at__gte=start).aggregate(
         i=Sum("input_tokens"), o=Sum("output_tokens")
     )
@@ -266,7 +286,7 @@ def _add_tokens(usage: AIUsage, attempt: Attempts) -> None:
 
 def _alert_quota_once(organization_id: int, quota: int) -> None:
     """One technical alert per organization per month when its quota runs out (spec 5.4: rules only, with a notice)."""
-    month = timezone.now().strftime("%Y-%m")
+    month = timezone.localtime().strftime("%Y-%m")
     if cache.add(f"ai-quota-alert:{organization_id}:{month}", 1, timeout=60 * 60 * 24 * 32):
         log.warning("ai.quota_exhausted", organization=organization_id, quota=quota)
         sentry_sdk.capture_message(

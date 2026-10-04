@@ -29,7 +29,8 @@ class AIPolicy(OrganizationScopedModel):
 
 
 class AIUsage(OrganizationScopedModel):
-    """One call through the gateway, whatever its outcome; tokens of every attempt count toward the quota."""
+    """One call that reached the cache or the provider, whatever its outcome; tokens of every attempt count toward
+    the quota. Calls the policy or the release gate stop before that are not recorded."""
 
     class Status(models.TextChoices):
         OK = "ok", "ok"

@@ -1,4 +1,4 @@
-"""The Claude provider sends structured-output requests with the default refusal fallback and maps the SDK's
+"""The Claude provider sends structured-output requests, never to a fallback model, and maps the SDK's
 errors to the gateway's (task 4.4). The SDK client is replaced; no request leaves the machine."""
 
 from types import SimpleNamespace
@@ -40,12 +40,13 @@ def message(text='{"ok": true}', stop_reason="end_turn", stop_details=None, mode
     )
 
 
-def test_the_request_asks_for_json_with_effort_caching_and_the_default_fallback():
+def test_the_request_asks_for_json_with_effort_and_caching_and_no_fallback_model():
     client = FakeClient(message())
     response = providers.ClaudeProvider(model="claude-opus-5-5", client=client).complete(REQUEST)
     [kwargs] = client.calls
     assert kwargs["model"] == "claude-opus-5-5" and kwargs["max_tokens"] == 4000
-    assert kwargs["betas"] == ["server-side-fallback-2026-07-01"] and kwargs["fallbacks"] == "default"
+    # A declined request must not be answered by another model: only the evaluated one may answer (spec 5.5, D49).
+    assert "fallbacks" not in kwargs and "server-side-fallback-2026-07-01" not in kwargs.get("betas", [])
     assert kwargs["output_config"] == {
         "effort": "medium",
         "format": {"type": "json_schema", "schema": {"type": "object"}},
@@ -61,10 +62,20 @@ def test_the_request_asks_for_json_with_effort_caching_and_the_default_fallback(
     )
 
 
-def test_a_refusal_is_reported_as_such():
+def test_a_refusal_is_reported_as_such_with_the_tokens_it_cost():
     client = FakeClient(message(text="", stop_reason="refusal", stop_details=SimpleNamespace(category="cyber")))
-    with pytest.raises(providers.ProviderRefused, match="cyber"):
+    with pytest.raises(providers.ProviderRefused, match="cyber") as raised:
         providers.ClaudeProvider(model="claude-opus-5-5", client=client).complete(REQUEST)
+    assert (raised.value.response.input_tokens, raised.value.response.output_tokens) == (120, 30)
+
+
+@pytest.mark.parametrize("code", [408, 409])
+def test_request_timeouts_and_conflicts_are_retried(code):
+    provider = providers.ClaudeProvider(
+        model="claude-opus-5-5", client=FakeClient(_status(anthropic.APIStatusError, code))
+    )
+    with pytest.raises(providers.ProviderTransient):
+        provider.complete(REQUEST)
 
 
 def _status(cls, code):
