@@ -10,7 +10,16 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from apps.audit.services import record
-from apps.tenancy.middleware import SESSION_KEY, SESSION_MFA, EntryRefused, entry_refusal, memberships_of
+from apps.sso.models import IdentityProviderConfig
+from apps.tenancy.middleware import (
+    SESSION_KEY,
+    SESSION_MFA,
+    SESSION_SSO_ONLY,
+    EntryRefused,
+    entry_refusal,
+    memberships_of,
+    sso_organizations,
+)
 from apps.tenancy.permissions import HasActiveOrganization, role_required
 
 from . import mfa
@@ -74,15 +83,24 @@ class LoginView(APIView):
             # The password is right; the session waits for the second factor before signing in (D67).
             mfa.hold(request, user)
             return Response({"mfa_required": True})
-        return Response(_finish_login(request, user))
+        return Response(_finish_login(request, user, second_factor=False))
 
 
-def _finish_login(request, user) -> dict:
-    """Signs the person in and opens the one organization open to this session, if exactly one is."""
-    verified = request.session.get(SESSION_MFA, False)
+def _finish_login(request, user, *, second_factor: bool) -> dict:
+    """Signs the person in and opens the one organization open to this session, if exactly one is.
+
+    ``second_factor`` says whether this sign-in checked the person's code: never what the browser's previous
+    session said, which may have been someone else's (D67)."""
     login(request, user)
-    if verified:
-        request.session[SESSION_MFA] = True
+    session = request.session
+    if second_factor:
+        session[SESSION_MFA] = True
+    else:
+        session.pop(SESSION_MFA, None)
+    if session.pop(SESSION_SSO_ONLY, None):
+        # Signed in through a provider before: the password now opens their other organizations too, and the
+        # session lasts as a password session does; the provider's sign-in keeps its own deadline (D68, D71).
+        session.set_expiry(None)
     memberships = list(memberships_of(user))
     refusals = [entry_refusal(request, m) for m in memberships]
     open_to_session = [m for m, refusal in zip(memberships, refusals, strict=True) if refusal is None]
@@ -107,8 +125,7 @@ class MfaVerifyView(APIView):
 
     def post(self, request):
         user = mfa.verify_pending(request, _code(request))
-        request.session[SESSION_MFA] = True
-        return Response(_finish_login(request, user))
+        return Response(_finish_login(request, user, second_factor=True))
 
 
 def _code(request) -> str:
@@ -190,7 +207,10 @@ class CurrentOrganizationView(APIView):
             serializer.validated_data.get("mfa_required_for_managers")
             and not request.organization.mfa_required_for_managers
         )
-        if turning_on and not request.session.get(SESSION_MFA):
+        # Not without a way back in: the admin's own session must meet the rule (a checked second factor, or this
+        # organization's provider, which answers for it).
+        protected = request.session.get(SESSION_MFA) or request.organization.pk in sso_organizations(request.session)
+        if turning_on and not protected:
             raise mfa.MfaError("set up and use your own second factor first", code="mfa_enable_first")
         organization = serializer.save()
         record(
@@ -222,6 +242,12 @@ class MemberMfaResetView(APIView):
 
     def post(self, request, pk):
         membership = get_object_or_404(Membership.objects.select_related("user"), pk=pk)
+        if membership.user_id == request.user.pk:
+            raise mfa.MfaError("turn off your own second factor from your account", code="mfa_reset_self")
+        if IdentityProviderConfig.all_organizations.filter(emergency_user=membership.user).exists():
+            # Without it the emergency account could not get in when the provider is down (D66): name another
+            # emergency account, or stop enforcing, first.
+            raise mfa.MfaError("this person is the emergency account", code="mfa_reset_emergency")
         others = Membership.all_organizations.filter(user=membership.user).exclude(organization=request.organization)
         if others.exists():
             # The factor serves their other organizations too: one organization's admin does not remove it.

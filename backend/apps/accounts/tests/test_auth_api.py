@@ -49,6 +49,7 @@ def test_login_with_a_single_membership_selects_that_organization(world):
             "organization": {"id": world["a"].pk, "name": "مركز أ", "slug": "a"},
             "role": "author",
             "sso_required": False,
+            "password_required": False,
             "mfa_required": False,
         },
     ]
@@ -175,3 +176,22 @@ def test_an_admin_sets_the_organizations_sign_in_rules(world):
     author = APIClient()
     login(author, "single@example.com")
     assert author.patch("/api/organizations/current/", {"sso_session_hours": 2}, format="json").status_code == 403
+
+
+def test_a_client_cannot_choose_the_address_its_sign_in_attempts_are_counted_by():
+    """Behind the proxy (one, as shipped), only the address the proxy saw counts: a forged X-Forwarded-For entry
+    does not buy a fresh allowance (from the independent review of phase 6)."""
+    from django.core.cache import cache
+
+    cache.clear()
+    client = APIClient()
+    statuses = [
+        client.post(
+            "/api/auth/login/",
+            {"email": "nobody@example.test", "password": "wrong"},
+            format="json",
+            HTTP_X_FORWARDED_FOR=f"10.9.9.{i}, 192.0.2.7",
+        ).status_code
+        for i in range(12)
+    ]
+    assert statuses[-1] == 429

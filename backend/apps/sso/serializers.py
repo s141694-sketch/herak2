@@ -16,6 +16,7 @@ class VerifiedDomainSerializer(serializers.ModelSerializer):
             "verified_at",
             "last_checked_at",
             "last_error",
+            "last_error_code",
             "created_at",
         ]
 
@@ -42,6 +43,7 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
             "test_login_ok_at",
             "tested",
             "last_test_error",
+            "last_test_error_code",
         ]
 
     def get_has_secret(self, config) -> bool:

@@ -202,3 +202,170 @@ def test_a_second_factor_also_used_in_another_organization_is_not_reset_by_one_o
     membership = Membership.all_organizations.get(user=world["author"], organization=world["org"])
     refused = admin.post(f"/api/organizations/current/members/{membership.pk}/reset-mfa/")
     assert refused.json()["error"]["code"] == "mfa_reset_other_organizations"
+
+
+# --- From the independent review of phase 6 -----------------------------------------------------------------
+
+
+def test_a_second_factor_checked_for_one_person_does_not_carry_over_to_the_next_sign_in(world):
+    world["org"].mfa_required_for_managers = True
+    world["org"].save()
+    browser = APIClient()
+    password(browser, "author@vtc.test")
+    enrol(browser)  # the author's own factor, checked in this browser
+    body = password(browser, "admin@vtc.test").json()  # the admin has no factor
+    assert body["organization"] is None and body["memberships"][0]["mfa_required"] is True
+    assert browser.get("/api/organizations/current/").status_code == 409
+
+
+def test_the_emergency_accounts_factor_is_not_reset_while_it_is_the_emergency_account(world):
+    with organization_context(world["org"]):
+        config = sso.save_provider(
+            None, actor=world["admin"], issuer="https://idp.vtc.test", client_id="c", client_secret="s"
+        )
+        IdentityProviderConfig.objects.filter(pk=config.pk).update(
+            discovery_ok_at=config.config_changed_at, test_login_ok_at=config.config_changed_at
+        )
+        config.refresh_from_db()
+        second = member("second@vtc.test", Role.ADMIN)
+    second.set_password(PASSWORD)
+    second.save()
+    emergency = APIClient()
+    password(emergency, "second@vtc.test")
+    enrol(emergency)
+    with organization_context(world["org"]):
+        sso.set_policy(config, actor=world["admin"], enabled=True, enforced=True, emergency_user=second)
+    admin = APIClient()
+    admin.force_login(world["admin"])  # as if through the provider: a password no longer opens it
+    from apps.tenancy.middleware import SESSION_KEY, mark_sso
+
+    session = admin.session
+    mark_sso(session, world["org"].pk, time.time() + 3600)
+    session[SESSION_KEY] = world["org"].pk
+    session.save()
+    membership = Membership.all_organizations.get(user=second)
+    refused = admin.post(f"/api/organizations/current/members/{membership.pk}/reset-mfa/")
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "mfa_reset_emergency"
+    assert TOTPDevice.objects.filter(user=second).exists()
+
+
+def test_an_admin_does_not_reset_their_own_second_factor(world):
+    admin = APIClient()
+    password(admin, "admin@vtc.test")
+    enrol(admin)
+    membership = Membership.all_organizations.get(user=world["admin"])
+    refused = admin.post(f"/api/organizations/current/members/{membership.pk}/reset-mfa/")
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "mfa_reset_self"
+
+
+def test_an_admin_signed_in_through_the_provider_may_require_a_second_factor_of_managers(world):
+    from apps.tenancy.middleware import SESSION_KEY, SESSION_SSO_ONLY, mark_sso
+
+    admin = APIClient()
+    admin.force_login(world["admin"])
+    session = admin.session
+    mark_sso(session, world["org"].pk, time.time() + 3600)
+    session[SESSION_SSO_ONLY] = True
+    session[SESSION_KEY] = world["org"].pk
+    session.save()
+    response = admin.patch("/api/organizations/current/", {"mfa_required_for_managers": True}, format="json")
+    assert response.status_code == 200 and response.json()["mfa_required_for_managers"] is True
+
+
+def test_wrong_codes_are_counted_per_person_and_lock_the_factor_even_across_new_sign_ins(world):
+    author = APIClient()
+    password(author, "author@vtc.test")
+    totp = enrol(author)
+    from django.core.cache import cache
+
+    attacker = APIClient()
+    for _ in range(mfa.MAX_FAILURES):
+        cache.clear()  # as if from many addresses: the rate limit per address does not stop this
+        assert password(attacker, "author@vtc.test").json() == {"mfa_required": True}  # a fresh attempt each time
+        attacker.post("/api/auth/mfa/verify/", {"code": "000000"}, format="json")
+    password(attacker, "author@vtc.test")
+    locked = attacker.post("/api/auth/mfa/verify/", {"code": next_code(totp)}, format="json")
+    assert locked.status_code == 409 and locked.json()["error"]["code"] == "mfa_locked"
+    # The lock passes with time; the right code then works, and the count starts again.
+    TOTPDevice.objects.filter(user=world["author"]).update(locked_until=None)
+    password(attacker, "author@vtc.test")
+    assert attacker.post("/api/auth/mfa/verify/", {"code": next_code(totp)}, format="json").status_code == 200
+    assert TOTPDevice.objects.get(user=world["author"]).failures == 0
+
+
+def test_turning_it_off_counts_wrong_codes_too(world):
+    author = APIClient()
+    password(author, "author@vtc.test")
+    totp = enrol(author)
+    for _ in range(mfa.MAX_FAILURES):
+        author.post("/api/auth/mfa/disable/", {"code": "000000"}, format="json")
+    locked = author.post("/api/auth/mfa/disable/", {"code": next_code(totp)}, format="json")
+    assert locked.json()["error"]["code"] == "mfa_locked"
+    assert TOTPDevice.objects.filter(user=world["author"]).exists()
+
+
+def test_a_code_typed_in_arabic_indic_digits_is_read_as_the_same_code(world):
+    author = APIClient()
+    password(author, "author@vtc.test")
+    totp = enrol(author)
+    arabic = next_code(totp).translate(str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"))
+    signing_in = APIClient()
+    password(signing_in, "author@vtc.test")
+    assert signing_in.post("/api/auth/mfa/verify/", {"code": arabic}, format="json").status_code == 200
+    other = APIClient()
+    password(other, "author@vtc.test")
+    assert other.post("/api/auth/mfa/verify/", {"code": "١٢٣٤٥"}, format="json").status_code == 409  # not six
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_enrolment_restarted_while_one_is_confirmed_does_not_confirm_an_unchecked_secret(world, monkeypatch):
+    import threading
+
+    from django.db import connection
+
+    client = APIClient()
+    password(client, "author@vtc.test")
+    started = client.post("/api/auth/mfa/enrol/").json()
+    checked = threading.Event()
+    real_accept = mfa._accept
+
+    def slow_accept(device, code):
+        accepted = real_accept(device, code)
+        checked.set()
+        time.sleep(0.5)  # the other request arrives while this one still holds the device
+        return accepted
+
+    monkeypatch.setattr(mfa, "_accept", slow_accept)
+    outcome = {}
+
+    def restart():
+        checked.wait(5)
+        try:
+            outcome["restart"] = mfa.begin_enrolment(world["author"])
+        except mfa.MfaError as exc:
+            outcome["restart"] = exc.get_codes()
+        finally:
+            connection.close()
+
+    other = threading.Thread(target=restart)
+    other.start()
+    assert (
+        client.post("/api/auth/mfa/confirm/", {"code": pyotp.TOTP(started["secret"]).now()}, format="json").status_code
+        == 200
+    )
+    other.join()
+    assert outcome["restart"] == "mfa_already_enabled"
+    device = TOTPDevice.objects.get(user=world["author"])
+    from apps.core import secrets
+
+    assert device.confirmed_at is not None and secrets.decrypt(device.secret_encrypted) == started["secret"]
+
+
+def test_an_expired_code_is_refused(world):
+    author = APIClient()
+    password(author, "author@vtc.test")
+    totp = enrol(author)
+    signing_in = APIClient()
+    password(signing_in, "author@vtc.test")
+    expired = signing_in.post("/api/auth/mfa/verify/", {"code": totp.at(time.time() - 90)}, format="json")
+    assert expired.status_code == 409 and expired.json()["error"]["code"] == "mfa_code_invalid"

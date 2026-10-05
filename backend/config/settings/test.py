@@ -1,5 +1,7 @@
 import os
 
+from .public_keys import TEST_FIELD_KEY
+
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key")
 os.environ.setdefault("DEBUG", "False")
 os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
@@ -13,8 +15,9 @@ os.environ.setdefault("COLLAB_SERVICE_SECRET", "test-collab-service-secret-01234
 # Tests never call a real model; the ones that exercise the gateway give it a provider explicitly.
 os.environ.setdefault("AI_PROVIDER", "")
 os.environ.setdefault("AI_BACKOFF_SECONDS", "0")
-# A test-only key: it protects nothing outside the test database.
-os.environ.setdefault("FIELD_ENCRYPTION_KEYS", "dGVzdC1vbmx5LWZpZWxkLWVuY3J5cHRpb24ta2V5LTE=")
+os.environ.setdefault("SSO_ALLOW_PRIVATE_ADDRESSES", "True")  # the local Keycloak of the integration tests (D62)
+# A test-only key: it protects nothing outside the test database. Production refuses it (public_keys.py).
+os.environ.setdefault("FIELD_ENCRYPTION_KEYS", TEST_FIELD_KEY)
 
 from .base import *  # noqa: E402, F403
 

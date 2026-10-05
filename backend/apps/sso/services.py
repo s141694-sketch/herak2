@@ -1,7 +1,11 @@
 """Setting up an organization's single sign-on (tasks 6.3, 6.4): domains proved by DNS, and its OIDC provider."""
 
+import ipaddress
+import json
 import re
 import secrets as random
+import socket
+import time
 from urllib.parse import urlparse
 
 import requests
@@ -17,6 +21,8 @@ from .models import IdentityProviderConfig, VerifiedDomain
 
 LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 HTTP_TIMEOUT = 10
+# A discovery document or a key set is a few kilobytes; nothing a provider sends is read past this.
+MAX_ANSWER_BYTES = 512 * 1024
 
 
 class SsoError(Conflict):
@@ -44,7 +50,11 @@ def add_domain(value: str, *, actor) -> VerifiedDomain:
     existing = VerifiedDomain.objects.filter(domain=domain).first()
     if existing is not None:
         return existing
-    added = VerifiedDomain.objects.create(domain=domain, token=random.token_urlsafe(32), created_by=actor)
+    try:
+        with transaction.atomic():  # the same domain added twice at once: the second finds the first
+            added = VerifiedDomain.objects.create(domain=domain, token=random.token_urlsafe(32), created_by=actor)
+    except IntegrityError:
+        return VerifiedDomain.objects.get(domain=domain)
     record("sso.domain_added", actor=actor, target=added, payload={"domain": domain})
     return added
 
@@ -52,18 +62,23 @@ def add_domain(value: str, *, actor) -> VerifiedDomain:
 def verify_domain(domain: VerifiedDomain, *, actor) -> VerifiedDomain:
     """Checks the TXT record now. A domain another organization verified first stays theirs."""
     now = timezone.now()
+    # Why it failed is kept as a code the interface translates, with the technical detail beside it.
     try:
         found = dns.txt_records(domain.record_name)
     except dns.LookupFailed as exc:
-        found, error = [], f"no TXT record found at {domain.record_name} ({exc})"
+        code, error = "domain_record_missing", f"{domain.record_name}: {exc}"
     else:
-        error = "" if domain.record_value in found else f"{domain.record_name} does not hold {domain.record_value}"
-    if error:
-        VerifiedDomain.objects.filter(pk=domain.pk).update(last_checked_at=now, last_error=error[:500])
-        raise SsoError(error, code="domain_record_missing")
+        code, error = ("", "") if domain.record_value in found else ("domain_record_mismatch", domain.record_name)
+    if code:
+        VerifiedDomain.objects.filter(pk=domain.pk).update(
+            last_checked_at=now, last_error=error[:500], last_error_code=code
+        )
+        raise SsoError(error, code=code)
     try:
         with transaction.atomic():
-            VerifiedDomain.objects.filter(pk=domain.pk).update(verified_at=now, last_checked_at=now, last_error="")
+            VerifiedDomain.objects.filter(pk=domain.pk).update(
+                verified_at=now, last_checked_at=now, last_error="", last_error_code=""
+            )
     except IntegrityError as exc:
         raise SsoError("another organization has verified this domain", code="domain_taken") from exc
     record("sso.domain_verified", actor=actor, target=domain, payload={"domain": domain.domain})
@@ -79,11 +94,30 @@ def remove_domain(domain: VerifiedDomain, *, actor) -> None:
 # --- The identity provider (task 6.4) ---------------------------------------------------------------------
 
 
-def _clean_issuer(issuer: str) -> str:
-    issuer = (issuer or "").strip().rstrip("/")
-    parsed = urlparse(issuer)
+class ProviderAnswerError(ValueError):
+    """The provider answered, or would be reached, in a way that cannot be used; ``code`` says which, for the
+    interface to translate."""
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+
+
+def _web_url(url) -> bool:
+    """An absolute https URL (http only for a local test provider): what the browser and this server may be sent to."""
+    if not isinstance(url, str) or len(url) > 2000:
+        return False
+    parsed = urlparse(url)
     allowed = {"https", "http"} if settings.SSO_ALLOW_HTTP_ISSUERS else {"https"}
-    if parsed.scheme not in allowed or not parsed.netloc or parsed.query or parsed.fragment or len(issuer) > 500:
+    return parsed.scheme in allowed and bool(parsed.hostname) and parsed.username is None and parsed.password is None
+
+
+def _clean_issuer(issuer: str) -> str:
+    """The issuer exactly as the provider names itself (a trailing slash included, as Auth0's has): its tokens are
+    compared with it character for character (OpenID Connect Discovery 1.0, 4.3)."""
+    issuer = (issuer or "").strip()
+    parsed = urlparse(issuer)
+    if not _web_url(issuer) or parsed.query or parsed.fragment or len(issuer) > 500:
         raise SsoError("the issuer is an https URL", code="provider_invalid")
     return issuer
 
@@ -107,50 +141,113 @@ def save_provider(
         changed = True
     else:
         config = IdentityProviderConfig.objects.select_for_update().get(pk=config.pk)
-        changed = (issuer, client_id) != (config.issuer, config.client_id) or bool(client_secret)
+        moved = (issuer, client_id) != (config.issuer, config.client_id)
+        if moved and not client_secret:
+            # The stored secret was given for that provider and client: it is never sent anywhere else.
+            raise SsoError("give the client secret for this provider", code="provider_secret_required")
+        changed = moved or bool(client_secret)
         config.issuer, config.client_id = issuer, client_id
     if client_secret:
         config.client_secret = client_secret
     if changed:
         config.config_changed_at = timezone.now()
         config.discovery_ok_at = config.test_login_ok_at = None
-        config.enforced = False  # a changed provider is not trusted to be the only way in until tested again
-    config.save()
+        # A changed provider is not used at all until its connection is tested again (spec 7.7), nor trusted to
+        # be the only way in until a test sign-in passes again (spec 7.2).
+        config.enabled = config.enforced = False
+    try:
+        with transaction.atomic():
+            config.save()
+    except IntegrityError as exc:  # two first providers saved at once
+        raise SsoError("the organization has a provider already", code="provider_exists") from exc
     record("sso.provider_saved", actor=actor, target=config, payload={"issuer": issuer, "client_id": client_id})
     return config
 
 
+def _public_address(host: str, port: int) -> None:
+    """Refuses a host that is, or resolves to, an address that is not public: a provider's settings must not make
+    this server reach its own network (loopback, private ranges, link-local and cloud metadata, shared space).
+    Development and tests allow a local Keycloak (D62)."""
+    if settings.SSO_ALLOW_PRIVATE_ADDRESSES:
+        return
+    try:
+        answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError) as exc:
+        raise requests.ConnectionError(f"{host} cannot be resolved") from exc
+    for answer in answers:
+        address = ipaddress.ip_address(answer[4][0].split("%")[0])
+        if not address.is_global:
+            raise ProviderAnswerError("provider_address_not_allowed", f"{host} is not a public address")
+
+
+def check_url(url) -> None:
+    """What this server may send a request to on a provider's behalf."""
+    if not _web_url(url):
+        raise ProviderAnswerError("provider_endpoint_invalid", f"{url!r} is not an https URL")
+    parsed = urlparse(url)
+    _public_address(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+
+
 def fetch_json(url: str) -> dict:
-    response = requests.get(url, timeout=HTTP_TIMEOUT, headers={"Accept": "application/json"})
-    response.raise_for_status()
-    return response.json()
+    """A JSON object from the provider: no redirect followed (it could lead inside), at most MAX_ANSWER_BYTES, and
+    within HTTP_TIMEOUT overall."""
+    check_url(url)
+    response = requests.get(
+        url, timeout=HTTP_TIMEOUT, headers={"Accept": "application/json"}, allow_redirects=False, stream=True
+    )
+    try:
+        if response.is_redirect or 300 <= response.status_code < 400:
+            raise ProviderAnswerError("provider_answer_invalid", f"{url} answered with a redirect")
+        response.raise_for_status()
+        deadline, body = time.monotonic() + HTTP_TIMEOUT, bytearray()
+        for chunk in response.iter_content(64 * 1024):
+            body.extend(chunk)
+            if len(body) > MAX_ANSWER_BYTES:
+                raise ProviderAnswerError("provider_answer_invalid", f"the answer of {url} is too large")
+            if time.monotonic() > deadline:
+                raise requests.Timeout(f"{url} answered too slowly")
+    finally:
+        response.close()
+    try:
+        data = json.loads(bytes(body))
+    except ValueError as exc:
+        raise ProviderAnswerError("provider_answer_invalid", f"the answer of {url} is not JSON") from exc
+    if not isinstance(data, dict):
+        raise ProviderAnswerError("provider_answer_invalid", f"the answer of {url} is not a JSON object")
+    return data
 
 
 def discovery(issuer: str) -> dict:
     """The provider's OIDC discovery document, checked to be its own (OpenID Connect Discovery 1.0, 4.3)."""
-    meta = fetch_json(f"{issuer}/.well-known/openid-configuration")
+    meta = fetch_json(f"{issuer.rstrip('/')}/.well-known/openid-configuration")
     if meta.get("issuer") != issuer:
-        raise ValueError(f"the discovery document names the issuer {meta.get('issuer')!r}, not {issuer!r}")
+        raise ProviderAnswerError(
+            "provider_issuer_mismatch",
+            f"the discovery document names the issuer {meta.get('issuer')!r}, not {issuer!r}",
+        )
     for key in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
-        if not meta.get(key):
-            raise ValueError(f"the discovery document has no {key}")
+        # The browser is sent to the first one: a javascript: or relative URL there would run in Harak's origin.
+        if not _web_url(meta.get(key)):
+            raise ProviderAnswerError("provider_endpoint_invalid", f"the discovery document has no https {key}")
     return meta
 
 
 def test_connection(config: IdentityProviderConfig, *, actor) -> IdentityProviderConfig:
-    """Reaches the provider: its discovery document, and its signing keys."""
+    """Reaches the provider: its discovery document, and its signing keys. The result counts only for the
+    configuration it tested: one changed meanwhile is tested again."""
+    current = IdentityProviderConfig.objects.filter(pk=config.pk, config_changed_at=config.config_changed_at)
     try:
         meta = discovery(config.issuer)
         keys = fetch_json(meta["jwks_uri"]).get("keys")
         if not isinstance(keys, list) or not keys:
-            raise ValueError("the provider publishes no signing keys")
+            raise ProviderAnswerError("provider_no_keys", "the provider publishes no signing keys")
     except (requests.RequestException, ValueError) as exc:
-        IdentityProviderConfig.objects.filter(pk=config.pk).update(
-            discovery_ok_at=None, last_test_error=str(exc)[:2000]
-        )
-        record("sso.provider_test_failed", actor=actor, target=config, payload={"error": str(exc)[:500]})
+        code = exc.code if isinstance(exc, ProviderAnswerError) else "provider_unreachable"
+        current.update(discovery_ok_at=None, last_test_error=str(exc)[:2000], last_test_error_code=code)
+        record("sso.provider_test_failed", actor=actor, target=config, payload={"error": str(exc)[:500], "code": code})
         raise SsoError(f"the provider could not be reached correctly: {exc}", code="provider_test_failed") from exc
-    IdentityProviderConfig.objects.filter(pk=config.pk).update(discovery_ok_at=timezone.now(), last_test_error="")
+    if not current.update(discovery_ok_at=timezone.now(), last_test_error="", last_test_error_code=""):
+        raise SsoError("the provider was changed meanwhile: test it again", code="provider_changed")
     record("sso.provider_tested", actor=actor, target=config)
     config.refresh_from_db()
     return config

@@ -31,7 +31,11 @@ class FakeProvider:
     def __init__(self):
         self.claims: dict = {}
         self.key = KEY
+        self.alg = "RS256"
         self.down = False
+        self.keys_down = False
+        self.token_down = False
+        self.meta: dict = {}
         self.last_token_request: dict | None = None
 
     def fetch_json(self, url):
@@ -43,10 +47,15 @@ class FakeProvider:
                 "authorization_endpoint": f"{ISSUER}/auth",
                 "token_endpoint": f"{ISSUER}/token",
                 "jwks_uri": f"{ISSUER}/certs",
+                **self.meta,
             }
+        if self.keys_down:
+            raise services.requests.ConnectionError("keys unreachable")
         return {"keys": [KEY.as_dict(private=False)]}
 
     def exchange(self, meta, config, code, verifier, redirect_uri):
+        if self.token_down:
+            raise services.requests.ConnectionError("token endpoint unreachable")
         self.last_token_request = {"code": code, "verifier": verifier, "redirect_uri": redirect_uri}
         now = int(time.time())
         claims = {
@@ -61,7 +70,7 @@ class FakeProvider:
             "nonce": self.nonce,
             **self.claims,
         }
-        return {"id_token": jwt.encode({"alg": "RS256", "kid": "test-key"}, claims, self.key)}
+        return {"id_token": jwt.encode({"alg": self.alg, "kid": "test-key"}, claims, self.key, algorithms=[self.alg])}
 
 
 @pytest.fixture
@@ -146,7 +155,7 @@ def test_the_first_sign_in_creates_a_pending_member_in_the_organization(world, p
     assert ExternalIdentity.all_organizations.get(user=user).subject == "subject-1"
     me = client.get("/api/auth/me/").json()
     assert me["user"]["email"] == "noura@vtc.test" and me["organization"]["id"] == world["org"].pk
-    assert client.session.get_expiry_age() == 4 * 3600  # the organization's session length (D68)
+    assert abs(client.session.get_expiry_age() - 4 * 3600) <= 2  # the organization's session length (D68)
     assert provider.last_token_request["verifier"] and provider.last_token_request["code"] == "the-code"
     assert AuditLog.all_organizations.filter(event="sso.login", actor=user).exists()
 
@@ -229,3 +238,157 @@ def test_an_admins_test_sign_in_proves_the_provider_without_switching_the_sessio
     config = IdentityProviderConfig.all_organizations.get(pk=world["config"].pk)
     assert config.test_login_ok_at is not None
     assert not User.objects.filter(email="noura@vtc.test").exists()  # nobody was signed in or created
+
+
+# --- From the independent review of phase 6 -----------------------------------------------------------------
+
+
+def signed_in(client, provider, email="noura@vtc.test"):
+    _, query = start(client, email, provider)
+    response = back(client, query)
+    assert error_of(response) is None, response["Location"]
+    return client
+
+
+def test_the_session_length_is_a_deadline_that_later_requests_do_not_move(world, provider):
+    from django.contrib.sessions.models import Session
+
+    client = signed_in(APIClient(), provider)
+    key = client.cookies["sessionid"].value
+    expires = Session.objects.get(session_key=key).expire_date
+    time.sleep(1.1)
+    assert (
+        client.post("/api/auth/switch-organization/", {"organization_id": world["org"].pk}, format="json").status_code
+        == 200
+    )
+    assert Session.objects.get(session_key=key).expire_date == expires
+
+
+def test_past_its_deadline_the_single_sign_on_no_longer_opens_the_organization(world, provider):
+    from apps.tenancy.middleware import SESSION_SSO
+
+    client = signed_in(APIClient(), provider)
+    session = client.session
+    session[SESSION_SSO] = {str(world["org"].pk): time.time() - 1}
+    session.save()
+    me = client.get("/api/auth/me/").json()
+    assert me["organization"] is None
+
+
+def test_platform_staff_accounts_never_sign_in_through_a_tenants_provider(world, provider):
+    User.objects.create_superuser(email="noura@vtc.test", password="y" * 12)
+    client = APIClient()
+    _, query = start(client, "noura@vtc.test", provider)
+    assert error_of(back(client, query)) == "sso_account_not_allowed"
+    assert client.get("/api/auth/me/").status_code in (401, 403)
+    assert not ExternalIdentity.all_organizations.exists()
+
+
+def test_a_deactivated_account_is_told_so_and_nothing_is_written(world, provider):
+    User.objects.create_user(email="noura@vtc.test", password=None, is_active=False)
+    client = APIClient()
+    _, query = start(client, "noura@vtc.test", provider)
+    assert error_of(back(client, query)) == "sso_account_disabled"
+    assert not ExternalIdentity.all_organizations.exists()
+    assert not Membership.all_organizations.filter(user__email="noura@vtc.test").exists()
+    assert not AuditLog.all_organizations.filter(event="sso.login").exists()
+
+
+def test_a_flow_started_before_the_provider_was_disabled_signs_nobody_in(world, provider):
+    client = APIClient()
+    _, query = start(client, "noura@vtc.test", provider)
+    IdentityProviderConfig.all_organizations.filter(pk=world["config"].pk).update(enabled=False)
+    assert error_of(back(client, query)) == "sso_not_available"
+    assert client.get("/api/auth/me/").status_code in (401, 403)
+
+
+@pytest.mark.parametrize("where", ["keys_down", "token_down"])
+def test_a_provider_that_fails_during_the_return_is_reported_as_unavailable(world, provider, where):
+    client = APIClient()
+    _, query = start(client, "noura@vtc.test", provider)
+    setattr(provider, where, True)
+    assert error_of(back(client, query)) == "provider_unavailable"
+
+
+@pytest.mark.parametrize("alg", ["PS256", "RS512"])
+def test_stronger_rsa_signatures_are_accepted(world, provider, alg):
+    provider.alg = alg
+    signed_in(APIClient(), provider)
+
+
+def test_a_symmetric_signature_is_never_accepted(world, provider):
+    from joserfc.jwk import OctKey
+
+    client = APIClient()
+    _, query = start(client, "noura@vtc.test", provider)
+    provider.alg, provider.key = "HS256", OctKey.import_key("x" * 32)
+    assert error_of(back(client, query)) == "sso_token_invalid"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["javascript:alert(document.domain)//", "data:text/html,x", "//idp.vtc.test/auth", "ftp://idp.vtc.test/auth"],
+)
+def test_a_discovery_document_with_an_endpoint_that_is_not_https_is_refused(world, provider, endpoint):
+    provider.meta = {"authorization_endpoint": endpoint}
+    response, _ = start(APIClient(), "noura@vtc.test", provider)
+    assert response.status_code == 503 and response.json()["error"]["code"] == "provider_unavailable"
+
+
+def test_two_first_sign_ins_at_once_both_end_signed_in(world, provider, monkeypatch):
+    """The second one finds the account the first one created between its look-up and its insert."""
+    real_filter = User.objects.filter
+
+    def stale(*args, **kwargs):
+        if kwargs.get("email__iexact") == "noura@vtc.test" and not real_filter(email="noura@vtc.test").exists():
+            User.objects.create_user(email="noura@vtc.test", password=None)  # the other sign-in got there first
+            return User.objects.none()
+        return real_filter(*args, **kwargs)
+
+    monkeypatch.setattr(User.objects, "filter", stale)
+    signed_in(APIClient(), provider)
+    monkeypatch.undo()
+    assert User.objects.filter(email="noura@vtc.test").count() == 1
+
+
+@pytest.mark.parametrize(
+    "claims,code",
+    [
+        ({"email_verified": False}, "sso_test_email_unverified"),
+        ({"email": "a@elsewhere.test"}, "sso_test_domain_not_allowed"),
+    ],
+)
+def test_a_test_sign_in_with_an_identity_members_could_not_use_does_not_count(world, provider, claims, code):
+    admin = APIClient()
+    admin.post("/api/auth/login/", {"email": "admin@vtc.test", "password": "x" * 12}, format="json")
+    response = admin.post(f"/api/sso/providers/{world['config'].pk}/test-login/")
+    query = parse_qs(urlparse(response.json()["redirect"]).query)
+    provider.nonce = query["nonce"][0]
+    provider.claims = claims
+    assert f"sso_test={code}" in back(admin, query)["Location"]
+    assert IdentityProviderConfig.all_organizations.get(pk=world["config"].pk).test_login_ok_at is None
+
+
+def test_microsoft_entra_ids_verified_email_claim_is_accepted_in_place_of_email_verified(world, provider):
+    """Entra ID tokens carry no email_verified; its optional xms_edov claim says the same (spec 7.2 covers Entra)."""
+    client = APIClient()
+    _, query = start(client, "noura@vtc.test", provider)
+    provider.claims = {"email_verified": None, "xms_edov": True}
+    assert error_of(back(client, query)) is None
+
+
+@pytest.mark.parametrize("claims", [{"xms_edov": False}, {}])
+def test_without_either_claim_the_email_is_not_trusted(world, provider, claims):
+    client = APIClient()
+    _, query = start(client, "noura@vtc.test", provider)
+    provider.claims = {"email_verified": None, **claims}
+    assert error_of(back(client, query)) == "sso_email_unverified"
+
+
+@pytest.mark.parametrize("language,expected", [("en", ["en"]), ("ar", ["ar"]), ("fr", None), (3, None)])
+def test_the_interface_language_is_passed_to_the_provider_when_it_is_one_of_harakss(
+    world, provider, language, expected
+):
+    response, query = start(APIClient(), "noura@vtc.test", provider, language=language)
+    assert response.status_code == 200
+    assert query.get("ui_locales") == expected

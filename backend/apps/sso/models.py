@@ -20,6 +20,7 @@ class VerifiedDomain(OrganizationScopedModel):
     verified_at = models.DateTimeField(null=True, blank=True)
     last_checked_at = models.DateTimeField(null=True, blank=True)
     last_error = models.CharField(max_length=500, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -63,6 +64,7 @@ class IdentityProviderConfig(OrganizationScopedModel):
     discovery_ok_at = models.DateTimeField(null=True, blank=True)
     test_login_ok_at = models.DateTimeField(null=True, blank=True)
     last_test_error = models.TextField(blank=True)
+    last_test_error_code = models.CharField(max_length=64, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

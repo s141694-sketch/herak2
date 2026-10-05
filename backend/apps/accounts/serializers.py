@@ -97,11 +97,13 @@ def session_payload(request) -> dict:
         "organization": (
             {**OrganizationSummarySerializer(active.organization).data, "role": active.role} if active else None
         ),
-        # Whether each organization asks this session for its provider (D66) or a second factor (D67) first.
+        # Whether each organization asks this session for its provider (D66), a password (D71) or a second factor
+        # (D67) first.
         "memberships": [
             {
                 **data,
                 "sso_required": (refusal := entry_refusal(request, membership)) == "sso_required",
+                "password_required": refusal == "password_required",
                 "mfa_required": refusal == "mfa_required",
             }
             for membership, data in zip(memberships, MembershipSerializer(memberships, many=True).data, strict=True)

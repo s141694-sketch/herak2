@@ -134,6 +134,9 @@ class TOTPDevice(models.Model):
     confirmed_at = models.DateTimeField(null=True, blank=True)
     # The last time step a code was accepted for: a code is never accepted twice.
     last_step = models.BigIntegerField(default=0)
+    # Wrong codes in a row, from any session; enough of them lock the factor until ``locked_until``.
+    failures = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

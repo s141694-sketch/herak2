@@ -1,5 +1,6 @@
 """Activates the organization chosen in the session for the duration of the request."""
 
+import time
 from collections.abc import Callable
 
 from apps.accounts.models import Membership
@@ -8,10 +9,30 @@ from apps.core.errors import Conflict
 from .context import activate, deactivate
 
 SESSION_KEY = "organization_id"
-# The organizations this session signed in to through their provider (single sign-on, D66).
+# The organizations this session signed in to through their provider (single sign-on, D66), each with the moment
+# that sign-in ends (the organization's session length, D68): {"<organization id>": <epoch seconds>}.
 SESSION_SSO = "sso_organizations"
+# Set when this session was opened by single sign-on alone: it then works only in those organizations (D71).
+SESSION_SSO_ONLY = "sso_only"
 # Set once this session's second factor was checked (D67).
 SESSION_MFA = "mfa_verified"
+
+
+def sso_organizations(session) -> set[int]:
+    """The organizations whose provider signed this session in and whose session length has not run out."""
+    marks = session.get(SESSION_SSO)
+    if not isinstance(marks, dict):
+        return set()
+    now = time.time()
+    return {int(organization) for organization, deadline in marks.items() if deadline > now}
+
+
+def mark_sso(session, organization_id: int, deadline: float) -> None:
+    marks = session.get(SESSION_SSO)
+    marks = dict(marks) if isinstance(marks, dict) else {}
+    marks[str(organization_id)] = deadline
+    session[SESSION_SSO] = marks
+
 
 # Conditions on entering an organization's context with this session, registered by the apps that set them
 # (single sign-on enforcement, D66). Each returns None to let the session in, or the code of the refusal.

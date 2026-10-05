@@ -204,3 +204,214 @@ def test_one_provider_per_organization_and_unverified_domains_may_be_listed(worl
     domain = admin.post("/api/sso/domains/", {"domain": "vtc.test"}, format="json").json()
     assert domain["verified_at"] is None and domain["record_name"] == "_harak2-verification.vtc.test"
     assert [d["domain"] for d in admin.get("/api/sso/domains/").json()] == ["vtc.test"]
+
+
+# --- From the independent review of phase 6 -----------------------------------------------------------------
+
+
+def _discovered(issuer):
+    return {
+        "issuer": issuer,
+        "authorization_endpoint": issuer.rstrip("/") + "/auth",
+        "token_endpoint": issuer.rstrip("/") + "/token",
+        "jwks_uri": issuer.rstrip("/") + "/certs",
+    }
+
+
+@pytest.mark.parametrize("change", [{"issuer": "https://evil.test/realms/vtc"}, {"client_id": "another"}])
+def test_a_new_issuer_or_client_needs_its_secret_again(world, change):
+    """The stored secret was given for one provider: it is never sent to another (it would leak there)."""
+    admin = login("admin@example.com")
+    created = admin.post("/api/sso/providers/", PROVIDER, format="json").json()
+    response = admin.put(
+        f"/api/sso/providers/{created['id']}/", {**PROVIDER, **change, "client_secret": ""}, format="json"
+    )
+    assert response.status_code == 409 and response.json()["error"]["code"] == "provider_secret_required"
+    with organization_context(world["org"]):
+        assert IdentityProviderConfig.objects.get().issuer == PROVIDER["issuer"]
+
+
+def test_a_changed_provider_is_turned_off_until_it_is_tested_again(world):
+    with organization_context(world["org"]):
+        config = services.save_provider(None, actor=world["admin"], **PROVIDER)
+        IdentityProviderConfig.objects.filter(pk=config.pk).update(
+            enabled=True, discovery_ok_at=config.config_changed_at, test_login_ok_at=config.config_changed_at
+        )
+        config.refresh_from_db()
+        changed = services.save_provider(
+            config, actor=world["admin"], **{**PROVIDER, "issuer": "https://typo.vtc.test"}
+        )
+    assert not changed.enabled and not changed.enforced
+
+
+def test_an_issuer_ending_with_a_slash_is_kept_exactly_as_the_provider_names_itself(world, monkeypatch):
+    issuer = "https://tenant.eu.auth0.com/"
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        return (
+            _discovered(issuer)
+            if url.endswith("openid-configuration")
+            else {"keys": [{"kty": "RSA", "n": "AQAB", "e": "AQAB"}]}
+        )
+
+    monkeypatch.setattr(services, "fetch_json", fetch)
+    with organization_context(world["org"]):
+        config = services.save_provider(None, actor=world["admin"], **{**PROVIDER, "issuer": issuer})
+        assert config.issuer == issuer
+        assert services.test_connection(config, actor=world["admin"]).discovery_ok_at is not None
+    assert calls[0] == "https://tenant.eu.auth0.com/.well-known/openid-configuration"
+
+
+@pytest.mark.parametrize("answer", [[], "text", 3])
+def test_a_discovery_answer_that_is_not_an_object_fails_the_test_cleanly(world, monkeypatch, answer):
+    class Answer:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+        is_redirect = False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, size):
+            import json
+
+            yield json.dumps(answer).encode()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(services, "_public_address", lambda host, port: None)
+    monkeypatch.setattr(services.requests, "get", lambda *a, **k: Answer())
+    with organization_context(world["org"]):
+        config = services.save_provider(None, actor=world["admin"], **PROVIDER)
+        with pytest.raises(Conflict) as failed:
+            services.test_connection(config, actor=world["admin"])
+    assert failed.value.get_codes() == "provider_test_failed"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/realms/x",
+        "https://localhost:6380/",
+        "https://169.254.169.254/latest/meta-data",
+        "https://10.0.0.5:8443/realms/x",
+        "https://[::1]/realms/x",
+        "https://100.64.0.1/realms/x",
+    ],
+)
+def test_the_server_does_not_fetch_internal_addresses_for_a_provider(settings, monkeypatch, url):
+    settings.SSO_ALLOW_PRIVATE_ADDRESSES = False
+
+    def never(*args, **kwargs):
+        raise AssertionError("no request should be made")
+
+    monkeypatch.setattr(services.requests, "get", never)
+    with pytest.raises(ValueError, match="address"):
+        services.fetch_json(url)
+
+
+def test_a_provider_answer_is_not_followed_elsewhere_nor_read_without_limit(settings, monkeypatch):
+    settings.SSO_ALLOW_PRIVATE_ADDRESSES = False
+    monkeypatch.setattr(services, "_public_address", lambda host, port: None)
+
+    class Answer:
+        def __init__(self, status, chunks):
+            self.status_code, self._chunks = status, chunks
+            self.is_redirect = status in (301, 302, 303, 307, 308)
+            self.headers = {"Location": "http://169.254.169.254/"}
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, size):
+            yield from self._chunks
+
+        def close(self):
+            pass
+
+    seen = {}
+
+    def get(url, **kwargs):
+        seen.update(kwargs)
+        return answers.pop(0)
+
+    monkeypatch.setattr(services.requests, "get", get)
+    answers = [Answer(302, [])]
+    with pytest.raises(ValueError, match="redirect"):
+        services.fetch_json("https://idp.example/x")
+    assert seen["allow_redirects"] is False
+    answers = [Answer(200, [b"{" + b" " * services.MAX_ANSWER_BYTES, b"}"])]
+    with pytest.raises(ValueError, match="large"):
+        services.fetch_json("https://idp.example/x")
+
+
+def test_a_connection_test_that_ends_after_the_provider_changed_does_not_count(world, monkeypatch):
+    with organization_context(world["org"]):
+        config = services.save_provider(None, actor=world["admin"], **PROVIDER)
+
+        def fetch(url):
+            if url.endswith("openid-configuration"):
+                # Another admin saves a new issuer while this test is still waiting for the old provider.
+                current = IdentityProviderConfig.objects.get(pk=config.pk)
+                services.save_provider(current, actor=world["admin"], **{**PROVIDER, "issuer": "https://new.vtc.test"})
+                return _discovered(PROVIDER["issuer"])
+            return {"keys": [{"kty": "RSA", "n": "AQAB", "e": "AQAB"}]}
+
+        monkeypatch.setattr(services, "fetch_json", fetch)
+        with pytest.raises(Conflict) as changed:
+            services.test_connection(config, actor=world["admin"])
+        assert changed.value.get_codes() == "provider_changed"
+        assert IdentityProviderConfig.objects.get(pk=config.pk).discovery_ok_at is None
+
+
+def test_an_email_in_an_internationalized_domain_finds_its_provider(world, txt):
+    from apps.sso import login as sso_login
+
+    with organization_context(world["org"]):
+        domain = services.add_domain("مثال.عمان", actor=world["admin"])
+        txt[domain.record_name] = [domain.record_value]
+        services.verify_domain(domain, actor=world["admin"])
+        config = services.save_provider(None, actor=world["admin"], **PROVIDER)
+        IdentityProviderConfig.objects.filter(pk=config.pk).update(enabled=True)
+    assert sso_login.provider_for_email("ali@مثال.عمان") is not None
+    assert sso_login.domain_of("ali@مثال.عمان") == domain.domain
+
+
+def test_adding_the_same_domain_twice_at_once_gives_the_one_domain(world, monkeypatch):
+    from apps.sso.models import VerifiedDomain
+
+    real_filter = VerifiedDomain.objects.filter
+
+    def stale(*args, **kwargs):
+        if kwargs.get("domain") == "vtc.test" and not real_filter(domain="vtc.test").exists():
+            VerifiedDomain.objects.create(domain="vtc.test", token="t", created_by=world["admin"])  # the other request
+            return VerifiedDomain.objects.none()
+        return real_filter(*args, **kwargs)
+
+    with organization_context(world["org"]):
+        monkeypatch.setattr(VerifiedDomain.objects, "filter", stale)
+        added = services.add_domain("vtc.test", actor=world["admin"])
+        monkeypatch.undo()
+        assert VerifiedDomain.objects.filter(domain="vtc.test").count() == 1 and added.domain == "vtc.test"
+
+
+def test_why_a_domain_or_a_provider_failed_is_kept_as_a_code_the_interface_translates(world, txt, monkeypatch):
+    admin = login("admin@example.com")
+    domain = admin.post("/api/sso/domains/", {"domain": "vtc.test"}, format="json").json()
+    admin.post(f"/api/sso/domains/{domain['id']}/verify/")
+    listed = admin.get("/api/sso/domains/").json()[0]
+    assert (
+        listed["last_error_code"] == "domain_record_missing" and "_harak2-verification.vtc.test" in listed["last_error"]
+    )
+    txt["_harak2-verification.vtc.test"] = ["something else"]
+    admin.post(f"/api/sso/domains/{domain['id']}/verify/")
+    assert admin.get("/api/sso/domains/").json()[0]["last_error_code"] == "domain_record_mismatch"
+    monkeypatch.setattr(
+        services, "fetch_json", lambda url: {**_discovered(PROVIDER["issuer"]), "issuer": "https://evil.test"}
+    )
+    created = admin.post("/api/sso/providers/", PROVIDER, format="json").json()
+    admin.post(f"/api/sso/providers/{created['id']}/test/")
+    assert admin.get("/api/sso/providers/").json()[0]["last_test_error_code"] == "provider_issuer_mismatch"

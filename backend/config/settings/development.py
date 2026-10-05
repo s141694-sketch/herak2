@@ -1,5 +1,7 @@
 import os
 
+from .public_keys import DEVELOPMENT_FIELD_KEY
+
 os.environ.setdefault("SECRET_KEY", "dev-only-secret-key-change-me")
 os.environ.setdefault("DEBUG", "True")
 os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1")
@@ -13,7 +15,8 @@ os.environ.setdefault("COLLAB_TOKEN_SECRET", "dev-only-collab-token-secret-chang
 os.environ.setdefault("COLLAB_SERVICE_SECRET", "dev-only-collab-service-secret-change-me")
 
 os.environ.setdefault("SSO_ALLOW_HTTP_ISSUERS", "True")  # the local Keycloak (D62)
-# A development-only key; production takes its keys from the environment (D64).
-os.environ.setdefault("FIELD_ENCRYPTION_KEYS", "ZGV2LW9ubHktZmllbGQtZW5jcnlwdGlvbi1rZXktMDE=")
+os.environ.setdefault("SSO_ALLOW_PRIVATE_ADDRESSES", "True")  # the local Keycloak (D62)
+# A development-only key; production takes its keys from the environment and refuses this one (D64).
+os.environ.setdefault("FIELD_ENCRYPTION_KEYS", DEVELOPMENT_FIELD_KEY)
 
 from .base import *  # noqa: E402, F403

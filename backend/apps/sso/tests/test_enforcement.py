@@ -134,10 +134,55 @@ def test_a_single_sign_on_session_enters_the_enforcing_organization(world, provi
     _, query = start(client, "noura@vtc.test", provider)
     back(client, query)
     assert client.get("/api/organizations/current/").json()["id"] == world["org"].pk
-    # And may go to another organization and come back.
-    client.post("/api/auth/switch-organization/", {"organization_id": world["other"].pk}, format="json")
+    # The provider vouches for her in its own organization only (D71): the other one wants her password.
+    other = client.post("/api/auth/switch-organization/", {"organization_id": world["other"].pk}, format="json")
+    assert other.status_code == 409 and other.json()["error"]["code"] == "password_required"
+    flags = {
+        m["organization"]["slug"]: m["password_required"] for m in client.get("/api/auth/me/").json()["memberships"]
+    }
+    assert flags == {"vtc": False, "other": True}
+    # Her password in the same browser opens the other one, and the provider's sign-in still opens this one.
+    client.post("/api/auth/login/", {"email": "noura@vtc.test", "password": PASSWORD}, format="json")
+    assert (
+        client.post("/api/auth/switch-organization/", {"organization_id": world["other"].pk}, format="json").status_code
+        == 200
+    )
     back_in = client.post("/api/auth/switch-organization/", {"organization_id": world["org"].pk}, format="json")
     assert back_in.status_code == 200
+
+
+def test_an_organization_that_asks_for_its_provider_says_so_before_asking_for_a_second_factor(world):
+    enforce(world)
+    world["org"].mfa_required_for_managers = True
+    world["org"].save()
+    with organization_context(world["org"]):
+        Membership.objects.filter(user=world["noura"]).update(role=Role.APPROVER)
+    client, response = password_login("noura@vtc.test")
+    flags = {m["organization"]["slug"]: (m["sso_required"], m["mfa_required"]) for m in response.json()["memberships"]}
+    assert flags["vtc"] == (True, False)
+
+
+def test_from_the_organization_list_a_member_starts_the_chosen_organizations_provider(world, provider):  # noqa: F811
+    from urllib.parse import parse_qs, urlparse
+
+    enforce(world)
+    IdentityProviderConfig.all_organizations.filter(pk=world["config"].pk).update(enabled=True)
+    with organization_context(world["other"]):
+        outsider = member("x@elsewhere.test", Role.AUTHOR)
+    with organization_context(world["org"]):
+        Membership.objects.create(user=outsider, role=Role.AUTHOR)
+    outsider.set_password(PASSWORD)
+    outsider.save()
+    client, _ = password_login("x@elsewhere.test")
+    response = client.post("/api/auth/sso/start/", {"organization": world["org"].pk}, format="json")
+    assert response.status_code == 200
+    query = parse_qs(urlparse(response.json()["redirect"]).query)
+    assert query["login_hint"] == ["x@elsewhere.test"] and query["client_id"] == ["harak2"]
+    # Only for an organization of theirs that has a provider turned on.
+    refused = client.post("/api/auth/sso/start/", {"organization": world["other"].pk}, format="json")
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "sso_not_available"
+    anonymous = APIClient().post("/api/auth/sso/start/", {"organization": world["org"].pk}, format="json")
+    assert anonymous.json()["error"]["code"] == "sso_not_available"
 
 
 def test_the_policy_is_set_over_the_api_by_an_admin(world):

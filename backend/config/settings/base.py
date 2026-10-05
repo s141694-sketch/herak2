@@ -18,6 +18,9 @@ env = environ.Env(
     SENTRY_ENVIRONMENT=(str, "development"),
     SESSION_COOKIE_AGE=(int, 8 * 60 * 60),
     LOGIN_THROTTLE_RATE=(str, "10/minute"),
+    # Proxies in front of Django that add to X-Forwarded-For (nginx, as shipped): rate limits count the address the
+    # nearest of them saw, so a client cannot pick its own. 0 when Django is reached directly.
+    NUM_PROXIES=(int, 1),
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
@@ -36,6 +39,7 @@ env = environ.Env(
     APP_URL=(str, "http://localhost:5173"),
     FIELD_ENCRYPTION_KEYS=(list, []),
     SSO_ALLOW_HTTP_ISSUERS=(bool, False),
+    SSO_ALLOW_PRIVATE_ADDRESSES=(bool, False),
     SSO_CALLBACK_URL=(str, ""),
     DEFAULT_FROM_EMAIL=(str, "Harak <no-reply@localhost>"),
 )
@@ -158,6 +162,9 @@ FIELD_ENCRYPTION_KEYS = env("FIELD_ENCRYPTION_KEYS")
 
 # Identity providers are reached over https; plain http only for a local Keycloak in development and tests.
 SSO_ALLOW_HTTP_ISSUERS = env("SSO_ALLOW_HTTP_ISSUERS")
+# Whether a provider may be on this server's own network (a local Keycloak in development and tests); in production
+# the server never makes a request to a loopback, private, link-local or metadata address for a provider.
+SSO_ALLOW_PRIVATE_ADDRESSES = env("SSO_ALLOW_PRIVATE_ADDRESSES")
 # Where providers send the browser back; by default the web client's address, which forwards /api to Django.
 SSO_CALLBACK_URL = env("SSO_CALLBACK_URL")
 
@@ -229,6 +236,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.UserRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {"user": "600/minute", "anon": "60/minute", "login": env("LOGIN_THROTTLE_RATE")},
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
+    "NUM_PROXIES": env("NUM_PROXIES"),
 }
 
 from config.logging import configure_logging  # noqa: E402

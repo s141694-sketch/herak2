@@ -11,6 +11,7 @@ An admin's test sign-in runs the same flow without signing anyone in, and record
 """
 
 import time
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 import requests
@@ -20,7 +21,7 @@ from authlib.integrations.requests_client import OAuth2Session
 from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from django.conf import settings
 from django.contrib.auth import login
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from joserfc import jwt
 from joserfc.errors import JoseError
@@ -31,7 +32,7 @@ from apps.accounts.models import Membership, Organization, Role, User
 from apps.audit.services import record
 from apps.core.errors import Conflict
 from apps.tenancy.context import organization_context
-from apps.tenancy.middleware import SESSION_KEY, SESSION_SSO
+from apps.tenancy.middleware import SESSION_KEY, SESSION_SSO, SESSION_SSO_ONLY, mark_sso
 
 from . import services
 from .models import ExternalIdentity, IdentityProviderConfig, VerifiedDomain
@@ -40,6 +41,8 @@ log = structlog.get_logger("harak2.sso")
 SESSION_FLOW = "sso_flow"
 FLOW_SECONDS = 10 * 60
 LEEWAY_SECONDS = 60
+# Asymmetric signatures only: a symmetric one (HS*) would be keyed by the client secret, and "none" is no signature.
+ID_TOKEN_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"]
 
 
 class SsoNotAvailable(Conflict):
@@ -66,8 +69,14 @@ def callback_url() -> str:
 
 
 def domain_of(email: str) -> str:
+    """The email's domain in the form domains are stored in (IDNA for internationalized names), or ""."""
     _, at, domain = (email or "").strip().lower().rpartition("@")
-    return domain if at and domain else ""
+    if not (at and domain):
+        return ""
+    try:
+        return services.normalize_domain(domain)
+    except services.SsoError:
+        return ""
 
 
 def provider_for_email(email: str) -> IdentityProviderConfig | None:
@@ -91,7 +100,10 @@ def _discovery(config: IdentityProviderConfig) -> dict:
         raise ProviderUnavailable() from exc
 
 
-def begin(request, config: IdentityProviderConfig, *, email: str = "", test_by=None) -> str:
+LANGUAGES = ("ar", "en")
+
+
+def begin(request, config: IdentityProviderConfig, *, email: str = "", test_by=None, language=None) -> str:
     """The authorization URL; what the callback must find is kept in this browser's session."""
     meta = _discovery(config)
     state, nonce, verifier = generate_token(32), generate_token(32), generate_token(64)
@@ -116,20 +128,32 @@ def begin(request, config: IdentityProviderConfig, *, email: str = "", test_by=N
     }
     if email:
         params["login_hint"] = email.strip().lower()
+    if language in LANGUAGES:
+        params["ui_locales"] = language  # the provider's page in the interface's language, where it has it
     return f"{meta['authorization_endpoint']}?{urlencode(params)}"
 
 
 def exchange_code(meta: dict, config: IdentityProviderConfig, code: str, verifier: str, redirect_uri: str) -> dict:
+    services.check_url(meta["token_endpoint"])  # the client secret goes there: only to a public https address
     client = OAuth2Session(config.client_id, config.client_secret, redirect_uri=redirect_uri)
     return client.fetch_token(
-        meta["token_endpoint"], grant_type="authorization_code", code=code, code_verifier=verifier, timeout=10
+        meta["token_endpoint"],
+        grant_type="authorization_code",
+        code=code,
+        code_verifier=verifier,
+        timeout=services.HTTP_TIMEOUT,
+        allow_redirects=False,
     )
 
 
 def validate_id_token(token: str, meta: dict, config: IdentityProviderConfig, nonce: str) -> dict:
     try:
-        keys = KeySet.import_key_set(services.fetch_json(meta["jwks_uri"]))
-        decoded = jwt.decode(token, keys)
+        published = services.fetch_json(meta["jwks_uri"])
+    except (requests.RequestException, ValueError) as exc:
+        raise ProviderUnavailable() from exc
+    try:
+        keys = KeySet.import_key_set(published)
+        decoded = jwt.decode(token, keys, algorithms=ID_TOKEN_ALGORITHMS)
         jwt.JWTClaimsRegistry(
             leeway=LEEWAY_SECONDS,
             iss={"essential": True, "value": config.issuer},
@@ -143,23 +167,58 @@ def validate_id_token(token: str, meta: dict, config: IdentityProviderConfig, no
     return decoded.claims
 
 
+def _known(config: IdentityProviderConfig, claims: dict) -> ExternalIdentity | None:
+    return ExternalIdentity.objects.filter(issuer=config.issuer, subject=claims["sub"]).select_related("user").first()
+
+
+def _linkable_email(claims: dict, *, prefix: str = "sso_") -> str:
+    """The email the claims may be linked by (D65): verified by the provider, in a domain this organization
+    verified. ``prefix`` names the codes of an admin's test sign-in, which speak of the tested account."""
+    email = str(claims.get("email") or "").strip().lower()
+    # Microsoft Entra ID sends no email_verified: its optional claim xms_edov says the same (D71).
+    verified = claims.get("email_verified") is True or (
+        claims.get("email_verified") is None and claims.get("xms_edov") is True
+    )
+    if not verified:
+        raise Refused(f"{prefix}email_unverified")
+    if not VerifiedDomain.objects.filter(domain=domain_of(email), verified_at__isnull=False).exists():
+        raise Refused(f"{prefix}domain_not_allowed")
+    return email
+
+
+def _admissible(user: User) -> User:
+    """Platform staff never sign in through a tenant's provider: it would hand that tenant the platform's admin
+    (D71). A deactivated account is told so, before anything is written."""
+    if user.is_staff or user.is_superuser:
+        raise Refused("sso_account_not_allowed")
+    if not user.is_active:
+        raise Refused("sso_account_disabled")
+    return user
+
+
 def _identify(config: IdentityProviderConfig, claims: dict) -> User:
     """The person behind the claims (D65), created if new; a member of the organization, pending if new to it."""
-    identity = (
-        ExternalIdentity.objects.filter(issuer=config.issuer, subject=claims["sub"]).select_related("user").first()
-    )
+    identity = _known(config, claims)
     if identity is not None:
-        user = identity.user
+        user = _admissible(identity.user)
     else:
-        email = str(claims.get("email") or "").strip().lower()
-        if claims.get("email_verified") is not True:
-            raise Refused("sso_email_unverified")
-        if not VerifiedDomain.objects.filter(domain=domain_of(email), verified_at__isnull=False).exists():
-            raise Refused("sso_domain_not_allowed")
+        email = _linkable_email(claims)
         user = User.objects.filter(email__iexact=email).first()
         if user is None:
-            user = User.objects.create_user(email=email, password=None, full_name=str(claims.get("name") or "")[:200])
-        identity = ExternalIdentity.objects.create(user=user, issuer=config.issuer, subject=claims["sub"])
+            try:
+                with transaction.atomic():  # another first sign-in of the same person may create it meanwhile
+                    user = User.objects.create_user(
+                        email=email, password=None, full_name=str(claims.get("name") or "")[:200]
+                    )
+            except IntegrityError:
+                user = User.objects.get(email__iexact=email)
+        _admissible(user)
+        try:
+            with transaction.atomic():
+                identity = ExternalIdentity.objects.create(user=user, issuer=config.issuer, subject=claims["sub"])
+        except IntegrityError:
+            identity = _known(config, claims)
+            user = _admissible(identity.user)
     ExternalIdentity.objects.filter(pk=identity.pk).update(last_login_at=timezone.now())
     Membership.objects.get_or_create(user=user, defaults={"role": Role.PENDING})
     return user
@@ -176,6 +235,8 @@ def complete(request) -> str:
     if config is None or (testing and (not request.user.is_authenticated or request.user.pk != flow["test_by"])):
         return f"{base}/login?sso_error=sso_state_invalid"
     done = f"{base}/settings/security?sso_test=" if testing else f"{base}/login?sso_error="
+    if not testing and not config.enabled:
+        return f"{done}sso_not_available"  # turned off while the person was at the provider
     try:
         if request.GET.get("error"):
             raise Refused("sso_denied", request.GET.get("error", ""))
@@ -183,10 +244,16 @@ def complete(request) -> str:
             meta = _discovery(config)
             try:
                 tokens = exchange_code(meta, config, request.GET.get("code", ""), flow["verifier"], callback_url())
-            except Exception as exc:  # the provider refused the code, or could not be reached
+            except (requests.RequestException, services.ProviderAnswerError) as exc:
+                log.warning("sso.provider_unavailable", provider=config.pk, error=str(exc))
+                raise ProviderUnavailable() from exc
+            except Exception as exc:  # the provider refused the code
                 raise Refused("sso_token_invalid", str(exc)) from exc
             claims = validate_id_token(tokens.get("id_token", ""), meta, config, flow["nonce"])
             if testing:
+                # The test proves members could sign in: the identity must pass the rules theirs will meet.
+                if _known(config, claims) is None:
+                    _linkable_email(claims, prefix="sso_test_")
                 return _record_test(config, flow, actor=request.user, done=done)
             with transaction.atomic():
                 user = _identify(config, claims)
@@ -198,10 +265,18 @@ def complete(request) -> str:
         return f"{done}provider_unavailable"
 
     organization = Organization.objects.get(pk=config.organization_id)
+    already_signed_in = request.user.is_authenticated and request.user.pk == user.pk
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-    request.session[SESSION_KEY] = organization.pk
-    request.session[SESSION_SSO] = [organization.pk]
-    request.session.set_expiry(organization.sso_session_hours * 3600)
+    session = request.session
+    # The organization's session length is a deadline from this sign-in, kept with the mark itself: later
+    # requests do not move it (D68).
+    mark_sso(session, organization.pk, time.time() + organization.sso_session_hours * 3600)
+    if not already_signed_in:
+        session[SESSION_SSO_ONLY] = True
+    if session.get(SESSION_SSO_ONLY):
+        last = max(session[SESSION_SSO].values())
+        session.set_expiry(datetime.fromtimestamp(last, tz=UTC))  # a fixed moment, not a period of inactivity
+    session[SESSION_KEY] = organization.pk
     return f"{base}/"
 
 

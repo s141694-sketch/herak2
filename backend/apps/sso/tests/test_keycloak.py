@@ -127,3 +127,58 @@ def with_second_factor(user):
         user=user, defaults={"secret_encrypted": secrets.encrypt(pyotp.random_base32()), "confirmed_at": timezone.now()}
     )
     return user
+
+
+# --- From the independent review of phase 6 -----------------------------------------------------------------
+
+
+@pytest.fixture
+def two_organizations(world):
+    """A second organization on its own realm (safety), as two tenants of one Harak are."""
+    safety = Organization.objects.create(name="شركة السلامة", slug="safety")
+    with organization_context(safety):
+        admin = member("admin@safety.test", Role.ADMIN)
+        config = services.save_provider(
+            None,
+            actor=admin,
+            issuer=f"{KEYCLOAK}/realms/safety",
+            client_id="harak2",
+            client_secret="safety-test-client-secret",
+        )
+        services.test_connection(config, actor=admin)
+        VerifiedDomain.objects.create(
+            domain="safety.test", token="t", verified_at="2026-10-05T00:00Z", created_by=admin
+        )
+        config = services.set_policy(IdentityProviderConfig.objects.get(), actor=admin, enabled=True)
+    return {**world, "safety": safety, "safety_config": config}
+
+
+def test_each_organization_signs_its_people_in_through_its_own_realm(two_organizations):
+    client = APIClient()
+    started = client.post("/api/auth/sso/start/", {"email": "faisal@safety.test"}, format="json").json()
+    assert started["redirect"].startswith(f"{KEYCLOAK}/realms/safety/")
+    assert refusal(client.get("/api/auth/sso/callback/", keycloak_login(started["redirect"], "faisal"))) is None
+    me = client.get("/api/auth/me/").json()
+    assert (me["user"]["email"], me["organization"]["slug"]) == ("faisal@safety.test", "safety")
+
+
+def test_an_answer_from_the_other_organizations_realm_is_refused(two_organizations):
+    """A code the vtc realm issued, brought back to a flow that the safety provider started, is not accepted."""
+    client = APIClient()
+    safety_flow = client.post("/api/auth/sso/start/", {"email": "faisal@safety.test"}, format="json").json()
+    state = parse_qs(urlparse(safety_flow["redirect"]).query)["state"][0]
+    vtc_flow = APIClient().post("/api/auth/sso/start/", {"email": "noura@vtc.test"}, format="json").json()
+    answer = keycloak_login(vtc_flow["redirect"], "noura")
+    assert refusal(client.get("/api/auth/sso/callback/", {**answer, "state": state})) == "sso_token_invalid"
+    assert client.get("/api/auth/me/").status_code in (401, 403)
+
+
+@pytest.mark.parametrize("language,phrase", [("en", "Sign in to your account"), ("ar", 'lang="ar"')])
+def test_the_providers_page_speaks_the_language_of_the_interface(world, language, phrase):
+    started = (
+        APIClient()
+        .post("/api/auth/sso/start/", {"email": "noura@vtc.test", "language": language}, format="json")
+        .json()
+    )
+    assert parse_qs(urlparse(started["redirect"]).query)["ui_locales"] == [language]
+    assert phrase in requests.get(started["redirect"], timeout=15).text

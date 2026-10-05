@@ -103,7 +103,8 @@ class SsoStartThrottle(AnonRateThrottle):
 
 
 class SsoStartView(APIView):
-    """The email decides: its verified domain's organization signs the person in through its provider."""
+    """The email decides: its verified domain's organization signs the person in through its provider. A signed-in
+    member may instead name one of their organizations, to enter it through its own provider."""
 
     authentication_classes = [SessionAuthentication]
     permission_classes = [AllowAny]
@@ -114,11 +115,30 @@ class SsoStartView(APIView):
         super().initial(request, *args, **kwargs)
 
     def post(self, request):
-        email = _text(request.data, "email")
-        config = sso_login.provider_for_email(email)
+        data = request.data if isinstance(request.data, dict) else {}
+        if "organization" in data:
+            organization = data["organization"]
+            if not isinstance(organization, int) or isinstance(organization, bool):
+                raise exceptions.ValidationError({"organization": "an organization id"})
+            config = self._provider_of(request, organization)
+            email = request.user.email if config is not None else ""
+        else:
+            email = _text(data, "email")
+            config = sso_login.provider_for_email(email)
         if config is None:
             raise sso_login.SsoNotAvailable()
-        return Response({"redirect": sso_login.begin(request, config, email=email)})
+        language = data.get("language")
+        return Response({"redirect": sso_login.begin(request, config, email=email, language=language)})
+
+    @staticmethod
+    def _provider_of(request, organization_id: int) -> IdentityProviderConfig | None:
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not Membership.all_organizations.filter(user=user, organization_id=organization_id).exists()
+        ):
+            return None
+        return IdentityProviderConfig.all_organizations.filter(organization_id=organization_id, enabled=True).first()
 
 
 class SsoCallbackView(APIView):
@@ -138,7 +158,8 @@ class ProviderTestLoginView(APIView):
 
     def post(self, request, pk):
         config = get_object_or_404(IdentityProviderConfig.objects, pk=pk)
-        return Response({"redirect": sso_login.begin(request, config, test_by=request.user)})
+        language = request.data.get("language") if isinstance(request.data, dict) else None
+        return Response({"redirect": sso_login.begin(request, config, test_by=request.user, language=language)})
 
 
 class ProviderPolicyView(APIView):
