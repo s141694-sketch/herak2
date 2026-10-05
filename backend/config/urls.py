@@ -15,4 +15,5 @@ urlpatterns = [
     path("api/", include("apps.suggestions.urls")),
     path("api/", include("apps.workflows.urls")),
     path("api/", include("apps.notifications.urls")),
+    path("api/", include("apps.sso.urls")),
 ]

@@ -13,6 +13,8 @@ os.environ.setdefault("COLLAB_SERVICE_SECRET", "test-collab-service-secret-01234
 # Tests never call a real model; the ones that exercise the gateway give it a provider explicitly.
 os.environ.setdefault("AI_PROVIDER", "")
 os.environ.setdefault("AI_BACKOFF_SECONDS", "0")
+# A test-only key: it protects nothing outside the test database.
+os.environ.setdefault("FIELD_ENCRYPTION_KEYS", "dGVzdC1vbmx5LWZpZWxkLWVuY3J5cHRpb24ta2V5LTE=")
 
 from .base import *  # noqa: E402, F403
 

@@ -34,6 +34,8 @@ env = environ.Env(
     QUALITY_STALE_RUN_MINUTES=(int, 30),
     COLLAB_SAVE_MAX_BYTES=(int, 64 * 1024 * 1024),
     APP_URL=(str, "http://localhost:5173"),
+    FIELD_ENCRYPTION_KEYS=(list, []),
+    SSO_ALLOW_HTTP_ISSUERS=(bool, False),
     DEFAULT_FROM_EMAIL=(str, "Harak <no-reply@localhost>"),
 )
 environ.Env.read_env(BASE_DIR / ".env")
@@ -67,6 +69,7 @@ INSTALLED_APPS = [
     "apps.suggestions",
     "apps.workflows",
     "apps.notifications",
+    "apps.sso",
 ]
 
 MIDDLEWARE = [
@@ -146,6 +149,14 @@ MAILERS = {
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 # Where links in emails lead: the web client, which asks for a sign-in.
 APP_URL = env("APP_URL")
+
+# Encryption of stored secrets (identity providers' client secrets, TOTP secrets; spec 7.4, D64): Fernet keys,
+# the first encrypts and all decrypt, so a new key can be put first and the old ones kept until re-encrypted.
+# Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FIELD_ENCRYPTION_KEYS = env("FIELD_ENCRYPTION_KEYS")
+
+# Identity providers are reached over https; plain http only for a local Keycloak in development and tests.
+SSO_ALLOW_HTTP_ISSUERS = env("SSO_ALLOW_HTTP_ISSUERS")
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

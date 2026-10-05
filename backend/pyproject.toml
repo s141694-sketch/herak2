@@ -21,6 +21,7 @@ dependencies = [
     "authlib==1.8.0",
     "requests==2.34.2",
     "cryptography==50.0.2",
+    "dnspython==2.8.0",
 ]
 
 [dependency-groups]
