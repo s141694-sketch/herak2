@@ -1,3 +1,4 @@
+import pyotp
 import pytest
 from django.core.cache import cache
 from rest_framework.test import APIClient
@@ -148,3 +149,29 @@ def test_login_attempts_are_rate_limited(world):
     assert statuses[:10] == [400] * 10
     assert statuses[10] == 429
     cache.clear()
+
+
+def test_an_admin_sets_the_organizations_sign_in_rules(world):
+    admin = APIClient()
+    login(admin, "multi@example.com")
+    admin.post("/api/auth/switch-organization/", {"organization_id": world["a"].pk}, format="json")
+    # Requiring a second factor of managers needs one in this admin's own session first, or it would lock them out.
+    unsafe = admin.patch("/api/organizations/current/", {"mfa_required_for_managers": True}, format="json")
+    assert unsafe.status_code == 409 and unsafe.json()["error"]["code"] == "mfa_enable_first"
+    secret = admin.post("/api/auth/mfa/enrol/").json()["secret"]
+    admin.post("/api/auth/mfa/confirm/", {"code": pyotp.TOTP(secret).now()}, format="json")
+    changed = admin.patch(
+        "/api/organizations/current/", {"mfa_required_for_managers": True, "sso_session_hours": 4}, format="json"
+    )
+    assert changed.status_code == 200, changed.content
+    assert (changed.json()["mfa_required_for_managers"], changed.json()["sso_session_hours"]) == (True, 4)
+    for bad in (
+        {"sso_session_hours": 0},
+        {"sso_session_hours": 169},
+        {"mfa_required_for_managers": "yes"},
+        {"name": "x"},
+    ):
+        assert admin.patch("/api/organizations/current/", bad, format="json").status_code == 400, bad
+    author = APIClient()
+    login(author, "single@example.com")
+    assert author.patch("/api/organizations/current/", {"sso_session_hours": 2}, format="json").status_code == 403

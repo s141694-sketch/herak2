@@ -46,9 +46,30 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "ai_enabled",
             "ai_monthly_quota",
             "sso_session_hours",
+            "mfa_required_for_managers",
             "reminder_before_due_work_days",
             "escalation_delay_work_days",
         ]
+
+
+class SignInRulesSerializer(serializers.ModelSerializer):
+    """What an admin sets about signing in to the organization (spec 4.1, 7.1, 7.2); nothing else is writable here."""
+
+    sso_session_hours = serializers.IntegerField(min_value=1, max_value=168, required=False)
+    mfa_required_for_managers = serializers.BooleanField(required=False)
+
+    class Meta:
+        model = Organization
+        fields = ["sso_session_hours", "mfa_required_for_managers"]
+
+    def to_internal_value(self, data):
+        unknown = set(data) - set(self.fields) if isinstance(data, dict) else set()
+        if unknown:
+            raise serializers.ValidationError({key: "not settable here" for key in unknown})
+        if isinstance(data, dict) and "mfa_required_for_managers" in data:
+            if not isinstance(data["mfa_required_for_managers"], bool):
+                raise serializers.ValidationError({"mfa_required_for_managers": "true or false"})
+        return super().to_internal_value(data)
 
 
 class LoginSerializer(serializers.Serializer):

@@ -19,6 +19,7 @@ from .serializers import (
     LoginSerializer,
     MemberSerializer,
     OrganizationSerializer,
+    SignInRulesSerializer,
     SwitchOrganizationSerializer,
     session_payload,
 )
@@ -179,6 +180,23 @@ class CurrentOrganizationView(APIView):
 
     def get(self, request):
         return Response(OrganizationSerializer(request.organization).data)
+
+    def patch(self, request):
+        if request.membership.role != Role.ADMIN:
+            raise exceptions.PermissionDenied("only an admin sets how members sign in")
+        serializer = SignInRulesSerializer(request.organization, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        turning_on = (
+            serializer.validated_data.get("mfa_required_for_managers")
+            and not request.organization.mfa_required_for_managers
+        )
+        if turning_on and not request.session.get(SESSION_MFA):
+            raise mfa.MfaError("set up and use your own second factor first", code="mfa_enable_first")
+        organization = serializer.save()
+        record(
+            "organization.sign_in_rules_set", actor=request.user, target=organization, payload=serializer.validated_data
+        )
+        return Response(OrganizationSerializer(organization).data)
 
 
 class MemberListView(generics.ListAPIView):
