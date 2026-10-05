@@ -23,7 +23,7 @@ import { useAuth } from '../../auth'
 import { ErrorMessage } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
-import { ReviewPanel } from '../workflows/ReviewPanel'
+import { canWithdraw, ReviewPanel, useVersionWorkflow } from '../workflows/ReviewPanel'
 import { LiveBlockEditor } from '../../live/LiveBlockEditor'
 import { type Presence, usePresence } from '../../live/presence'
 import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../../live/snapshot'
@@ -83,9 +83,17 @@ export function LiveVersionPage({
   const comments = useResource<ProgramComment[]>(`/api/programs/${version.program.id}/comments/`)
   const reloadComments = comments.reload
   const commentsVersion = live?.commentsVersion ?? 0
+  const workflow = useVersionWorkflow(version.id)
+  const reloadWorkflow = workflow.reload
   useEffect(() => {
-    if (commentsVersion > 0) reloadComments()
-  }, [commentsVersion, reloadComments])
+    reloadWorkflow() // submitted, decided, withdrawn: the submission changed with the status
+  }, [version.status, reloadWorkflow])
+  useEffect(() => {
+    if (commentsVersion > 0) {
+      reloadComments()
+      reloadWorkflow() // a comment resolved or reopened elsewhere changes what the review panel lists
+    }
+  }, [commentsVersion, reloadComments, reloadWorkflow])
   const editors = useRef(new Map<string, Editor>())
   const [, setEditorsTick] = useState(0)
   const onEditor = useCallback((blockKey: string, editor: Editor | null) => {
@@ -115,6 +123,7 @@ export function LiveVersionPage({
     comments: ownComments.filter((c) => c.status === 'open' || showResolved),
     reload: () => {
       comments.reload()
+      workflow.reload()
       announceCommentsChanged(live.provider)
     },
     canResolve: version.permissions.collaborate,
@@ -173,12 +182,24 @@ export function LiveVersionPage({
   // The pre-submit check (spec 6.2.1): with critical findings the server asks for a reason, or refuses.
   const [reason, setReason] = useState<string | null>(null)
   async function submit() {
-    const done = await action.run(() => http.post(`/api/program-versions/${version.id}/submit/`, reason === null ? {} : { reason }))
+    // A reason is sent only when one was written; without one the server says if it needs it.
+    const body = reason?.trim() ? { reason } : {}
+    const done = await action.run(() => http.post(`/api/program-versions/${version.id}/submit/`, body))
     if (done) onSubmitted()
   }
   useEffect(() => {
     if (action.error === 'critical_findings_reason_required') setReason((current) => current ?? '')
   }, [action.error])
+  const criticalCount = quality.report?.counts.critical
+  useEffect(() => {
+    // The critical findings were fixed or dismissed meanwhile: no reason is needed any more.
+    if (criticalCount === 0) setReason(null)
+  }, [criticalCount])
+  const canCancel = role === 'admin' && ['draft', 'submitted', 'in_stage'].includes(version.status)
+  async function cancel() {
+    if (!window.confirm(t('workflow.confirmCancel'))) return
+    if (await action.run(() => http.post(`/api/program-versions/${version.id}/cancel/`))) onSubmitted()
+  }
 
   async function withdraw() {
     const done = await action.run(() => http.post(`/api/program-versions/${version.id}/withdraw/`))
@@ -209,7 +230,7 @@ export function LiveVersionPage({
           {version.status === 'draft' && reason !== null && (
             <label className="field submit-reason">
               <span>{t('workflow.criticalReason')}</span>
-              <textarea rows={3} maxLength={2000} value={reason} data-testid="submit-reason" onChange={(e) => setReason(e.target.value)} />
+              <textarea rows={3} maxLength={2000} dir="auto" value={reason} data-testid="submit-reason" onChange={(e) => setReason(e.target.value)} />
             </label>
           )}
           {version.status === 'draft' && (
@@ -217,21 +238,36 @@ export function LiveVersionPage({
               type="button"
               className="primary-inline"
               data-testid="submit-version"
-              disabled={action.busy || !caughtUp || (reason !== null && !reason.trim())}
+              disabled={action.busy || !caughtUp}
               onClick={() => void submit()}
             >
               {reason === null ? t('programs.submit') : t('workflow.submitWithReason')}
             </button>
           )}
           {version.status === 'draft' && !caughtUp && <span className="muted">{t('live.submitWaits')}</span>}
-          {(version.status === 'submitted' || version.status === 'in_stage') && (
+          {canWithdraw(workflow.data) && (
             <button type="button" className="secondary" data-testid="withdraw-version" disabled={action.busy} onClick={() => void withdraw()}>
               {t('programs.withdraw')}
             </button>
           )}
         </div>
       )}
-      {version.status !== 'draft' && <ReviewPanel versionId={version.id} onChanged={onSubmitted} />}
+      {canCancel && (
+        <p>
+          <button type="button" className="link-button" data-testid="cancel-version" disabled={action.busy} onClick={() => void cancel()}>
+            {t('workflow.cancelVersion')}
+          </button>
+        </p>
+      )}
+      {(version.status !== 'draft' || workflow.data?.returned) && (
+        <ReviewPanel
+          workflow={workflow}
+          programId={version.program.id}
+          canReopen={role === 'reviewer' || role === 'approver' || role === 'admin'}
+          onChanged={onSubmitted}
+          onCommentsChanged={() => commentContext?.reload()}
+        />
+      )}
       {resolvedCount > 0 && (
         <p>
           <button type="button" className="link-button" data-testid="toggle-resolved" onClick={() => setShowResolved((shown) => !shown)}>

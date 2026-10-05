@@ -372,7 +372,7 @@ export interface AppNotification {
   id: number
   event: 'task_assigned' | 'version_returned' | 'version_approved' | 'task_due_soon' | 'task_due' | 'task_overdue'
   version: number | null
-  params: { program?: string; number?: number; stage_name?: string; due_at?: string | null; note?: string; responsible?: string }
+  params: { program?: string; program_id?: number; number?: number; stage_name?: string; due_at?: string | null; note?: string; responsible?: string }
   created_at: string
   read_at: string | null
 }

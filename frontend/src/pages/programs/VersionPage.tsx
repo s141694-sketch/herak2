@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router'
 
 import { http } from '../../api'
+import { useAuth } from '../../auth'
 import { BlockEditor } from '../../components/BlockEditor'
 import { ErrorMessage, Loading } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
-import { ReviewPanel } from '../workflows/ReviewPanel'
+import { canWithdraw, ReviewPanel, useVersionWorkflow } from '../workflows/ReviewPanel'
 import { LiveVersionPage } from './LiveVersionPage'
 import {
   type AlignmentLink,
@@ -40,11 +41,15 @@ export function VersionPage() {
   const links = useResource<AlignmentLink[]>(`/api/program-versions/${id}/alignment-links/`)
   const framework = useResource<FrameworkVersionDetail>(version.data ? `/api/framework-versions/${version.data.framework.id}/` : null)
   const action = useAction()
+  const workflow = useVersionWorkflow(Number(id))
+  const { session } = useAuth()
+  const role = session?.organization?.role
 
   if ((version.loading && !version.data) || (tree.loading && !tree.data)) return <Loading />
   if (!version.data || !tree.data) return <ErrorMessage code={version.error ?? tree.error} />
 
   const refresh = () => {
+    workflow.reload()
     version.reload()
     tree.reload()
     links.reload()
@@ -52,7 +57,9 @@ export function VersionPage() {
   // A draft is edited live. A locked version that was edited live opens read-only on its frozen
   // live state, so comments anchor against the same Yjs items as the next draft (decision D2).
   if (version.data.status === 'draft' || version.data.live.is_live) {
-    return <LiveVersionPage version={version.data} framework={framework.data} onSubmitted={refresh} />
+    // Keyed by version: moving to another version inside the app starts its page afresh (a reason typed for one
+    // submission must not carry to the next).
+    return <LiveVersionPage key={version.data.id} version={version.data} framework={framework.data} onSubmitted={refresh} />
   }
   const levels = version.data.template.levels
   const ctx: Ctx = {
@@ -87,14 +94,20 @@ export function VersionPage() {
       <ErrorMessage code={action.error} testId="version-error" />
       {!ctx.editable && <p className="notice">{t('programs.readOnly')}</p>}
       <div className="row">
-        {version.data.permissions.collaborate && ['submitted', 'in_stage'].includes(status) && (
+        {version.data.permissions.collaborate && canWithdraw(workflow.data) && (
           <button type="button" className="secondary" data-testid="withdraw-version" onClick={() => void transition('withdraw')}>
             {t('programs.withdraw')}
           </button>
         )}
       </div>
 
-      <ReviewPanel versionId={version.data.id} onChanged={refresh} />
+      <ReviewPanel
+        workflow={workflow}
+        programId={version.data.program.id}
+        canReopen={role === 'reviewer' || role === 'approver' || role === 'admin'}
+        onChanged={refresh}
+        onCommentsChanged={refresh}
+      />
 
       <h2>{t('programs.targets')}</h2>
       <ul className="plain" data-testid="version-targets">

@@ -24,7 +24,7 @@ export function TaskSummary({ task, onChanged }: { task: StageTask; onChanged: (
   return (
     <div className="row task" data-testid="task" data-task={task.id}>
       <span className="badge">{t('workflow.stageOf', { stage: task.stage, count: task.stage_count })}</span>
-      <strong>{task.stage_name}</strong>
+      <strong dir="auto">{task.stage_name}</strong>
       <span>{task.claimed_by ? t('workflow.takenBy', { name: task.claimed_by.full_name || task.claimed_by.email }) : assignee(task)}</span>
       <span className={task.overdue ? 'badge badge-returned' : 'muted'} data-testid="task-due">
         {task.overdue ? t('workflow.overdue', { date: date(task.due_at) }) : t('workflow.due', { date: date(task.due_at) })}

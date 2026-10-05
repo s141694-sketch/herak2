@@ -43,11 +43,15 @@ test('a version is submitted, returned, resubmitted and approved', async ({ brow
 
   // The author writes and submits; the critical finding needs a reason, which the reviewer will see.
   const author = await signIn(browser, 'author@example.com')
+  // The e2e database outlives a run: start from no unread notifications, so the one this test makes is seen.
+  await api(author, 'POST', '/api/notifications/', { read_all: true })
   await openLive(author, versionId)
   await draftContent(author)
   await submitWithReason(author, 'التقويم في البرنامج التالي')
   await expect(author.getByTestId('live-status')).toHaveAttribute('data-state', 'locked')
-  await expect(author.getByTestId('stages-progress').locator('[data-state="current"]')).toHaveText('المراجعة الفنية')
+  await expect(author.getByTestId('stages-progress').locator('[data-state="current"]')).toContainText('المراجعة الفنية')
+  // Before any decision the authors may withdraw it.
+  await expect(author.getByTestId('withdraw-version')).toBeVisible()
 
   // The reviewer finds it in the inbox, takes it, and cannot return it without a comment on the version.
   const reviewer = await signIn(browser, 'reviewer@example.com')
@@ -65,20 +69,27 @@ test('a version is submitted, returned, resubmitted and approved', async ({ brow
     category: 'must_fix',
   })
   await panel.getByTestId('decision-return').click()
-  await expect(panel.getByTestId('review-outcome')).toHaveText('أُعيدت هذه النسخة للتعديل، وأُنشئت مسودة جديدة.')
+  await expect(panel.getByTestId('review-outcome')).toContainText('أُعيدت هذه النسخة للتعديل، وأُنشئت مسودة جديدة.')
+  await expect(panel.getByTestId('returned-program')).toHaveAttribute('href', `/programs/${programId}`)
 
-  // The author is told, with the note.
+  // The author is told, with the note; the notification leads to the program, where the new draft is.
   await author.getByTestId('notifications-toggle').click()
   const told = author.getByTestId('notification').filter({ hasText: title }).first()
   await expect(told).toHaveAttribute('data-event', 'version_returned')
+  await expect(told).toHaveClass('unread')
   await expect(told).toContainText('أضف تقويمًا للهدف')
-  await expect(author.getByTestId('notifications-unread')).toBeVisible()
+  await expect(author.getByTestId('notifications-unread')).toHaveText('1')
+  await told.getByRole('button').click()
+  await expect(author.getByTestId('program-heading')).toHaveText(title)
+  await expect(author.getByTestId('program-workflow-fixed')).toBeVisible()
 
   // The author fixes it on the new draft and resubmits; it goes back to the stage that returned it.
   const versions = await api<Array<{ id: number; status: string }>>(author, 'GET', `/api/programs/${programId}/versions/`)
   const draftId = versions.find((v) => v.status === 'draft')!.id
   await api(author, 'POST', `/api/comments/${mustFix.id}/resolve/`)
   await openLive(author, draftId)
+  // While fixing it, the draft shows why it came back.
+  await expect(author.getByTestId('returned-panel')).toContainText('أضف تقويمًا للهدف')
   await submitWithReason(author, 'التقويم في البرنامج التالي')
   await expect(author.getByTestId('previous-submission')).toContainText('أضف تقويمًا للهدف')
 
@@ -86,7 +97,11 @@ test('a version is submitted, returned, resubmitted and approved', async ({ brow
   panel = await takeAndOpen(reviewer, title)
   await expect(panel.getByTestId('resolved-comment')).toContainText('أضف تقويمًا يقيس الهدف')
   await panel.getByTestId('decision-approve').click()
-  await expect(panel.getByTestId('stages-progress').locator('[data-state="current"]')).toHaveText('الاعتماد')
+  await expect(panel.getByTestId('stages-progress').locator('[data-state="current"]')).toContainText('الاعتماد')
+  // After a decision the submission can no longer be withdrawn, and the button is gone.
+  await author.reload()
+  await expect(author.getByTestId('review-panel')).toBeVisible()
+  await expect(author.getByTestId('withdraw-version')).toHaveCount(0)
 
   // The approver takes the last stage and approves: the version is approved and locked.
   const approver = await signIn(browser, 'approver@example.com')
@@ -120,15 +135,22 @@ test('an admin defines a workflow; others read it', async ({ browser }) => {
   await form.getByTestId('stage-days').fill('2')
   await form.getByTestId('workflow-save').click()
   const item = admin.getByTestId('workflow-item').filter({ hasText: name })
-  await expect(item).toContainText('اعتماد مباشر — منى الرواحية · المهلة: 2 يوم عمل')
-  await admin.screenshot({ path: 'e2e/screenshots/82-workflows-ar.png', fullPage: true })
+  try {
+    await expect(item).toContainText('اعتماد مباشر — منى الرواحية · المهلة بأيام العمل: 2 · تعود إلى هذه المرحلة')
+    await admin.screenshot({ path: 'e2e/screenshots/82-workflows-ar.png', fullPage: true })
 
-  const author = await signIn(browser, 'author@example.com')
-  await author.goto('/workflows')
-  await expect(author.getByTestId('workflow-item').filter({ hasText: name })).toBeVisible()
-  await expect(author.getByTestId('workflow-new')).toHaveCount(0)
+    const author = await signIn(browser, 'author@example.com')
+    await author.goto('/workflows')
+    await expect(author.getByTestId('workflow-item').filter({ hasText: name })).toBeVisible()
+    await expect(author.getByTestId('workflow-new')).toHaveCount(0)
 
-  // Removed again, so the seeded default stays the only workflow other tests rely on.
-  await item.getByRole('button', { name: 'حذف' }).click()
-  await expect(admin.getByTestId('workflow-item').filter({ hasText: name })).toHaveCount(0)
+    // Deleting asks first.
+    admin.once('dialog', (dialog) => void dialog.accept())
+    await item.getByTestId('workflow-delete').click()
+    await expect(admin.getByTestId('workflow-item').filter({ hasText: name })).toHaveCount(0)
+  } finally {
+    // Removed whatever happened, so the seeded default stays the only workflow other tests rely on.
+    const left = await api<Array<{ id: number; name: string }>>(admin, 'GET', '/api/workflow-templates/')
+    for (const template of left.filter((w) => w.name === name)) await api(admin, 'DELETE', `/api/workflow-templates/${template.id}/`)
+  }
 })

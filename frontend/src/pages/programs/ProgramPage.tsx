@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router'
 
 import { http } from '../../api'
+import { useAuth } from '../../auth'
 import { ErrorMessage, Loading } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
@@ -11,6 +12,7 @@ import { ProgramWorkflow } from '../workflows/ProgramWorkflow'
 
 export function ProgramPage() {
   const { t } = useTranslation()
+  const { session } = useAuth()
   const { id } = useParams()
   const navigate = useNavigate()
   const program = useResource<Program>(`/api/programs/${id}/`)
@@ -110,7 +112,10 @@ export function ProgramPage() {
         </div>
       )}
 
-      <ProgramWorkflow programId={program.data.id} canChoose={permissions.edit && versions.some((v) => v.status === 'draft')} />
+      <ProgramWorkflow
+        programId={program.data.id}
+        canChoose={(permissions.edit || session?.organization?.role === 'admin') && versions.some((v) => v.status === 'draft')}
+      />
 
       <h2>{t('programs.collaborators')}</h2>
       <ul className="plain" data-testid="collaborators">

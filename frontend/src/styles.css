@@ -257,3 +257,11 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
 .bell-panel li { padding-block: 0.4rem; border-block-end: 1px solid var(--color-line); }
 .bell-panel li.unread { font-weight: 600; }
 .submit-reason { flex-basis: 100%; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

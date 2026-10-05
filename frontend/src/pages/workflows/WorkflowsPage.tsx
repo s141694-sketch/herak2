@@ -43,10 +43,24 @@ export function useAssignee() {
     stage.assignee_user ? stage.assignee_user.full_name || stage.assignee_user.email : t('workflow.anyRole', { role: t(`roles.${stage.assignee_role}`) })
 }
 
-function StagesEditor({ stages, members, onChange }: { stages: StageDraft[]; members: Member[]; onChange: (stages: StageDraft[]) => void }) {
+function StagesEditor({
+  stages,
+  members,
+  current,
+  onChange,
+}: {
+  stages: StageDraft[]
+  members: Member[]
+  /** The people the template names now, shown even if their role no longer lets them review. */
+  current: WorkflowStage[]
+  onChange: (stages: StageDraft[]) => void
+}) {
   const { t } = useTranslation()
   const set = (index: number, change: Partial<StageDraft>) => onChange(stages.map((stage, i) => (i === index ? { ...stage, ...change } : stage)))
   const deciders = members.filter((m) => ROLES.includes(m.role as StageRole))
+  const named = current
+    .map((stage) => stage.assignee_user)
+    .filter((user): user is NonNullable<typeof user> => user !== null && !deciders.some((m) => m.user.id === user.id))
   return (
     <ol className="stages" data-testid="stages-editor">
       {stages.map((stage, index) => (
@@ -83,7 +97,12 @@ function StagesEditor({ stages, members, onChange }: { stages: StageDraft[]; mem
               <option value="">{t('workflow.choosePerson')}</option>
               {deciders.map((m) => (
                 <option key={m.user.id} value={m.user.id}>
-                  {m.user.full_name || m.user.email} ({t(`roles.${m.role}`)})
+                  {t('workflow.personWithRole', { name: m.user.full_name || m.user.email, role: t(`roles.${m.role}`) })}
+                </option>
+              ))}
+              {named.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {t('workflow.personCannotReview', { name: user.full_name || user.email })}
                 </option>
               ))}
             </select>
@@ -120,7 +139,17 @@ function StagesEditor({ stages, members, onChange }: { stages: StageDraft[]; mem
   )
 }
 
-function TemplateForm({ template, members, onSaved }: { template: WorkflowTemplate | null; members: Member[]; onSaved: () => void }) {
+function TemplateForm({
+  template,
+  members,
+  onSaved,
+  onCancel,
+}: {
+  template: WorkflowTemplate | null
+  members: Member[]
+  onSaved: () => void
+  onCancel: () => void
+}) {
   const { t } = useTranslation()
   const action = useAction()
   const [name, setName] = useState(template?.name ?? '')
@@ -146,12 +175,17 @@ function TemplateForm({ template, members, onSaved }: { template: WorkflowTempla
         <span>{t('workflow.isDefault')}</span>
       </label>
       <h3>{t('workflow.stages')}</h3>
-      <StagesEditor stages={stages} members={members} onChange={setStages} />
+      <StagesEditor stages={stages} members={members} current={template?.stages ?? []} onChange={setStages} />
       <p className="muted">{t('workflow.snapshotNote')}</p>
       <ErrorMessage code={action.error} />
-      <button type="submit" className="primary-inline" disabled={action.busy} data-testid="workflow-save">
-        {t('common.save')}
-      </button>
+      <div className="row">
+        <button type="submit" className="primary-inline" disabled={action.busy} data-testid="workflow-save">
+          {t('common.save')}
+        </button>
+        <button type="button" className="secondary" onClick={onCancel}>
+          {t('common.cancel')}
+        </button>
+      </div>
     </form>
   )
 }
@@ -183,13 +217,17 @@ export function WorkflowsPage() {
         {templates.data?.map((template) => (
           <li key={template.id} className="panel" data-testid="workflow-item">
             <h2>
-              {template.name} {template.is_default && <span className="badge badge-approved">{t('workflow.default')}</span>}
+              <span dir="auto">{template.name}</span> {template.is_default && <span className="badge badge-approved">{t('workflow.default')}</span>}
             </h2>
             <ol>
               {template.stages.map((stage) => (
                 <li key={stage.order}>
-                  <strong>{stage.name}</strong> — {assignee(stage)} · {t('workflow.dueIn', { count: stage.due_work_days })} ·{' '}
-                  {stage.resubmit === 'restart' ? t('workflow.resubmitRestart') : t('workflow.resubmitSame')}
+                  {t('workflow.stageLine', {
+                    name: stage.name,
+                    who: assignee(stage),
+                    days: stage.due_work_days,
+                    resubmit: stage.resubmit === 'restart' ? t('workflow.resubmitRestart') : t('workflow.resubmitSame'),
+                  })}
                 </li>
               ))}
             </ol>
@@ -201,13 +239,17 @@ export function WorkflowsPage() {
                 <button
                   type="button"
                   className="link-button"
-                  onClick={() => void action.run(() => http.del(`/api/workflow-templates/${template.id}/`)).then(templates.reload)}
+                  data-testid="workflow-delete"
+                  onClick={() => {
+                    const question = template.is_default ? t('workflow.confirmDeleteDefault', { name: template.name }) : t('workflow.confirmDelete', { name: template.name })
+                    if (window.confirm(question)) void action.run(() => http.del(`/api/workflow-templates/${template.id}/`)).then(templates.reload)
+                  }}
                 >
                   {t('common.delete')}
                 </button>
               </div>
             )}
-            {editing === template.id && <TemplateForm template={template} members={members.data ?? []} onSaved={saved} />}
+            {editing === template.id && <TemplateForm template={template} members={members.data ?? []} onSaved={saved} onCancel={() => setEditing(null)} />}
           </li>
         ))}
       </ul>
@@ -216,7 +258,7 @@ export function WorkflowsPage() {
           {t('workflow.new')}
         </button>
       )}
-      {editing === 'new' && <TemplateForm template={null} members={members.data ?? []} onSaved={saved} />}
+      {editing === 'new' && <TemplateForm template={null} members={members.data ?? []} onSaved={saved} onCancel={() => setEditing(null)} />}
     </section>
   )
 }

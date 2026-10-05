@@ -133,7 +133,9 @@
     "workflow_in_use": "Programs follow this workflow; change their choice first.",
     "decision_invalid": "Choose approve or return.",
     "note_too_long": "The note is longer than allowed.",
-    "not_draft": "The workflow is chosen while the program has a draft."
+    "not_draft": "The workflow is chosen while the program has a draft.",
+    "workflow_fixed_by_return": "The program's draft answers a return, so it follows the stages of the review that returned it; its workflow cannot be changed.",
+    "work_days_invalid": "The organization's work days are not set correctly; ask an admin to set them."
   },
   "common": {
     "create": "Create",
@@ -552,7 +554,6 @@
     "addStage": "Add a stage",
     "snapshotNote": "Editing a workflow does not change a review in progress; each review follows the workflow as it was when submitted.",
     "anyRole": "Any {{role}}",
-    "dueIn": "Time allowed: {{count}} work day(s)",
     "inbox": "My tasks",
     "allOpen": "Every open task in the organization",
     "noTasks": "No tasks are waiting for you.",
@@ -589,7 +590,22 @@
     "programWorkflow": "Approval workflow",
     "noneForProgram": "There is no approval workflow; ask an admin to define one.",
     "choose": "Choose the approval workflow",
-    "useDefault": "The organization's default workflow"
+    "useDefault": "The organization's default workflow",
+    "stageLine": "{{name}} — {{who}} · work days allowed: {{days}} · {{resubmit}}",
+    "personWithRole": "{{name}} ({{role}})",
+    "personCannotReview": "{{name}} (their role no longer allows reviewing)",
+    "confirmDelete": "Delete the workflow “{{name}}”?",
+    "confirmDeleteDefault": "“{{name}}” is the default workflow; once it is deleted, programs that did not choose one cannot be submitted until another default is set. Delete it?",
+    "returnedWith": "Version {{number}} was returned with these decisions",
+    "stageState": {
+      "current": "current stage",
+      "done": "done",
+      "upcoming": "to come"
+    },
+    "openProgram": "Open the program and its new draft",
+    "confirmCancel": "Cancel this version for good? Cancelling cannot be undone.",
+    "cancelVersion": "Cancel the version",
+    "followsReturn": "The program's draft answers the return of version {{number}}, so its submission follows that review's stages."
   },
   "notifications": {
     "bell": "Notifications",
