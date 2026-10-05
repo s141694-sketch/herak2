@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.tenancy.middleware import entry_refusal
+
 from .models import Membership, Organization, User
 
 
@@ -71,5 +73,9 @@ def session_payload(request) -> dict:
         "organization": (
             {**OrganizationSummarySerializer(active.organization).data, "role": active.role} if active else None
         ),
-        "memberships": MembershipSerializer(memberships, many=True).data,
+        # Whether each organization asks this session to sign in through its provider first (D66).
+        "memberships": [
+            {**data, "sso_required": entry_refusal(request, membership) == "sso_required"}
+            for membership, data in zip(memberships, MembershipSerializer(memberships, many=True).data, strict=True)
+        ],
     }

@@ -36,6 +36,7 @@ env = environ.Env(
     APP_URL=(str, "http://localhost:5173"),
     FIELD_ENCRYPTION_KEYS=(list, []),
     SSO_ALLOW_HTTP_ISSUERS=(bool, False),
+    SSO_CALLBACK_URL=(str, ""),
     DEFAULT_FROM_EMAIL=(str, "Harak <no-reply@localhost>"),
 )
 environ.Env.read_env(BASE_DIR / ".env")
@@ -157,6 +158,8 @@ FIELD_ENCRYPTION_KEYS = env("FIELD_ENCRYPTION_KEYS")
 
 # Identity providers are reached over https; plain http only for a local Keycloak in development and tests.
 SSO_ALLOW_HTTP_ISSUERS = env("SSO_ALLOW_HTTP_ISSUERS")
+# Where providers send the browser back; by default the web client's address, which forwards /api to Django.
+SSO_CALLBACK_URL = env("SSO_CALLBACK_URL")
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

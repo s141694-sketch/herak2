@@ -17,6 +17,8 @@ EXEMPT_ROUTES: dict[str, str] = {
     "auth-login": "authenticates a user; memberships listed are the user's own",
     "auth-logout": "ends the caller's session",
     "auth-me": "returns the caller and the caller's own memberships",
+    "auth-sso-start": "before sign-in; the organization comes from the email's verified domain, nothing is returned",
+    "auth-sso-callback": "before sign-in; the organization comes from the provider of the flow this session began",
     "auth-switch-organization": "membership-checked switch; covered by test_auth_api",
     "internal-collab-document": "collab service only (service secret); organization taken from the version",
     "internal-collab-document-failure": "collab service only (service secret); organization taken from the version",

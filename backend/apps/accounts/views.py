@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
-from apps.tenancy.middleware import SESSION_KEY, memberships_of
+from apps.tenancy.middleware import SESSION_KEY, EntryRefused, entry_refusal, memberships_of
 from apps.tenancy.permissions import HasActiveOrganization
 
 from .models import Membership
@@ -68,7 +68,13 @@ class LoginView(APIView):
             raise InvalidCredentials("invalid email or password")
         login(request, user)
         memberships = list(memberships_of(user))
-        _select_membership(request, memberships[0] if len(memberships) == 1 else None)
+        refusals = [entry_refusal(request, m) for m in memberships]
+        open_to_session = [m for m, refusal in zip(memberships, refusals, strict=True) if refusal is None]
+        if memberships and not open_to_session:
+            # Every organization of this person asks for something a password does not give (D66).
+            logout(request)
+            raise EntryRefused("sign in through your organization", code=refusals[0])
+        _select_membership(request, open_to_session[0] if len(open_to_session) == 1 else None)
         return Response(session_payload(request))
 
 
@@ -97,6 +103,9 @@ class SwitchOrganizationView(APIView):
         membership = memberships_of(request.user).filter(organization_id=organization_id).first()
         if membership is None:
             raise exceptions.NotFound("no membership in that organization")
+        refusal = entry_refusal(request, membership)
+        if refusal:
+            raise EntryRefused("this session cannot enter that organization", code=refusal)
         _select_membership(request, membership)
         return Response(session_payload(request))
 

@@ -154,3 +154,33 @@ def test_connection(config: IdentityProviderConfig, *, actor) -> IdentityProvide
     record("sso.provider_tested", actor=actor, target=config)
     config.refresh_from_db()
     return config
+
+
+@transaction.atomic
+def set_policy(config: IdentityProviderConfig, *, actor, enabled: bool, enforced: bool = False, emergency_user=None):
+    """Who may and who must sign in through the provider. Members sign in through it once its connection test
+    passed; it becomes the only way in (enforcement) once a test sign-in passed too, and with an emergency
+    admin account that keeps its password (spec 7.2, D66)."""
+    from apps.accounts.models import Membership, Role
+
+    config = IdentityProviderConfig.objects.select_for_update().get(pk=config.pk)
+    if (enabled or enforced) and config.discovery_ok_at is None:
+        raise SsoError("test the connection first", code="provider_not_tested")
+    if enforced:
+        if not enabled:
+            raise SsoError("enforcement needs single sign-on enabled", code="provider_invalid")
+        if not config.tested:
+            raise SsoError("sign in once through the provider as a test first", code="provider_not_tested")
+        if emergency_user is None:
+            raise SsoError("name the emergency account first", code="emergency_account_required")
+    if emergency_user is not None and not Membership.objects.filter(user=emergency_user, role=Role.ADMIN).exists():
+        raise SsoError("the emergency account is one of the organization's admins", code="emergency_account_invalid")
+    config.enabled, config.enforced, config.emergency_user = enabled, enforced, emergency_user
+    config.save(update_fields=["enabled", "enforced", "emergency_user", "updated_at"])
+    record(
+        "sso.policy_set",
+        actor=actor,
+        target=config,
+        payload={"enabled": enabled, "enforced": enforced, "emergency_user": getattr(emergency_user, "pk", None)},
+    )
+    return config

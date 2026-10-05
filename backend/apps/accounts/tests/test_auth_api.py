@@ -39,7 +39,7 @@ def test_login_with_a_single_membership_selects_that_organization(world):
     assert body["user"] == {"id": world["single"].pk, "email": "single@example.com", "full_name": "سارة"}
     assert body["organization"] == {"id": world["a"].pk, "name": "مركز أ", "slug": "a", "role": "author"}
     assert body["memberships"] == [
-        {"organization": {"id": world["a"].pk, "name": "مركز أ", "slug": "a"}, "role": "author"},
+        {"organization": {"id": world["a"].pk, "name": "مركز أ", "slug": "a"}, "role": "author", "sso_required": False},
     ]
     assert "sessionid" in response.cookies
 
