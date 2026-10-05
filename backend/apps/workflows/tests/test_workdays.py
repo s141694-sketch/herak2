@@ -58,3 +58,14 @@ def test_work_days_are_subtracted_skipping_days_off(due, days, before):
 def test_an_organization_without_work_days_is_refused():
     with pytest.raises(ValueError):
         add_work_days(at(4), 1, [])
+
+
+@pytest.mark.parametrize("value", [[], [7], [-1], ["1"], [True], "0,1", None])
+def test_the_organization_refuses_work_days_that_cannot_be_counted(value):
+    from django.core.exceptions import ValidationError
+
+    from apps.accounts.models import validate_work_days
+
+    with pytest.raises(ValidationError):
+        validate_work_days(value)
+    validate_work_days([6, 0, 1, 2, 3])

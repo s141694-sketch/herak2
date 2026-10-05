@@ -75,8 +75,16 @@ def decision(version: ProgramVersion, instance: WorkflowInstance, task: StageTas
                 "write at least one comment on this version before returning it", "return_comment_required"
             )
         return
-    final = task.stage == len(instance.stages)
-    if final and open_comments(version).filter(category=Comment.Category.MUST_FIX).exists():
+    if task.stage < len(instance.stages):
+        return
+    # Resolving and reopening lock the comment's row: locking the program's must_fix comments here means a
+    # reopen at the same moment either lands before this check or waits until the decision is taken.
+    list(
+        Comment.objects.select_for_update()
+        .filter(program_id=version.program_id, category=Comment.Category.MUST_FIX)
+        .values_list("pk", flat=True)
+    )
+    if open_comments(version).filter(category=Comment.Category.MUST_FIX).exists():
         raise RuleRefused("comments that must be fixed are still open", "open_must_fix")
 
 

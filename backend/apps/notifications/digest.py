@@ -29,7 +29,8 @@ def send_all() -> None:
 def _send(preference: NotificationPreference) -> None:
     waiting = list(
         Notification.objects.select_for_update(skip_locked=True)
-        .filter(recipient=preference.user, emailed_at__isnull=True)
+        # What was already read in the platform needs no email.
+        .filter(recipient=preference.user, emailed_at__isnull=True, read_at__isnull=True)
         .order_by("created_at", "id")
     )
     if not waiting:

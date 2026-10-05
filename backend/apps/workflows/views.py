@@ -12,16 +12,22 @@ from apps.tenancy.permissions import AdminWritesMembersRead, HasActiveOrganizati
 
 from . import services
 from .models import ProgramWorkflow, StageTask, WorkflowInstance, WorkflowTemplate
-from .serializers import StageTaskSerializer, WorkflowInstanceSerializer, WorkflowTemplateSerializer
+from .serializers import (
+    StageDecisionSerializer,
+    StageTaskSerializer,
+    WorkflowInstanceSerializer,
+    WorkflowTemplateSerializer,
+)
 
 
 def _template_body(request) -> dict:
     data = request.data if isinstance(request.data, dict) else {}
-    return {
-        "name": data.get("name", ""),
-        "stages": data.get("stages"),
-        "is_default": bool(data.get("is_default", False)),
-    }
+    name, is_default = data.get("name", ""), data.get("is_default", False)
+    if not isinstance(name, str):
+        raise exceptions.ValidationError({"name": "a text"})
+    if not isinstance(is_default, bool):
+        raise exceptions.ValidationError({"is_default": "true or false"})
+    return {"name": name, "stages": data.get("stages"), "is_default": is_default}
 
 
 class WorkflowTemplateListView(generics.ListAPIView):
@@ -59,10 +65,14 @@ class ProgramWorkflowView(APIView):
 
     def _body(self, program):
         choice = ProgramWorkflow.objects.filter(program=program).first()
-        template = services.template_for(program)
+        draft = program.versions.filter(status=ProgramVersion.Status.DRAFT).first()
+        previous = services.returned_from(draft) if draft else None
+        # A draft answering a return goes back through the stages it was returned from (D54), whatever is chosen.
+        template = previous.template if previous else services.template_for(program)
         return {
             "chosen": choice.template_id if choice else None,
             "template": WorkflowTemplateSerializer(template).data if template else None,
+            "resubmission_of": previous.version.number if previous else None,
         }
 
     def get(self, request, pk):
@@ -72,9 +82,16 @@ class ProgramWorkflowView(APIView):
         program = get_object_or_404(Program.objects, pk=pk)
         if not (can_edit(program, request.user, request.membership.role) or request.membership.role == Role.ADMIN):
             raise exceptions.PermissionDenied("only the program's collaborators or an admin choose its workflow")
-        if not program.versions.filter(status=ProgramVersion.Status.DRAFT).exists():
+        draft = program.versions.filter(status=ProgramVersion.Status.DRAFT).first()
+        if draft is None:
             raise services.WorkflowError("the workflow is chosen while the program has a draft", code="not_draft")
+        if services.returned_from(draft) is not None:
+            raise services.WorkflowError(
+                "a resubmission follows the workflow it was returned from", code="workflow_fixed_by_return"
+            )
         chosen = request.data.get("template") if isinstance(request.data, dict) else None
+        if chosen is not None and (not isinstance(chosen, int) or isinstance(chosen, bool)):
+            raise exceptions.ValidationError({"template": "a template id or null"})
         template = get_object_or_404(WorkflowTemplate.objects, pk=chosen) if chosen is not None else None
         services.choose_template(program, template, actor=request.user)
         return Response(self._body(Program.objects.get(pk=pk)))
@@ -117,7 +134,17 @@ class VersionWorkflowView(APIView):
         version = get_object_or_404(ProgramVersion.objects, pk=pk)
         instance = WorkflowInstance.objects.filter(version=version).first()
         data = WorkflowInstanceSerializer(instance, context={"request": request}).data if instance else None
-        return Response({"submission": data})
+        # A draft answering a return: what was decided, so the authors see why while they fix it.
+        previous = services.returned_from(version) if version.status == ProgramVersion.Status.DRAFT else None
+        returned = (
+            {
+                "version": {"id": previous.version_id, "number": previous.version.number},
+                "decisions": StageDecisionSerializer(previous.decisions.select_related("user"), many=True).data,
+            }
+            if previous
+            else None
+        )
+        return Response({"submission": data, "returned": returned})
 
 
 def _tasks():

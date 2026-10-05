@@ -1,5 +1,6 @@
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
@@ -59,6 +60,13 @@ def default_work_days() -> list[int]:
     return [6, 0, 1, 2, 3]
 
 
+def validate_work_days(value) -> None:
+    """At least one work day, each a weekday number 0 (Monday) to 6: due times are counted in them (spec 6.3)."""
+    valid = isinstance(value, list) and value and all(type(d) is int and 0 <= d <= 6 for d in value)
+    if not valid:
+        raise ValidationError("work days are a non-empty list of weekday numbers 0 (Monday) to 6")
+
+
 class Organization(models.Model):
     """A tenant. Every tenant-scoped table points here through organization_id."""
 
@@ -70,7 +78,7 @@ class Organization(models.Model):
     slug = models.SlugField(max_length=80, unique=True)
     logo = models.FileField(upload_to="organizations/logos/", blank=True)
     brand_colors = models.JSONField(default=dict, blank=True)
-    work_days = models.JSONField(default=default_work_days)
+    work_days = models.JSONField(default=default_work_days, validators=[validate_work_days])
     pre_submit_critical_behavior = models.CharField(
         max_length=20, choices=PreSubmitBehavior.choices, default=PreSubmitBehavior.ALLOW_WITH_REASON
     )

@@ -97,7 +97,8 @@ class WorkflowInstance(OrganizationScopedModel):
     # [{order, name, assignee_user, assignee_role, due_work_days, resubmit}]
     stages = models.JSONField()
     # The submission this one follows after a return (D54).
-    previous = models.OneToOneField("self", on_delete=models.PROTECT, null=True, blank=True, related_name="next")
+    # Several submissions may answer the same return when one of them was withdrawn.
+    previous = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="next")
     start_stage = models.PositiveSmallIntegerField()
     # The pre-submit check (task 5.4): the critical findings the author submitted with, and why.
     pre_submit = models.JSONField(default=dict, blank=True)

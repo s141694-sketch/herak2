@@ -56,8 +56,10 @@ def dispatch(entry_id: int) -> None:
     entry = AuditLog.all_organizations.get(pk=entry_id)
     with organization_context(entry.organization_id):
         version = ProgramVersion.objects.select_related("program").get(pk=int(entry.target_id))
-        made = _handle(entry, version)
-    email.send_now(made)
+        _handle(entry, version)
+        # Every notification of this entry email is not done with: those just made, and any a failure left.
+        waiting = list(Notification.objects.filter(audit_entry=entry.pk, emailed_at__isnull=True))
+    email.send_now(waiting)
 
 
 def _handle(entry: AuditLog, version: ProgramVersion) -> list[Notification]:
@@ -73,14 +75,24 @@ def _handle(entry: AuditLog, version: ProgramVersion) -> list[Notification]:
         task = decision.task if decision else None
         return _notify(entry, version, E.VERSION_RETURNED, _authors(version), task=task, extra=params)
     if target == S.APPROVED:
-        if not AuditLog.objects.filter(event="program_version.export_requested", target_id=str(version.pk)).exists():
-            # Word and PDF are made in phase 7 (D60); the request is on record from now.
-            record("program_version.export_requested", target=version, payload={"formats": ["docx", "pdf"]})
+        _request_export(version)
         instance = WorkflowInstance.objects.filter(version=version).first()
         deciders = User.objects.filter(pk__in=instance.decisions.values("user")) if instance else User.objects.none()
         people = {u.pk: u for u in [*_authors(version), *deciders]}
         return _notify(entry, version, E.VERSION_APPROVED, list(people.values()))
     return []
+
+
+@transaction.atomic
+def _request_export(version: ProgramVersion) -> None:
+    """Word and PDF are made in phase 7 (D60); the request is on record from now, once per version: the
+    version's row lock keeps two handlings of the approval from both recording it."""
+    ProgramVersion.objects.select_for_update(no_key=True).get(pk=version.pk)
+    asked = AuditLog.objects.filter(
+        event="program_version.export_requested", target_type=version._meta.label_lower, target_id=str(version.pk)
+    )
+    if not asked.exists():
+        record("program_version.export_requested", target=version, payload={"formats": ["docx", "pdf"]})
 
 
 def _reminder(entry: AuditLog, version: ProgramVersion) -> list[Notification]:
@@ -127,9 +139,13 @@ def _notify(entry, version, event, people, *, task=None, extra=None) -> list[Not
         **(extra or {}),
     }
     made = []
+    # Only active members of this organization: someone removed or set to pending is told nothing.
+    active = set(Membership.objects.exclude(role=Role.PENDING).values_list("user_id", flat=True))
     for person in people:
         if entry.actor_id is not None and person.pk == entry.actor_id:
             continue  # nobody is told of what they did themselves
+        if person.pk not in active:
+            continue
         notification, created = Notification.objects.get_or_create(
             audit_entry=entry.pk, recipient=person, event=event, defaults={"version": version, "params": params}
         )

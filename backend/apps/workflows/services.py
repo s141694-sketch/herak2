@@ -5,6 +5,8 @@ request leads to and passes its conditions in as checks that run under the versi
 in one order everywhere: the version first, then the workflow's rows.
 """
 
+import unicodedata
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -46,12 +48,18 @@ class NotAllowed(WorkflowError):
 # --- Templates (task 5.2) ----------------------------------------------------------------------------------
 
 
+def _has_control(text: str) -> bool:
+    """Names go into email subjects and one-line labels: no line breaks, tabs or other control characters."""
+    return any(unicodedata.category(c) == "Cc" for c in text)
+
+
 def _clean_stages(stages) -> list[dict]:
     if not isinstance(stages, list) or not stages:
         raise WorkflowError("a workflow needs at least one stage", code="workflow_stages_required")
     if len(stages) > MAX_STAGES:
         raise WorkflowError(f"a workflow has at most {MAX_STAGES} stages", code="workflow_stages_too_many")
-    active = set(Membership.objects.exclude(role=Role.PENDING).values_list("user_id", flat=True))
+    # A stage's person must be able to review: hold a reviewing role, as a stage's role must be.
+    deciders = set(Membership.objects.filter(role__in=STAGE_ROLES).values_list("user_id", flat=True))
     cleaned = []
     for order, stage in enumerate(stages, start=1):
         invalid = WorkflowError(f"stage {order} is not valid", code="workflow_stage_invalid")
@@ -62,11 +70,11 @@ def _clean_stages(stages) -> list[dict]:
         stage_role = stage.get("assignee_role") or ""
         days = stage.get("due_work_days")
         resubmit = stage.get("resubmit") or Resubmit.SAME_STAGE
-        if not name or len(name) > 200:
+        if not name or len(name) > 200 or _has_control(name):
             raise invalid
         if (user is None) == (stage_role == ""):  # exactly one of a person or a role
             raise invalid
-        if user is not None and (not isinstance(user, int) or user not in active):
+        if user is not None and (not isinstance(user, int) or isinstance(user, bool) or user not in deciders):
             raise invalid
         if stage_role and stage_role not in STAGE_ROLES:
             raise invalid
@@ -91,7 +99,7 @@ def _clean_stages(stages) -> list[dict]:
 def save_template(template: WorkflowTemplate | None, *, actor, name: str, stages, is_default: bool = False):
     """Creates a template, or replaces an existing one's name and stages (running reviews keep their copy)."""
     name = (name or "").strip()
-    if not name or len(name) > 200:
+    if not name or len(name) > 200 or _has_control(name):
         raise WorkflowError("the workflow needs a name", code="workflow_name_invalid")
     cleaned = _clean_stages(stages)
     if is_default:
@@ -165,9 +173,15 @@ def _snapshot(template: WorkflowTemplate) -> list[dict]:
 # --- Submission and the way through the stages (task 5.3) --------------------------------------------------
 
 
-def _returned_from(version: ProgramVersion) -> WorkflowInstance | None:
-    """The submission this draft answers, when its source version was returned (D54)."""
+def returned_from(version: ProgramVersion) -> WorkflowInstance | None:
+    """The submission this draft answers, when its source version was returned (D54). A draft made by
+    withdrawing a resubmission still answers that return: the chain is followed through withdrawals."""
     source = version.source_version
+    while source is not None and source.status == S.WITHDRAWN:
+        withdrawn = WorkflowInstance.objects.filter(version=source).first()
+        if withdrawn is None or withdrawn.previous_id is None:
+            return None
+        return withdrawn.previous
     if source is None or source.status != S.RETURNED:
         return None
     return WorkflowInstance.objects.filter(version=source, outcome=WorkflowInstance.Outcome.RETURNED).first()
@@ -175,14 +189,17 @@ def _returned_from(version: ProgramVersion) -> WorkflowInstance | None:
 
 def _open_task(instance: WorkflowInstance, stage: int, now) -> StageTask:
     spec = instance.stages[stage - 1]
-    work_days = instance.organization.work_days
+    try:
+        due_at = add_work_days(now, spec["due_work_days"], instance.organization.work_days)
+    except ValueError as exc:
+        raise WorkflowError("the organization's work days are not set correctly", code="work_days_invalid") from exc
     return StageTask.objects.create(
         instance=instance,
         stage=stage,
         assignee_user_id=spec["assignee_user"],
         assignee_role=spec["assignee_role"],
         entered_at=now,
-        due_at=add_work_days(now, spec["due_work_days"], work_days),
+        due_at=due_at,
     )
 
 
@@ -200,7 +217,7 @@ def submit(version: ProgramVersion, *, actor, role: str, reason: str = "") -> Pr
     its latest content; what it keeps (the critical findings and the author's reason) goes with the submission."""
     if not can_edit(version.program, actor, role):
         raise NotAllowed("only the program's collaborators submit it")
-    previous = _returned_from(version)
+    previous = returned_from(version)
     if previous is not None:
         stages = previous.stages
         returned_at = previous.decisions.filter(decision=StageDecision.Decision.RETURN).last().stage
@@ -298,7 +315,8 @@ def decide(task: StageTask, *, actor, role: str, decision: str, note: str = "") 
     version, instance, task = _lock_task(task)
     if task.assignee_role and task.claimed_by_id is None:
         raise WorkflowError("take the task before deciding", code="task_not_claimed")
-    if task.responsible() != actor:
+    # The role is read now: someone whose role changed since taking the task no longer decides on it.
+    if task.responsible() != actor or role not in STAGE_ROLES or (task.assignee_role and role != task.assignee_role):
         raise WorkflowError("this task is someone else's", code="not_your_task")
     if decision not in StageDecision.Decision.values:
         raise WorkflowError("approve or return", code="decision_invalid")
@@ -345,13 +363,25 @@ def withdraw(version: ProgramVersion, *, actor, role: str) -> ProgramVersion:
     return lifecycle.transition(version, S.WITHDRAWN, actor=actor)
 
 
+class _NoLongerDraft(lifecycle.TransitionRefused):
+    pass
+
+
 def cancel(version: ProgramVersion, *, actor, role: str) -> ProgramVersion:
     """An admin stops a version for good before it is approved (D56)."""
     if role != Role.ADMIN:
         raise NotAllowed("only an admin cancels a version")
     if ProgramVersion.objects.filter(pk=version.pk, status=S.DRAFT).exists():
         # A draft has no submission; the live editor hands over its content before any lock (lifecycle).
-        return lifecycle.transition(version, S.CANCELLED, actor=actor)
+
+        def still_draft(locked: ProgramVersion) -> None:
+            if locked.status != S.DRAFT:
+                raise _NoLongerDraft("the version was submitted meanwhile")
+
+        try:
+            return lifecycle.transition(version, S.CANCELLED, actor=actor, check=still_draft)
+        except _NoLongerDraft:
+            pass  # submitted while the editor handed over: its submission is cancelled with it, below
     with transaction.atomic():
         version = ProgramVersion.objects.select_for_update(no_key=True).get(pk=version.pk)
         instance = WorkflowInstance.objects.select_for_update().filter(version=version, outcome="").first()

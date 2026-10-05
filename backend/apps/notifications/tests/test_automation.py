@@ -172,3 +172,75 @@ def test_a_dispatch_runs_once_per_entry(world, act):
         entry = AuditLog.objects.filter(event="program_version.transition", payload__to="in_stage").get()
     dispatch(entry.pk)
     assert len(notes(world)) == 2 and len(mail.outbox) == 2
+
+
+# --- Findings of the independent review of phase 5 -------------------------------------------------------
+
+
+def test_a_line_break_in_a_title_does_not_lose_the_email(world, act):
+    with organization_context(world["org"]):
+        type(world["version"].program).objects.filter(pk=world["version"].program_id).update(title="سطر\nثان")
+    submit(world, act)
+    assert len(mail.outbox) == 2 and "\n" not in mail.outbox[0].subject
+
+
+def test_notifications_kept_out_of_email_do_not_reach_a_later_digest(world, act):
+    with organization_context(world["org"]):
+        for user in (world["reviewer"], world["reviewer2"]):
+            NotificationPreference.objects.create(user=user, email=EmailMode.OFF)
+    submit(world, act)
+    with organization_context(world["org"]):
+        NotificationPreference.objects.filter(user=world["reviewer"]).update(email=EmailMode.DAILY)
+    digest.send_all()
+    assert mail.outbox == []  # what came while email was off stays in the platform
+
+
+def test_the_digest_leaves_out_what_was_already_read(world, act):
+    from django.utils import timezone
+
+    with organization_context(world["org"]):
+        NotificationPreference.objects.create(user=world["reviewer"], email=EmailMode.DAILY)
+    submit(world, act)
+    with organization_context(world["org"]):
+        Notification.objects.filter(recipient=world["reviewer"]).update(read_at=timezone.now())
+    digest.send_all()
+    assert [m.to[0] for m in mail.outbox] == ["reviewer2@example.com"]
+
+
+def test_members_who_left_are_not_told(world, act):
+    from apps.accounts.models import Membership
+
+    with organization_context(world["org"]):
+        Membership.objects.filter(user=world["reviewer2"]).update(role=Role.PENDING)
+    submit(world, act)
+    assert notes(world) == [("reviewer@example.com", "task_assigned")]
+
+
+def test_a_dispatch_run_again_sends_the_emails_a_failure_left(world, act, monkeypatch):
+    from apps.notifications import email
+    from apps.notifications.automation import dispatch
+
+    def broken(*args, **kwargs):
+        raise OSError("smtp down")
+
+    monkeypatch.setattr(email, "send_mail", broken)
+    submit(world, act)
+    assert mail.outbox == [] and len(notes(world)) == 2
+    monkeypatch.undo()
+    with organization_context(world["org"]):
+        entry = AuditLog.objects.filter(event="program_version.transition", payload__to="in_stage").get()
+    dispatch(entry.pk)
+    assert len(mail.outbox) == 2
+
+
+def test_the_export_is_asked_for_once_however_often_approval_is_handled(world, act):
+    from apps.notifications.automation import dispatch
+
+    submit(world, act)
+    decide(world, act, world["reviewer"], "approve")
+    decide(world, act, world["approver"], "approve")
+    with organization_context(world["org"]):
+        approved = AuditLog.objects.filter(event="program_version.transition", payload__to="approved").get()
+    dispatch(approved.pk)
+    with organization_context(world["org"]):
+        assert AuditLog.objects.filter(event="program_version.export_requested").count() == 1

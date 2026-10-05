@@ -89,7 +89,8 @@ def test_a_version_goes_through_review_over_the_api(world):
 
 def test_a_version_never_submitted_has_no_workflow(world):
     assert login("author@example.com").get(f"/api/program-versions/{world['version'].pk}/workflow/").json() == {
-        "submission": None
+        "submission": None,
+        "returned": None,
     }
 
 
@@ -119,3 +120,52 @@ def test_an_admin_cancels_and_follows_every_open_task(world):
     assert author.post(f"/api/program-versions/{version_id}/cancel/").status_code == 403
     assert admin.post(f"/api/program-versions/{version_id}/cancel/").json()["status"] == "cancelled"
     assert admin.get("/api/tasks/?scope=all").json() == []
+
+
+def test_a_draft_answering_a_return_shows_why_and_keeps_its_workflow(world):
+    from apps.comments import services as comments
+    from apps.programs import services as programs
+    from apps.workflows.models import StageTask
+
+    admin, author, reviewer = login("admin@example.com"), login("author@example.com"), login("reviewer@example.com")
+    template = admin.post(
+        "/api/workflow-templates/", {"name": "المسار", "stages": STAGES, "is_default": True}, format="json"
+    ).json()
+    other = admin.post("/api/workflow-templates/", {"name": "آخر", "stages": STAGES[:1]}, format="json").json()
+    version = world["version"]
+    with organization_context(world["org"]):
+        node = programs.add_node(version, title="الوحدة", actor=world[Role.AUTHOR])
+    author.post(f"/api/program-versions/{version.pk}/submit/", {"reason": "سبب"}, format="json")
+    with organization_context(world["org"]):
+        task = StageTask.objects.get(instance__version=version)
+        comments.create_comment(
+            program=version.program,
+            version=version,
+            author=world[Role.REVIEWER],
+            body="أكمل",
+            category="must_fix",
+            node_key=node.node_key,
+        )
+    reviewer.post(f"/api/tasks/{task.pk}/claim/")
+    reviewer.post(f"/api/tasks/{task.pk}/decide/", {"decision": "return", "note": "أكمل التقويم"}, format="json")
+    with organization_context(world["org"]):
+        draft = version.program.versions.get(status="draft")
+
+    body = author.get(f"/api/program-versions/{draft.pk}/workflow/").json()
+    assert body["submission"] is None
+    assert body["returned"]["version"]["number"] == 1
+    assert [(d["decision"], d["note"]) for d in body["returned"]["decisions"]] == [("return", "أكمل التقويم")]
+
+    program_id = version.program_id
+    chosen = author.get(f"/api/programs/{program_id}/workflow/").json()
+    assert chosen["resubmission_of"] == 1 and chosen["template"]["id"] == template["id"]
+    refused = author.put(f"/api/programs/{program_id}/workflow/", {"template": other["id"]}, format="json")
+    assert (refused.status_code, refused.json()["error"]["code"]) == (409, "workflow_fixed_by_return")
+
+
+def test_an_admin_who_does_not_edit_the_program_chooses_its_workflow(world):
+    admin = login("admin@example.com")
+    template = admin.post("/api/workflow-templates/", {"name": "أ", "stages": STAGES}, format="json").json()
+    program_id = world["version"].program_id
+    chosen = admin.put(f"/api/programs/{program_id}/workflow/", {"template": template["id"]}, format="json").json()
+    assert chosen["chosen"] == template["id"] and chosen["resubmission_of"] is None

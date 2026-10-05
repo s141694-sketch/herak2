@@ -10,9 +10,13 @@ from django.utils import timezone
 
 
 def _check(work_days) -> set[int]:
-    days = set(work_days)
-    if not days:
-        raise ValueError("an organization needs at least one work day")
+    try:
+        days = set(work_days)
+    except TypeError as exc:
+        raise ValueError("work days are a list of weekday numbers") from exc
+    if not days or not days <= set(range(7)) or any(isinstance(d, bool) or not isinstance(d, int) for d in days):
+        # Anything else would loop for ever looking for a work day.
+        raise ValueError("an organization needs at least one work day, as weekday numbers 0 (Monday) to 6")
     return days
 
 

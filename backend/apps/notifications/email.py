@@ -25,10 +25,16 @@ def mode_of(notification: Notification) -> str:
 
 def send_now(notifications: list[Notification]) -> None:
     """Emails the notifications whose recipient wants them at once; the others wait for the digest or stay in
-    the platform. A failed email is logged; the notification stays in the platform."""
+    the platform. ``emailed_at`` marks a notification email is done with. A failed email is logged and left
+    unmarked, so handling its audit entry again sends it."""
     for notification in notifications:
         with organization_context(notification.organization_id):
-            if mode_of(notification) != EmailMode.IMMEDIATE:
+            mode = mode_of(notification)
+            if mode == EmailMode.OFF:
+                # Kept in the platform only: marked as handled, so a later switch to the digest does not send it.
+                Notification.objects.filter(pk=notification.pk).update(emailed_at=timezone.now())
+                continue
+            if mode != EmailMode.IMMEDIATE:
                 continue
             try:
                 send_mail(

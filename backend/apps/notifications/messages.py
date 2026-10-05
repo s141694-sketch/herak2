@@ -84,7 +84,8 @@ def _fields(notification: Notification) -> dict:
 
 def subject(notification: Notification) -> str:
     fields = _fields(notification)
-    return " | ".join(TEXTS[notification.event][lang][0].format(**fields) for lang in ("ar", "en"))
+    text = " | ".join(TEXTS[notification.event][lang][0].format(**fields) for lang in ("ar", "en"))
+    return " ".join(text.split())  # a header is one line: a title with a line break must not lose the email
 
 
 def lines(notification: Notification, lang: str) -> str:
