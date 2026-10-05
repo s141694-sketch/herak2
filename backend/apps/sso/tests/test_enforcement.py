@@ -43,6 +43,7 @@ def mark_tested(config):
 
 
 def enforce(world):
+    with_second_factor(world["admin"])
     with organization_context(world["org"]):
         return services.set_policy(
             mark_tested(world["config"]),
@@ -81,6 +82,7 @@ def test_enforcement_needs_a_test_sign_in_and_an_emergency_admin(world):
             )
         assert untested.value.get_codes() == "provider_not_tested"
         config = mark_tested(config)
+        with_second_factor(world["admin"])
         with pytest.raises(Conflict) as nobody:
             services.set_policy(config, actor=world["admin"], enabled=True, enforced=True)
         assert nobody.value.get_codes() == "emergency_account_required"
@@ -141,6 +143,7 @@ def test_a_single_sign_on_session_enters_the_enforcing_organization(world, provi
 def test_the_policy_is_set_over_the_api_by_an_admin(world):
     mark_tested(world["config"])
     client, _ = password_login("admin@vtc.test")
+    with_second_factor(world["admin"])  # after signing in: this session's second factor was not checked
     url = f"/api/sso/providers/{world['config'].pk}/policy/"
     assert client.post(url, {"enabled": "yes"}, format="json").status_code == 400
     noura, _ = password_login("noura@vtc.test")
@@ -152,3 +155,17 @@ def test_the_policy_is_set_over_the_api_by_an_admin(world):
     assert response.json()["enforced"] is True and response.json()["emergency_user"]["id"] == world["admin"].pk
     # From now on the admin's own password session needs its second factor to enter (D66, task 6.7).
     assert client.get("/api/organizations/current/").json()["error"]["code"] == "no_active_organization"
+
+
+def with_second_factor(user):
+    """Gives a person a confirmed second factor, as the emergency account needs (spec 7.2)."""
+    import pyotp
+    from django.utils import timezone
+
+    from apps.accounts.models import TOTPDevice
+    from apps.core import secrets
+
+    TOTPDevice.objects.update_or_create(
+        user=user, defaults={"secret_encrypted": secrets.encrypt(pyotp.random_base32()), "confirmed_at": timezone.now()}
+    )
+    return user

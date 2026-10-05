@@ -8,6 +8,10 @@ from apps.core.errors import Conflict
 from .context import activate, deactivate
 
 SESSION_KEY = "organization_id"
+# The organizations this session signed in to through their provider (single sign-on, D66).
+SESSION_SSO = "sso_organizations"
+# Set once this session's second factor was checked (D67).
+SESSION_MFA = "mfa_verified"
 
 # Conditions on entering an organization's context with this session, registered by the apps that set them
 # (single sign-on enforcement, D66). Each returns None to let the session in, or the code of the refusal.

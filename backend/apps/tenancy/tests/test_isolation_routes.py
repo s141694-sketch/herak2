@@ -23,6 +23,7 @@ GLOBAL_MODELS = {
     "evals.GoldenItem": "part of a golden set",
     "evals.AgentThreshold": "the owner's release thresholds apply to every organization (spec 5.5)",
     "evals.AgentEvaluation": "an agent version is released for all organizations or none",
+    "accounts.TOTPDevice": "a person's second factor serves every organization they belong to (D70)",
 }
 PROJECT_APP_PREFIX = "apps."
 

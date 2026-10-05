@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.tenancy.middleware import entry_refusal
 
-from .models import Membership, Organization, User
+from .models import Membership, Organization, TOTPDevice, User
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -69,13 +69,20 @@ def session_payload(request) -> dict:
     )
     active = getattr(request, "membership", None)
     return {
-        "user": UserSerializer(request.user).data,
+        "user": {
+            **UserSerializer(request.user).data,
+            "mfa_enabled": TOTPDevice.objects.filter(user=request.user, confirmed_at__isnull=False).exists(),
+        },
         "organization": (
             {**OrganizationSummarySerializer(active.organization).data, "role": active.role} if active else None
         ),
-        # Whether each organization asks this session to sign in through its provider first (D66).
+        # Whether each organization asks this session for its provider (D66) or a second factor (D67) first.
         "memberships": [
-            {**data, "sso_required": entry_refusal(request, membership) == "sso_required"}
+            {
+                **data,
+                "sso_required": (refusal := entry_refusal(request, membership)) == "sso_required",
+                "mfa_required": refusal == "mfa_required",
+            }
             for membership, data in zip(memberships, MembershipSerializer(memberships, many=True).data, strict=True)
         ],
     }

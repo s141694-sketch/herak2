@@ -36,10 +36,20 @@ def test_login_with_a_single_membership_selects_that_organization(world):
     response = login(client, "single@example.com")
     assert response.status_code == 200
     body = response.json()
-    assert body["user"] == {"id": world["single"].pk, "email": "single@example.com", "full_name": "سارة"}
+    assert body["user"] == {
+        "id": world["single"].pk,
+        "email": "single@example.com",
+        "full_name": "سارة",
+        "mfa_enabled": False,
+    }
     assert body["organization"] == {"id": world["a"].pk, "name": "مركز أ", "slug": "a", "role": "author"}
     assert body["memberships"] == [
-        {"organization": {"id": world["a"].pk, "name": "مركز أ", "slug": "a"}, "role": "author", "sso_required": False},
+        {
+            "organization": {"id": world["a"].pk, "name": "مركز أ", "slug": "a"},
+            "role": "author",
+            "sso_required": False,
+            "mfa_required": False,
+        },
     ]
     assert "sessionid" in response.cookies
 

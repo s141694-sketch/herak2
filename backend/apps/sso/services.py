@@ -161,6 +161,7 @@ def set_policy(config: IdentityProviderConfig, *, actor, enabled: bool, enforced
     """Who may and who must sign in through the provider. Members sign in through it once its connection test
     passed; it becomes the only way in (enforcement) once a test sign-in passed too, and with an emergency
     admin account that keeps its password (spec 7.2, D66)."""
+    from apps.accounts.mfa import confirmed_device
     from apps.accounts.models import Membership, Role
 
     config = IdentityProviderConfig.objects.select_for_update().get(pk=config.pk)
@@ -175,6 +176,9 @@ def set_policy(config: IdentityProviderConfig, *, actor, enabled: bool, enforced
             raise SsoError("name the emergency account first", code="emergency_account_required")
     if emergency_user is not None and not Membership.objects.filter(user=emergency_user, role=Role.ADMIN).exists():
         raise SsoError("the emergency account is one of the organization's admins", code="emergency_account_invalid")
+    if enforced and confirmed_device(emergency_user) is None:
+        # Spec 7.2: the one account that keeps its password has a second factor, always.
+        raise SsoError("the emergency account must use two-factor authentication", code="emergency_account_needs_mfa")
     config.enabled, config.enforced, config.emergency_user = enabled, enforced, emergency_user
     config.save(update_fields=["enabled", "enforced", "emergency_user", "updated_at"])
     record(

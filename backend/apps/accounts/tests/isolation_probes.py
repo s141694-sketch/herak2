@@ -10,3 +10,4 @@ def _member(org) -> Membership:
 register(Probe(route="organization-current", kind="current"))
 register(Probe(route="member-list", kind="list", make=_member))
 register(Probe(route="member-detail", kind="detail", make=_member))
+register(Probe(route="member-reset-mfa", kind="action", make=_member))

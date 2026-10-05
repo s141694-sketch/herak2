@@ -31,15 +31,13 @@ from apps.accounts.models import Membership, Organization, Role, User
 from apps.audit.services import record
 from apps.core.errors import Conflict
 from apps.tenancy.context import organization_context
-from apps.tenancy.middleware import SESSION_KEY
+from apps.tenancy.middleware import SESSION_KEY, SESSION_SSO
 
 from . import services
 from .models import ExternalIdentity, IdentityProviderConfig, VerifiedDomain
 
 log = structlog.get_logger("harak2.sso")
 SESSION_FLOW = "sso_flow"
-# The organizations this session signed in to through their provider: enforcement lets these in (D66).
-SESSION_SSO = "sso_organizations"
 FLOW_SECONDS = 10 * 60
 LEEWAY_SECONDS = 60
 

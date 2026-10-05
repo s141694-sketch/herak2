@@ -86,6 +86,8 @@ class Organization(models.Model):
     # Monthly AI quota; null means no quota configured yet (open issue 13 in the spec).
     ai_monthly_quota = models.PositiveIntegerField(null=True, blank=True)
     sso_session_hours = models.PositiveSmallIntegerField(default=8)
+    # Admins and approvers must use a second factor with a password (spec 7.1).
+    mfa_required_for_managers = models.BooleanField(default=False)
     reminder_before_due_work_days = models.PositiveSmallIntegerField(default=1)
     escalation_delay_work_days = models.PositiveSmallIntegerField(default=2)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -121,3 +123,18 @@ class Membership(OrganizationScopedModel):
 
     def __str__(self) -> str:
         return f"{self.user} @ {self.organization} ({self.role})"
+
+
+class TOTPDevice(models.Model):
+    """A person's second factor (spec 7.1, D67): a TOTP secret, stored encrypted. It belongs to the person, not to
+    one organization: the same code serves every organization they work in (a global table, D70)."""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="totp_device")
+    secret_encrypted = models.TextField()
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    # The last time step a code was accepted for: a code is never accepted twice.
+    last_step = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"TOTP of {self.user}"

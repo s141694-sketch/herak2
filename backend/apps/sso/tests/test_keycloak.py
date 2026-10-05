@@ -99,6 +99,7 @@ def test_with_enforcement_the_password_no_longer_opens_the_organization(world):
         IdentityProviderConfig.objects.filter(pk=world["config"].pk).update(
             test_login_ok_at=world["config"].config_changed_at
         )
+        with_second_factor(world["admin"])
         services.set_policy(
             IdentityProviderConfig.objects.get(),
             actor=world["admin"],
@@ -112,3 +113,17 @@ def test_with_enforcement_the_password_no_longer_opens_the_organization(world):
     assert refusal(sign_in(client, "hamed@vtc.test", "hamed")) is None
     me = client.get("/api/auth/me/").json()
     assert (me["user"]["email"], me["organization"]["role"]) == ("hamed@vtc.test", Role.AUTHOR)
+
+
+def with_second_factor(user):
+    """Gives a person a confirmed second factor, as the emergency account needs (spec 7.2)."""
+    import pyotp
+    from django.utils import timezone
+
+    from apps.accounts.models import TOTPDevice
+    from apps.core import secrets
+
+    TOTPDevice.objects.update_or_create(
+        user=user, defaults={"secret_encrypted": secrets.encrypt(pyotp.random_base32()), "confirmed_at": timezone.now()}
+    )
+    return user

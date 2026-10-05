@@ -1,15 +1,12 @@
 """Enforcing single sign-on (D66): a session enters an enforcing organization only if it signed in through that
 organization's provider, or it is the emergency account's password session with its second factor checked."""
 
-from .models import IdentityProviderConfig
+from apps.tenancy.middleware import SESSION_MFA, SESSION_SSO
 
-# Set in the session once the second factor was checked (task 6.7).
-SESSION_MFA = "mfa_verified"
+from .models import IdentityProviderConfig
 
 
 def sso_entry_check(request, membership) -> str | None:
-    from .login import SESSION_SSO
-
     config = (
         IdentityProviderConfig.all_organizations.filter(organization_id=membership.organization_id, enforced=True)
         .only("emergency_user_id")
