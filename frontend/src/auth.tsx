@@ -1,11 +1,15 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-import { api, ApiError, type SessionPayload } from './api'
+import { api, ApiError, type MfaPending, type SessionPayload } from './api'
 
 interface AuthState {
   /** undefined while the first /me call is in flight, null when signed out. */
   session: SessionPayload | null | undefined
-  login: (email: string, password: string) => Promise<SessionPayload>
+  /** Signs in with a password; 'mfa' when the second factor is still to be given (verifyMfa). */
+  login: (email: string, password: string) => Promise<SessionPayload | 'mfa'>
+  verifyMfa: (code: string) => Promise<SessionPayload>
+  /** Takes the session as the server now has it (after setting up a second factor, for instance). */
+  setSession: (session: SessionPayload) => void
   logout: () => Promise<void>
   switchOrganization: (organizationId: number) => Promise<void>
 }
@@ -24,6 +28,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const payload = await api.login(email, password)
+    if ((payload as MfaPending).mfa_required === true) return 'mfa' as const
+    setSession(payload as SessionPayload)
+    return payload as SessionPayload
+  }, [])
+
+  const verifyMfa = useCallback(async (code: string) => {
+    const payload = await api.verifyMfa(code)
     setSession(payload)
     return payload
   }, [])
@@ -37,7 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(await api.switchOrganization(organizationId))
   }, [])
 
-  const value = useMemo(() => ({ session, login, logout, switchOrganization }), [session, login, logout, switchOrganization])
+  const value = useMemo(
+    () => ({ session, login, verifyMfa, setSession, logout, switchOrganization }),
+    [session, login, verifyMfa, logout, switchOrganization],
+  )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

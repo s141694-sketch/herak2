@@ -32,9 +32,9 @@ def test_seed_is_idempotent(monkeypatch):
     monkeypatch.setenv("HARAK_ALLOW_SEED", "1")
     call_command("seed_e2e")
     call_command("seed_e2e")
-    assert Organization.objects.count() == 2
-    assert User.objects.count() == 5
-    assert Membership.all_organizations.count() == 6
+    assert Organization.objects.count() == 3
+    assert User.objects.count() == 7
+    assert Membership.all_organizations.count() == 8
     assert WorkflowTemplate.all_organizations.filter(is_default=True).count() == 1
     roles = set(Membership.all_organizations.filter(user__email="multi@example.com").values_list("role", flat=True))
     assert roles == {"admin", "reviewer"}

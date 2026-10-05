@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 
 import { AuthProvider, useAuth } from './auth'
 import { AppShell } from './components/AppShell'
+import { AccountSecurityPage } from './pages/AccountSecurityPage'
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage'
 import { FrameworkListPage } from './pages/competencies/FrameworkListPage'
 import { FrameworkPage } from './pages/competencies/FrameworkPage'
@@ -10,6 +11,7 @@ import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { DiffPage } from './pages/programs/DiffPage'
 import { ProgramListPage } from './pages/programs/ProgramListPage'
+import { SecuritySettingsPage } from './pages/SecuritySettingsPage'
 import { ProgramPage } from './pages/programs/ProgramPage'
 import { VersionPage } from './pages/programs/VersionPage'
 import { TemplateListPage } from './pages/templates/TemplateListPage'
@@ -36,6 +38,7 @@ function OrganizationRoutes() {
       <Route path="/templates/:id" element={<TemplatePage />} />
       <Route path="/tasks" element={<TasksPage />} />
       <Route path="/workflows" element={<WorkflowsPage />} />
+      <Route path="/settings/security" element={<SecuritySettingsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
@@ -49,8 +52,17 @@ function SignedIn() {
   const active = organization && organization.role !== 'pending'
   return (
     <AppShell>
-      {/* Keyed by organization so every page reloads its data after a switch. */}
-      {active ? <OrganizationRoutes key={organization.id} /> : organization ? <HomePage /> : <ChooseOrganizationPage />}
+      <Routes>
+        {/* One's own second factor, also before any organization is open (one may be required to enter). */}
+        <Route path="/account/security" element={<AccountSecurityPage />} />
+        <Route
+          path="*"
+          element={
+            /* Keyed by organization so every page reloads its data after a switch. */
+            active ? <OrganizationRoutes key={organization.id} /> : organization ? <HomePage /> : <ChooseOrganizationPage />
+          }
+        />
+      </Routes>
     </AppShell>
   )
 }

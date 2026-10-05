@@ -7,20 +7,28 @@ import os
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
-from apps.accounts.models import Membership, Organization, Role, User
+from apps.accounts.models import Membership, Organization, Role, TOTPDevice, User
+from apps.sso.models import ExternalIdentity, IdentityProviderConfig, VerifiedDomain
 from apps.tenancy.context import organization_context
 from apps.workflows.models import WorkflowTemplate
 from apps.workflows.services import save_template
 
-ORGANIZATIONS = [("vtc", "مركز التدريب المهني"), ("safety", "أكاديمية السلامة")]
+ORGANIZATIONS = [("vtc", "مركز التدريب المهني"), ("safety", "أكاديمية السلامة"), ("sso", "معهد حرفة")]
 USERS = [
     ("author@example.com", "سارة الحارثية", [("vtc", Role.AUTHOR)]),
     ("multi@example.com", "مازن القنوبي", [("vtc", Role.ADMIN), ("safety", Role.REVIEWER)]),
     ("pending@example.com", "", [("vtc", Role.PENDING)]),
     ("reviewer@example.com", "خالد البلوشي", [("vtc", Role.REVIEWER)]),
     ("approver@example.com", "منى الرواحية", [("vtc", Role.APPROVER)]),
+    # Single sign-on (phase 6): the institute's admin, and a member of its domain who also had a password.
+    ("sso-admin@example.com", "سالم المعمري", [("sso", Role.ADMIN)]),
+    ("hamed@vtc.test", "حامد الكندي", [("sso", Role.AUTHOR)]),
 ]
+# The institute's email domain, matching the Keycloak test realm vtc (infra/keycloak). Its DNS TXT verification is
+# tested in the backend with a fake resolver; here it is seeded as verified.
+SSO_DOMAIN = "vtc.test"
 # The training center's default approval workflow: a reviewer, then an approver (spec 6.1).
 WORKFLOW = [
     {"name": "المراجعة الفنية", "assignee_role": Role.REVIEWER, "due_work_days": 2},
@@ -48,8 +56,25 @@ class Command(BaseCommand):
                 for slug, role in memberships:
                     with organization_context(orgs[slug]):
                         Membership.objects.update_or_create(user=user, defaults={"role": role})
+            _reset_single_sign_on(orgs["sso"])
             with organization_context(orgs["vtc"]):
                 if not WorkflowTemplate.objects.exists():
                     admin = User.objects.get(email="multi@example.com")
                     save_template(None, actor=admin, name="مسار الاعتماد", is_default=True, stages=WORKFLOW)
         self.stdout.write(self.style.SUCCESS("seeded e2e data"))
+
+
+def _reset_single_sign_on(organization) -> None:
+    """The institute starts each run with nothing set up: no provider, no second factor for its admin, and none of
+    the members earlier sign-ins brought (people are kept: the audit log refers to them)."""
+    keep = {"sso-admin@example.com", "hamed@vtc.test"}
+    with organization_context(organization):
+        IdentityProviderConfig.objects.all().delete()
+        ExternalIdentity.objects.all().delete()
+        Membership.objects.exclude(user__email__in=keep).delete()
+        Membership.objects.filter(user__email="hamed@vtc.test").update(role=Role.AUTHOR)
+        admin = User.objects.get(email="sso-admin@example.com")
+        TOTPDevice.objects.filter(user=admin).delete()
+        VerifiedDomain.objects.get_or_create(
+            domain=SSO_DOMAIN, defaults={"token": "seeded", "verified_at": timezone.now(), "created_by": admin}
+        )

@@ -6,6 +6,8 @@ export interface SessionUser {
   id: number
   email: string
   full_name: string
+  /** Whether this person uses a second factor (D67). */
+  mfa_enabled: boolean
 }
 
 export interface OrganizationSummary {
@@ -17,7 +19,13 @@ export interface OrganizationSummary {
 export interface SessionPayload {
   user: SessionUser
   organization: (OrganizationSummary & { role: Role }) | null
-  memberships: Array<{ organization: OrganizationSummary; role: Role }>
+  /** sso_required / mfa_required: the organization asks this session for its provider or a second factor first. */
+  memberships: Array<{ organization: OrganizationSummary; role: Role; sso_required: boolean; mfa_required: boolean }>
+}
+
+/** A password that was right, from someone whose second factor is still to be checked. */
+export interface MfaPending {
+  mfa_required: true
 }
 
 /** A failed call. `code` is a stable key the UI translates under `errors.*`. */
@@ -108,7 +116,10 @@ export const http = {
 export const api = {
   me: () => request<SessionPayload>('/api/auth/me/'),
   login: (email: string, password: string) =>
-    request<SessionPayload>('/api/auth/login/', { method: 'POST', body: { email, password } }),
+    request<SessionPayload | MfaPending>('/api/auth/login/', { method: 'POST', body: { email, password } }),
+  verifyMfa: (code: string) => request<SessionPayload>('/api/auth/mfa/verify/', { method: 'POST', body: { code } }),
+  /** Where the browser goes to sign in through the organization of this email (spec 7.2). */
+  startSso: (email: string) => request<{ redirect: string }>('/api/auth/sso/start/', { method: 'POST', body: { email } }),
   logout: () => request<void>('/api/auth/logout/', { method: 'POST' }),
   switchOrganization: (organizationId: number) =>
     request<SessionPayload>('/api/auth/switch-organization/', { method: 'POST', body: { organization_id: organizationId } }),

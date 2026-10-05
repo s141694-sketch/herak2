@@ -35,6 +35,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <NavLink to="/tasks" data-testid="nav-tasks">
               {t('nav.tasks')}
             </NavLink>
+            {session.organization.role === 'admin' && (
+              <NavLink to="/settings/security" data-testid="nav-security">
+                {t('nav.security')}
+              </NavLink>
+            )}
           </nav>
         )}
         {session.memberships.length > 1 && (
@@ -56,7 +61,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
         <span className="spacer" />
         {session.organization && session.organization.role !== 'pending' && <NotificationBell key={session.organization.id} />}
-        <span data-testid="user-name">{session.user.full_name || session.user.email}</span>
+        <NavLink to="/account/security" data-testid="user-name" title={t('nav.accountSecurity')}>
+          {session.user.full_name || session.user.email}
+        </NavLink>
         <LanguageToggle />
         <button
           type="button"

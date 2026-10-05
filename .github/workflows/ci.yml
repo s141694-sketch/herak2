@@ -127,8 +127,21 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
+      - name: Keycloak for the single sign-on journey (D62)
+        run: |
+          docker run -d --name keycloak -p 8180:8180 \
+            -v "$PWD/infra/keycloak/realms:/opt/keycloak/data/import:ro" \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=harak-sso-test-admin \
+            quay.io/keycloak/keycloak:26.8.0 start-dev --import-realm --http-port 8180 --hostname http://localhost:8180
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8180/realms/vtc/.well-known/openid-configuration > /dev/null && break
+            sleep 3
+          done
+          curl -sf http://localhost:8180/realms/vtc/.well-known/openid-configuration > /dev/null
       - run: npx playwright test
         working-directory: frontend
+        env:
+          KEYCLOAK_URL: http://localhost:8180
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto'
+
 import { type Browser, expect, type Locator, type Page } from '@playwright/test'
 
 export const PASSWORD = process.env.E2E_PASSWORD ?? 'harak-e2e-password'
@@ -106,3 +108,23 @@ export async function comment(page: Page, quote: string, body: string, category:
 }
 
 export const card = (page: Page, text: string) => page.getByTestId('comment').filter({ hasText: text })
+
+/** A TOTP code (RFC 6238: HMAC-SHA1, 30 s, 6 digits) for a base32 secret, ``steps`` time steps from now. */
+export function totp(secret: string, steps = 0): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = ''
+  for (const char of secret.replace(/=+$/, '').toUpperCase()) bits += alphabet.indexOf(char).toString(2).padStart(5, '0')
+  const key = Buffer.from(bits.match(/.{8}/g)!.map((byte) => parseInt(byte, 2)))
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000 / 30) + steps))
+  const digest = createHmac('sha1', key).update(counter).digest()
+  const offset = digest[digest.length - 1] & 0xf
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0')
+}
+
+/** Signs in on Keycloak's own page (the realms in infra/keycloak use one test password). */
+export async function keycloakSignIn(page: Page, username: string) {
+  await page.locator('input[name="username"]').fill(username)
+  await page.locator('input[name="password"]').fill('harak-sso-test')
+  await page.locator('#kc-login').click()
+}
