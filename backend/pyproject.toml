@@ -18,6 +18,9 @@ dependencies = [
     "pyjwt==2.15.1",
     "anthropic==1.11.0",
     "jsonschema==4.26.0",
+    "authlib==1.8.0",
+    "requests==2.34.2",
+    "cryptography==50.0.2",
 ]
 
 [dependency-groups]

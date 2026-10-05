@@ -1,0 +1,55 @@
+{
+  "realm": "safety",
+  "displayName": "أكاديمية السلامة (اختبار)",
+  "enabled": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "ar",
+    "en"
+  ],
+  "defaultLocale": "ar",
+  "clients": [
+    {
+      "clientId": "harak2",
+      "name": "Harak 2",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "safety-test-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*",
+        "http://testserver/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "faisal",
+      "email": "faisal@safety.test",
+      "emailVerified": true,
+      "firstName": "فيصل",
+      "lastName": "الهنائي",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "harak-sso-test",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

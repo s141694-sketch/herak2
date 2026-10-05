@@ -46,10 +46,23 @@ jobs:
       - run: uv run python manage.py makemigrations --check --dry-run
         env:
           DJANGO_SETTINGS_MODULE: config.settings.test
+      - name: Keycloak for the single sign-on tests (D62)
+        working-directory: .
+        run: |
+          docker run -d --name keycloak -p 8180:8180 \
+            -v "$PWD/infra/keycloak/realms:/opt/keycloak/data/import:ro" \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=harak-sso-test-admin \
+            quay.io/keycloak/keycloak:26.8.0 start-dev --import-realm --http-port 8180 --hostname http://localhost:8180
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8180/realms/vtc/.well-known/openid-configuration > /dev/null && break
+            sleep 3
+          done
+          curl -sf http://localhost:8180/realms/safety/.well-known/openid-configuration > /dev/null
       - run: uv run pytest
         env:
           DATABASE_URL: postgres://harak:harak@127.0.0.1:54329/harak
           REDIS_URL: redis://127.0.0.1:6380/1
+          KEYCLOAK_URL: http://localhost:8180
 
   javascript:
     name: ${{ matrix.workspace }} (node 24)

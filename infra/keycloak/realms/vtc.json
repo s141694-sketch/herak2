@@ -1,0 +1,100 @@
+{
+  "realm": "vtc",
+  "displayName": "مركز التدريب المهني (اختبار)",
+  "enabled": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "ar",
+    "en"
+  ],
+  "defaultLocale": "ar",
+  "clients": [
+    {
+      "clientId": "harak2",
+      "name": "Harak 2",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "vtc-test-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*",
+        "http://testserver/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "noura",
+      "email": "noura@vtc.test",
+      "emailVerified": true,
+      "firstName": "نورة",
+      "lastName": "البلوشية",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "harak-sso-test",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "hamed",
+      "email": "hamed@vtc.test",
+      "emailVerified": true,
+      "firstName": "حامد",
+      "lastName": "الكندي",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "harak-sso-test",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "ghost",
+      "email": "ghost@vtc.test",
+      "emailVerified": false,
+      "firstName": "غير",
+      "lastName": "موثق",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "harak-sso-test",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "outsider",
+      "email": "outsider@elsewhere.test",
+      "emailVerified": true,
+      "firstName": "خارج",
+      "lastName": "النطاق",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "harak-sso-test",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
