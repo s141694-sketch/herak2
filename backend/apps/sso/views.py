@@ -102,6 +102,22 @@ class SsoStartThrottle(AnonRateThrottle):
     scope = "login"
 
 
+class SsoDiscoverView(APIView):
+    """Spec 7.2, the path's first step: from the email, whether its domain's organization signs people in through
+    a provider. The sign-in page then offers that way first. It says nothing about any person."""
+
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [AllowAny]
+    throttle_classes = [SsoStartThrottle]
+
+    def initial(self, request, *args, **kwargs):
+        SessionAuthentication().enforce_csrf(request)
+        super().initial(request, *args, **kwargs)
+
+    def post(self, request):
+        return Response({"available": sso_login.provider_for_email(_text(request.data, "email")) is not None})
+
+
 class SsoStartView(APIView):
     """The email decides: its verified domain's organization signs the person in through its provider. A signed-in
     member may instead name one of their organizations, to enter it through its own provider."""

@@ -21,6 +21,8 @@ async function throughOrganization(browser: Browser, email: string, username: st
   const page = await (await browser.newContext()).newPage()
   await page.goto('/login')
   await page.locator('input[name="email"]').fill(email)
+  // Spec 7.2: the email's domain is recognised, and its organization's provider offered first.
+  await expect(page.getByTestId('sso-available')).toBeVisible()
   await page.getByTestId('login-sso').click()
   await page.waitForURL(new RegExp(`^${KEYCLOAK}/realms/vtc/`))
   await keycloakSignIn(page, username)
@@ -67,6 +69,7 @@ test('an admin sets up single sign-on, members sign in through it, and enforceme
   const outsider = await (await browser.newContext()).newPage()
   await outsider.goto('/login')
   await outsider.locator('input[name="email"]').fill('outsider@elsewhere.test')
+  await expect(outsider.getByTestId('sso-available')).toHaveCount(0)
   await outsider.getByTestId('login-sso').click()
   await expect(outsider.getByTestId('login-error')).toHaveText('لا يوجد دخول موحد لهذا البريد. ادخل بكلمة المرور.')
 

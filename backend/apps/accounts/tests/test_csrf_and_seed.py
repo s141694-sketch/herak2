@@ -38,3 +38,23 @@ def test_seed_is_idempotent(monkeypatch):
     assert WorkflowTemplate.all_organizations.filter(is_default=True).count() == 1
     roles = set(Membership.all_organizations.filter(user__email="multi@example.com").values_list("role", flat=True))
     assert roles == {"admin", "reviewer"}
+
+
+def test_the_seed_resets_the_institutes_sign_in_rules_and_domains(monkeypatch):
+    """Whatever an earlier run or a person at the security page changed, sso.spec starts from the same place."""
+    from apps.sso.models import VerifiedDomain
+    from apps.tenancy.context import organization_context
+
+    monkeypatch.setenv("HARAK_ALLOW_SEED", "1")
+    call_command("seed_e2e")
+    institute = Organization.objects.get(slug="sso")
+    Organization.objects.filter(pk=institute.pk).update(mfa_required_for_managers=True, sso_session_hours=2)
+    with organization_context(institute):
+        VerifiedDomain.objects.create(
+            domain="extra.test", token="t", created_by=User.objects.get(email="sso-admin@example.com")
+        )
+    call_command("seed_e2e")
+    institute.refresh_from_db()
+    assert (institute.mfa_required_for_managers, institute.sso_session_hours) == (False, 8)
+    with organization_context(institute):
+        assert list(VerifiedDomain.objects.values_list("domain", flat=True)) == ["vtc.test"]

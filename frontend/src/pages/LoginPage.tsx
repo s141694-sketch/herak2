@@ -21,6 +21,25 @@ export function LoginPage() {
   const [step, setStep] = useState<'password' | 'code'>('password')
   const [error, setError] = useState<string | null>(params.get('sso_error') ?? params.get('reason'))
   const [submitting, setSubmitting] = useState(false)
+  const [ssoAvailable, setSsoAvailable] = useState(false)
+
+  // Spec 7.2: email, then its domain, then the organization's provider. Once an email is typed, the page learns
+  // whether its organization signs people in through a provider, and offers that way first.
+  useEffect(() => {
+    setSsoAvailable(false)
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) return
+    let current = true
+    const timer = setTimeout(() => {
+      api.discoverSso(email.trim()).then(
+        ({ available }) => current && setSsoAvailable(available),
+        () => undefined, // nothing to say: the password and the provider's button both still work
+      )
+    }, 400)
+    return () => {
+      current = false
+      clearTimeout(timer)
+    }
+  }, [email])
 
   // Read once: a reload, or the address copied elsewhere, does not repeat the message.
   useEffect(() => {
@@ -114,14 +133,25 @@ export function LoginPage() {
                 {t(`errors.${error}`, { defaultValue: t('errors.unknown') })}
               </p>
             )}
-            <button type="submit" className="primary" disabled={submitting}>
+            {ssoAvailable && (
+              <p className="notice" role="status" data-testid="sso-available">
+                {t('login.ssoAvailable')}
+              </p>
+            )}
+            <button type="submit" className={ssoAvailable ? 'secondary wide' : 'primary'} disabled={submitting}>
               {submitting ? t('login.submitting') : t('login.submit')}
             </button>
             <p className="login-or muted">{t('login.or')}</p>
-            <button type="button" className="secondary wide" disabled={submitting || !email.includes('@')} data-testid="login-sso" onClick={withOrganization}>
+            <button
+              type="button"
+              className={ssoAvailable ? 'primary' : 'secondary wide'}
+              disabled={submitting || !email.includes('@')}
+              data-testid="login-sso"
+              onClick={withOrganization}
+            >
               {t('login.withOrganization')}
             </button>
-            <p className="muted small">{t('login.withOrganizationHint')}</p>
+            {!ssoAvailable && <p className="muted small">{t('login.withOrganizationHint')}</p>}
           </form>
         ) : (
           <form onSubmit={onCode} noValidate data-testid="mfa-step">

@@ -129,6 +129,9 @@ export const api = {
   verifyMfa: (code: string) => request<SessionPayload>('/api/auth/mfa/verify/', { method: 'POST', body: { code } }),
   /** Where the browser goes to sign in through the organization of this email, or through one of the signed-in
    * person's organizations (spec 7.2); the provider's page is asked for the interface's language. */
+  /** Spec 7.2, from the email: whether its domain's organization signs people in through a provider. */
+  discoverSso: (email: string) =>
+    request<{ available: boolean }>('/api/auth/sso/discover/', { method: 'POST', body: { email } }),
   startSso: (target: { email: string } | { organization: number }, language: string) =>
     request<{ redirect: string }>('/api/auth/sso/start/', { method: 'POST', body: { ...target, language } }),
   logout: () => request<void>('/api/auth/logout/', { method: 'POST' }),

@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
@@ -8,7 +8,7 @@ import { ErrorMessage } from '../components/ErrorMessage'
 import { useAction } from '../hooks/useResource'
 import { asciiDigits } from '../signIn'
 
-function CodeInput({ value, onChange, testId }: { value: string; onChange: (code: string) => void; testId: string }) {
+function CodeInput({ value, onChange, testId, autoFocus = false }: { value: string; onChange: (code: string) => void; testId: string; autoFocus?: boolean }) {
   const { t } = useTranslation()
   return (
     <label className="field">
@@ -19,6 +19,7 @@ function CodeInput({ value, onChange, testId }: { value: string; onChange: (code
         dir="ltr"
         maxLength={6}
         required
+        autoFocus={autoFocus}
         value={value}
         data-testid={testId}
         onChange={(event) => onChange(asciiDigits(event.target.value))}
@@ -36,6 +37,11 @@ export function AccountSecurityPage() {
   const [enrolment, setEnrolment] = useState<{ secret: string; otpauth_uri: string } | null>(null)
   const [code, setCode] = useState('')
   const [done, setDone] = useState<string | null>(null)
+  const notice = useRef<HTMLParagraphElement>(null)
+  // The form that was used disappears with success: focus goes to what happened, not back to the page.
+  useEffect(() => {
+    if (done) notice.current?.focus()
+  }, [done])
   if (!session) return null
   const enabled = session.user.mfa_enabled
 
@@ -75,7 +81,7 @@ export function AccountSecurityPage() {
         {enabled ? t('mfa.statusOn') : t('mfa.statusOff')}
       </p>
       {done && (
-        <p className="notice" role="status">
+        <p className="notice" role="status" tabIndex={-1} ref={notice}>
           {t(done)}
         </p>
       )}
@@ -104,7 +110,8 @@ export function AccountSecurityPage() {
             </li>
             <li>{t('mfa.stepCode')}</li>
           </ol>
-          <CodeInput value={code} onChange={setCode} testId="mfa-confirm-code" />
+          {/* The steps replace the button that was pressed: focus goes to the code, not back to the page. */}
+          <CodeInput value={code} onChange={setCode} testId="mfa-confirm-code" autoFocus />
           <button type="submit" className="primary-inline" disabled={action.busy || code.length !== 6} data-testid="mfa-confirm">
             {t('mfa.confirm')}
           </button>

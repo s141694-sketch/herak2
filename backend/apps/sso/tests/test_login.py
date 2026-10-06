@@ -413,3 +413,18 @@ def test_an_admins_test_sign_in_that_expired_returns_to_the_security_settings(wo
     stale = admin.get("/api/auth/sso/callback/", {"state": "old", "code": "c"})
     location = urlparse(stale["Location"])
     assert location.path == "/settings/security" and parse_qs(location.query)["sso_test"] == ["sso_state_invalid"]
+
+
+@pytest.mark.parametrize(
+    "email,available", [("Noura@VTC.test", True), ("noura@elsewhere.test", False), ("not-an-email", False)]
+)
+def test_the_sign_in_page_learns_from_the_email_whether_its_organization_has_a_provider(
+    world, provider, email, available
+):
+    """Spec 7.2: email, then its domain, then the organization's provider. Nothing is started or written."""
+    client = APIClient(enforce_csrf_checks=True)
+    client.get("/api/auth/csrf/")
+    token = client.cookies["csrftoken"].value
+    response = client.post("/api/auth/sso/discover/", {"email": email}, format="json", HTTP_X_CSRFTOKEN=token)
+    assert response.status_code == 200 and response.json() == {"available": available}
+    assert "sso_flow" not in client.session

@@ -65,12 +65,18 @@ class Command(BaseCommand):
 
 
 def _reset_single_sign_on(organization) -> None:
-    """The institute starts each run with nothing set up: no provider, no second factor for its admin, and none of
-    the members earlier sign-ins brought (people are kept: the audit log refers to them)."""
+    """The institute starts each run with nothing set up: no provider, its default sign-in rules, its one verified
+    domain, no second factor for its admin, and none of the members earlier sign-ins brought (people are kept: the
+    audit log refers to them)."""
     keep = {"sso-admin@example.com", "hamed@vtc.test"}
+    Organization.objects.filter(pk=organization.pk).update(
+        mfa_required_for_managers=False,
+        sso_session_hours=Organization._meta.get_field("sso_session_hours").default,
+    )
     with organization_context(organization):
         IdentityProviderConfig.objects.all().delete()
         ExternalIdentity.objects.all().delete()
+        VerifiedDomain.objects.exclude(domain=SSO_DOMAIN).delete()
         Membership.objects.exclude(user__email__in=keep).delete()
         Membership.objects.filter(user__email="hamed@vtc.test").update(role=Role.AUTHOR)
         admin = User.objects.get(email="sso-admin@example.com")

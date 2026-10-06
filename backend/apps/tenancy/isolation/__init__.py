@@ -22,6 +22,7 @@ EXEMPT_ROUTES: dict[str, str] = {
     "auth-mfa-confirm": "the caller's own second factor; returns the caller's own memberships",
     "auth-mfa-disable": "the caller's own second factor, a person-wide table (D70)",
     "auth-sso-start": "before sign-in; the organization comes from the email's verified domain, nothing is returned",
+    "auth-sso-discover": "before sign-in; says only whether the email's domain has a provider, nothing is written",
     "auth-sso-callback": "before sign-in; the organization comes from the provider of the flow this session began",
     "auth-switch-organization": "membership-checked switch; covered by test_auth_api",
     "internal-collab-document": "collab service only (service secret); organization taken from the version",

@@ -20,7 +20,8 @@
     "codeHint": "Open your authenticator app and type the six-digit code.",
     "code": "Verification code",
     "verify": "Verify",
-    "back": "Back to the password"
+    "back": "Back to the password",
+    "ssoAvailable": "Your organization signs you in through its identity provider: continue with “Sign in with your organization”."
   },
   "organization": {
     "chooseTitle": "Choose an organization",
@@ -172,7 +173,7 @@
     "provider_not_tested": "Test the connection and pass a test sign-in first.",
     "provider_invalid": "Check the issuer URL (https), the client ID and the secret.",
     "provider_exists": "The organization already has an identity provider.",
-    "provider_test_failed": "The connection test failed. Details below.",
+    "provider_test_failed": "The connection test failed. The reason is shown with the tests.",
     "domain_invalid": "This is not a valid domain name.",
     "domain_record_missing": "The verification record was not found in DNS yet. Publishing it can take a while.",
     "domain_taken": "Another organization has verified this domain.",

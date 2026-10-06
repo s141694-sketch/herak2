@@ -11,6 +11,7 @@ urlpatterns = [
     path("sso/providers/<int:pk>/test/", views.ProviderTestView.as_view(), name="sso-provider-test"),
     path("sso/providers/<int:pk>/test-login/", views.ProviderTestLoginView.as_view(), name="sso-provider-test-login"),
     path("sso/providers/<int:pk>/policy/", views.ProviderPolicyView.as_view(), name="sso-provider-policy"),
+    path("auth/sso/discover/", views.SsoDiscoverView.as_view(), name="auth-sso-discover"),
     path("auth/sso/start/", views.SsoStartView.as_view(), name="auth-sso-start"),
     path("auth/sso/callback/", views.SsoCallbackView.as_view(), name="auth-sso-callback"),
 ]
