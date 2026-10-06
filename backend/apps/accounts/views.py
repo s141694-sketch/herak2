@@ -1,4 +1,8 @@
+import hashlib
+
+from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
+from django.core.cache import cache
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -43,6 +47,18 @@ class LoginThrottle(AnonRateThrottle):
     scope = "login"
 
 
+class LoginPaused(exceptions.APIException):
+    status_code = 429
+    default_code = "login_paused"
+    default_detail = "too many wrong passwords for this account: wait, or sign in through your organization"
+
+
+def login_failures_key(email: str) -> str:
+    """Wrong passwords are counted per account too (spec 7.6, D84): guessing one person's password from many
+    addresses stops after LOGIN_ACCOUNT_FAILURES within LOGIN_ACCOUNT_PAUSE_MINUTES."""
+    return "login-failures:" + hashlib.sha256(email.strip().lower().encode()).hexdigest()
+
+
 class IdentityError(Conflict):
     default_code = "identity_error"
 
@@ -85,9 +101,16 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"].strip().lower()
+        failures = login_failures_key(email)
+        # Checked before the password, so a paused account says nothing about whether it was right.
+        if cache.get(failures, 0) >= settings.LOGIN_ACCOUNT_FAILURES:
+            raise LoginPaused()
         user = authenticate(request, username=email, password=serializer.validated_data["password"])
         if user is None:
+            cache.add(failures, 0, timeout=settings.LOGIN_ACCOUNT_PAUSE_MINUTES * 60)
+            cache.incr(failures)
             raise InvalidCredentials("invalid email or password")
+        cache.delete(failures)
         if mfa.confirmed_device(user) is not None:
             # The password is right; the session waits for the second factor before signing in (D67).
             mfa.hold(request, user)

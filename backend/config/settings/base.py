@@ -38,6 +38,8 @@ env = environ.Env(
     IMPORT_EXTRACT_MEMORY_MB=(int, 1024),
     UPLOAD_THROTTLE_RATE=(str, "60/hour"),
     USER_THROTTLE_RATE=(str, "600/minute"),
+    LOGIN_ACCOUNT_FAILURES=(int, 10),
+    LOGIN_ACCOUNT_PAUSE_MINUTES=(int, 15),
     EXPORT_SOFFICE=(str, "soffice"),
     EXPORT_PDF_SECONDS=(int, 120),
     BACKUP_PG_DUMP=(str, "pg_dump"),
@@ -314,6 +316,11 @@ IMPORT_MAX_UNPACKED_BYTES = env("IMPORT_MAX_UNPACKED_BYTES")
 # A file is read in a child process within this time and memory (D80); the time stays under gunicorn's 30 s.
 IMPORT_EXTRACT_SECONDS = env("IMPORT_EXTRACT_SECONDS")
 IMPORT_EXTRACT_MEMORY_MB = env("IMPORT_EXTRACT_MEMORY_MB")
+
+# Wrong passwords per account (spec 7.6, D84): after this many within the pause, the account's password sign-in waits
+# out the pause; the per-address limit (LOGIN_THROTTLE_RATE) stands as well.
+LOGIN_ACCOUNT_FAILURES = env("LOGIN_ACCOUNT_FAILURES")
+LOGIN_ACCOUNT_PAUSE_MINUTES = env("LOGIN_ACCOUNT_PAUSE_MINUTES")
 
 # Exports (tasks 7.3-7.5; D78): LibreOffice converts the Word file to PDF, within this many seconds.
 EXPORT_SOFFICE = env("EXPORT_SOFFICE")

@@ -135,7 +135,7 @@ def begin(request, config: IdentityProviderConfig, *, email: str = "", test_by=N
 
 def exchange_code(meta: dict, config: IdentityProviderConfig, code: str, verifier: str, redirect_uri: str) -> dict:
     services.check_url(meta["token_endpoint"])  # the client secret goes there: only to a public https address
-    client = OAuth2Session(config.client_id, config.client_secret, redirect_uri=redirect_uri)
+    client = services.public_session(OAuth2Session(config.client_id, config.client_secret, redirect_uri=redirect_uri))
     return client.fetch_token(
         meta["token_endpoint"],
         grant_type="authorization_code",

@@ -63,6 +63,7 @@
   "errors": {
     "invalid_credentials": "The email or password is incorrect. Check them and try again.",
     "throttled": "Too many attempts. Wait a minute and try again.",
+    "login_paused": "Too many wrong passwords for this account. Wait 15 minutes and try again, or sign in through your organization.",
     "network": "Could not reach the server. Check your connection and try again.",
     "not_found": "The item does not exist or you do not have access to it.",
     "permission_denied": "You do not have permission for this action.",

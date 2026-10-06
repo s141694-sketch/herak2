@@ -195,3 +195,44 @@ def test_a_client_cannot_choose_the_address_its_sign_in_attempts_are_counted_by(
         for i in range(12)
     ]
     assert statuses[-1] == 429
+
+
+# Task 8.4 (spec 7.6, D84): wrong passwords are also counted per account, not only per address, so guessing one
+# person's password from many addresses stops too.
+
+
+@pytest.fixture
+def from_anywhere(monkeypatch):
+    """Each attempt as if from another address: the per-address limit stands aside."""
+    from apps.accounts.views import LoginThrottle
+
+    monkeypatch.setattr(LoginThrottle, "allow_request", lambda self, request, view: True)
+    cache.clear()
+    yield
+    cache.clear()
+
+
+def test_an_account_pauses_its_password_sign_in_after_too_many_wrong_passwords(world, from_anywhere, settings):
+    settings.LOGIN_ACCOUNT_FAILURES = 3
+    client = APIClient()
+    for _ in range(3):
+        assert login(client, "single@example.com", "wrong-password-123").status_code == 400
+    paused = login(client, "Single@Example.com ", PASSWORD)  # even the right one, written differently
+    assert paused.status_code == 429 and paused.json()["error"]["code"] == "login_paused"
+    # Another account is not touched.
+    assert login(APIClient(), "multi@example.com", PASSWORD).status_code == 200
+
+
+def test_the_pause_ends_and_a_right_password_clears_the_count(world, from_anywhere, settings):
+    from apps.accounts.views import login_failures_key
+
+    settings.LOGIN_ACCOUNT_FAILURES = 3
+    client = APIClient()
+    for _ in range(2):
+        login(client, "single@example.com", "wrong-password-123")
+    assert login(client, "single@example.com", PASSWORD).status_code == 200
+    assert cache.get(login_failures_key("single@example.com")) is None
+    for _ in range(3):
+        login(APIClient(), "single@example.com", "wrong-password-123")
+    cache.delete(login_failures_key("single@example.com"))  # the pause's time has passed
+    assert login(APIClient(), "single@example.com", PASSWORD).status_code == 200

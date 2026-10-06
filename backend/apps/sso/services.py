@@ -12,6 +12,9 @@ import requests
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 from apps.audit.services import record
 from apps.core.errors import Conflict
@@ -187,6 +190,53 @@ def _public_address(host: str, port: int) -> None:
             raise ProviderAnswerError("provider_address_not_allowed", f"{host} is not a public address")
 
 
+class _PublicPeer:
+    """A connection that closes at once if it reached an address that is not public. The name was checked when it
+    was resolved (check_url), but it may resolve elsewhere by the time of the connection ("DNS rebinding"); the
+    address the socket actually reached is what counts (task 8.4, the limit phase 6 left)."""
+
+    def _new_conn(self):
+        sock = super()._new_conn()
+        # Through an outbound proxy the socket's peer is the proxy, which the operator set, and the proxy resolves
+        # the name: the check at resolution (check_url) is then what stands.
+        if not settings.SSO_ALLOW_PRIVATE_ADDRESSES and self.proxy is None:
+            peer = ipaddress.ip_address(sock.getpeername()[0].split("%")[0])
+            if not peer.is_global:
+                sock.close()
+                raise OSError(f"{self.host} led to {peer}, which is not a public address")
+        return sock
+
+
+class _PublicHTTPConnection(_PublicPeer, HTTPConnection):
+    pass
+
+
+class _PublicHTTPSConnection(_PublicPeer, HTTPSConnection):
+    pass
+
+
+class _PublicHTTPPool(HTTPConnectionPool):
+    ConnectionCls = _PublicHTTPConnection
+
+
+class _PublicHTTPSPool(HTTPSConnectionPool):
+    ConnectionCls = _PublicHTTPSConnection
+
+
+class _PublicOnly(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        super().init_poolmanager(*args, **kwargs)
+        self.poolmanager.pool_classes_by_scheme = {"http": _PublicHTTPPool, "https": _PublicHTTPSPool}
+
+
+def public_session(session: requests.Session | None = None) -> requests.Session:
+    """A requests session (or the one given, such as Authlib's) whose connections reach public addresses only."""
+    session = session or requests.Session()
+    session.mount("http://", _PublicOnly())
+    session.mount("https://", _PublicOnly())
+    return session
+
+
 def check_url(url) -> None:
     """What this server may send a request to on a provider's behalf."""
     if not _web_url(url):
@@ -199,7 +249,7 @@ def fetch_json(url: str) -> dict:
     """A JSON object from the provider: no redirect followed (it could lead inside), at most MAX_ANSWER_BYTES, and
     within HTTP_TIMEOUT overall."""
     check_url(url)
-    response = requests.get(
+    response = public_session().get(
         url, timeout=HTTP_TIMEOUT, headers={"Accept": "application/json"}, allow_redirects=False, stream=True
     )
     try:

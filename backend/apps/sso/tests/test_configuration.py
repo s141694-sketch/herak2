@@ -1,5 +1,7 @@
 """An organization's single sign-on settings (tasks 6.3, 6.4): verified email domains and its OIDC provider."""
 
+from types import SimpleNamespace
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -283,7 +285,7 @@ def test_a_discovery_answer_that_is_not_an_object_fails_the_test_cleanly(world, 
             pass
 
     monkeypatch.setattr(services, "_public_address", lambda host, port: None)
-    monkeypatch.setattr(services.requests, "get", lambda *a, **k: Answer())
+    monkeypatch.setattr(services, "public_session", lambda: SimpleNamespace(get=lambda *a, **k: Answer()))
     with organization_context(world["org"]):
         config = services.save_provider(None, actor=world["admin"], **PROVIDER)
         with pytest.raises(Conflict) as failed:
@@ -308,7 +310,7 @@ def test_the_server_does_not_fetch_internal_addresses_for_a_provider(settings, m
     def never(*args, **kwargs):
         raise AssertionError("no request should be made")
 
-    monkeypatch.setattr(services.requests, "get", never)
+    monkeypatch.setattr(services, "public_session", lambda: SimpleNamespace(get=never))
     with pytest.raises(ValueError, match="address"):
         services.fetch_json(url)
 
@@ -338,7 +340,7 @@ def test_a_provider_answer_is_not_followed_elsewhere_nor_read_without_limit(sett
         seen.update(kwargs)
         return answers.pop(0)
 
-    monkeypatch.setattr(services.requests, "get", get)
+    monkeypatch.setattr(services, "public_session", lambda: SimpleNamespace(get=get))
     answers = [Answer(302, [])]
     with pytest.raises(ValueError, match="redirect"):
         services.fetch_json("https://idp.example/x")
