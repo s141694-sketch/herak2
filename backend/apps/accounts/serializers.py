@@ -137,3 +137,23 @@ def identity_payload(organization) -> dict:
         "primary_color": (organization.brand_colors or {}).get("primary", ""),
         "logo": {"id": logo.pk, "name": logo.name} if logo else None,
     }
+
+
+class NewMemberSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+    full_name = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    role = serializers.ChoiceField(choices=[role for role, _ in Role.choices])
+
+
+class MemberRoleSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=[role for role, _ in Role.choices])
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+
+
+class SetPasswordSerializer(serializers.Serializer):
+    uid = serializers.CharField(max_length=64)
+    token = serializers.CharField(max_length=128)
+    password = serializers.CharField(max_length=256, trim_whitespace=False)

@@ -9,6 +9,8 @@ import { FrameworkListPage } from './pages/competencies/FrameworkListPage'
 import { FrameworkPage } from './pages/competencies/FrameworkPage'
 import { HomePage } from './pages/HomePage'
 import { IdentitySettingsPage } from './pages/IdentitySettingsPage'
+import { MembersPage } from './pages/MembersPage'
+import { ForgotPasswordPage, SetPasswordPage } from './pages/PasswordPages'
 import { LoginPage } from './pages/LoginPage'
 import { DiffPage } from './pages/programs/DiffPage'
 import { ProgramListPage } from './pages/programs/ProgramListPage'
@@ -41,6 +43,7 @@ function OrganizationRoutes() {
       <Route path="/workflows" element={<WorkflowsPage />} />
       <Route path="/settings/security" element={<SecuritySettingsPage />} />
       <Route path="/settings/identity" element={<IdentitySettingsPage />} />
+      <Route path="/settings/members" element={<MembersPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
@@ -82,6 +85,9 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<SignedOut />} />
+          {/* Reached from an email, signed in or not (D87). */}
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/set-password" element={<SetPasswordPage />} />
           <Route path="*" element={<SignedIn />} />
         </Routes>
       </BrowserRouter>

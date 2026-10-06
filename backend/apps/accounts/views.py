@@ -29,13 +29,17 @@ from apps.tenancy.middleware import (
 )
 from apps.tenancy.permissions import HasActiveOrganization, role_required
 
-from . import mfa
+from . import members, mfa
 from .models import Membership, Role, TOTPDevice
 from .serializers import (
+    ForgotPasswordSerializer,
     IdentitySerializer,
     LoginSerializer,
+    MemberRoleSerializer,
     MemberSerializer,
+    NewMemberSerializer,
     OrganizationSerializer,
+    SetPasswordSerializer,
     SignInRulesSerializer,
     SwitchOrganizationSerializer,
     identity_payload,
@@ -253,19 +257,104 @@ class CurrentOrganizationView(APIView):
 
 
 class MemberListView(generics.ListAPIView):
+    """The organization's members; an admin adds people by email with a role (spec 2.1, D87)."""
+
     permission_classes = [HasActiveOrganization]
     serializer_class = MemberSerializer
 
     def get_queryset(self):
         return Membership.objects.select_related("user").order_by("user__email")
 
+    def post(self, request):
+        if request.membership.role != Role.ADMIN:
+            raise exceptions.PermissionDenied("only an admin adds members")
+        serializer = NewMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        membership = members.add_member(request.organization, actor=request.user, **serializer.validated_data)
+        return Response(MemberSerializer(membership, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
 
 class MemberDetailView(generics.RetrieveAPIView):
+    """A member; an admin changes their role (spec 2.1, D87)."""
+
     permission_classes = [HasActiveOrganization]
     serializer_class = MemberSerializer
 
     def get_queryset(self):
         return Membership.objects.select_related("user")
+
+    def patch(self, request, pk):
+        if request.membership.role != Role.ADMIN:
+            raise exceptions.PermissionDenied("only an admin changes roles")
+        membership = self.get_object()  # another organization's member is not found, whatever the request says
+        serializer = MemberRoleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        membership = members.set_role(membership, role=serializer.validated_data["role"], actor=request.user)
+        return Response(MemberSerializer(membership, context={"request": request}).data)
+
+
+class PasswordLinkInvalid(exceptions.ValidationError):
+    default_code = "password_link_invalid"
+
+
+class PasswordInvalid(exceptions.ValidationError):
+    default_code = "password_invalid"
+
+
+class ForgotPasswordView(APIView):
+    """A link to choose a new password, by email. The answer is the same whether the email has an account."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginThrottle]
+
+    def initial(self, request, *args, **kwargs):
+        SessionAuthentication().enforce_csrf(request)
+        super().initial(request, *args, **kwargs)
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        members.forgot_password(serializer.validated_data["email"])
+        return Response(
+            {"detail": "if this email has an account, a link was sent to it"}, status=status.HTTP_202_ACCEPTED
+        )
+
+
+class SetPasswordView(APIView):
+    """The password a person chooses from an invitation's or a reset's link."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginThrottle]
+
+    def initial(self, request, *args, **kwargs):
+        SessionAuthentication().enforce_csrf(request)
+        super().initial(request, *args, **kwargs)
+
+    def post(self, request):
+        serializer = SetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            user = members.set_password(data["uid"], data["token"], data["password"])
+        except members.PasswordLinkInvalid as exc:
+            raise PasswordLinkInvalid("the link is not valid any more: ask for a new one") from exc
+        except members.ValidationError as exc:
+            raise PasswordInvalid(" ".join(exc.messages)) from exc
+        cache.delete(login_failures_key(user.email))
+        record_password_set(user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def record_password_set(user) -> None:
+    """In the audit log of each of the person's organizations: the password was set from a link."""
+    from apps.audit.services import record as audit
+    from apps.tenancy.context import organization_context
+
+    for membership in Membership.all_organizations.filter(user=user):
+        with organization_context(membership.organization_id):
+            audit("user.password_set", actor=user, target=membership, payload={"user": user.pk})
 
 
 class MemberMfaResetView(APIView):

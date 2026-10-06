@@ -61,6 +61,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <NavLink to="/settings/identity" data-testid="nav-identity">
                   {t('nav.identity')}
                 </NavLink>
+                <NavLink to="/settings/members" data-testid="nav-members">
+                  {t('nav.members')}
+                </NavLink>
               </>
             )}
           </nav>

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { defineConfig } from '@playwright/test'
 
@@ -11,6 +12,8 @@ const collabSecrets = {
   COLLAB_TOKEN_SECRET: process.env.COLLAB_TOKEN_SECRET ?? 'dev-only-collab-token-secret-change-me',
   COLLAB_SERVICE_SECRET: process.env.COLLAB_SERVICE_SECRET ?? 'dev-only-collab-service-secret-change-me',
 }
+
+const MAIL_DIR = resolve(import.meta.dirname, 'test-results', 'mail')
 
 const backendEnv = {
   ...collabSecrets,
@@ -25,6 +28,8 @@ const backendEnv = {
   CELERY_TASK_ALWAYS_EAGER: '1',
   // No AI provider: the browser tests never reach a model; AI answers they need are served by route mocks.
   AI_PROVIDER: '',
+  // Emails are kept as files the tests read (an invitation's link, D87).
+  EMAIL_URL: `filemail:///${MAIL_DIR}`, // four slashes: an absolute path, as django-environ reads it
 }
 
 export default defineConfig({

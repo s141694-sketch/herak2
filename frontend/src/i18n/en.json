@@ -21,7 +21,8 @@
     "code": "Verification code",
     "verify": "Verify",
     "back": "Back to the password",
-    "ssoAvailable": "Your organization signs you in through its identity provider: continue with “Sign in with your organization”."
+    "ssoAvailable": "Your organization signs you in through its identity provider: continue with “Sign in with your organization”.",
+    "forgot": "Forgot your password?"
   },
   "organization": {
     "chooseTitle": "Choose an organization",
@@ -58,7 +59,8 @@
     "tasks": "My tasks",
     "security": "Security",
     "accountSecurity": "My account security",
-    "identity": "Identity"
+    "identity": "Identity",
+    "members": "Members"
   },
   "errors": {
     "invalid_credentials": "The email or password is incorrect. Check them and try again.",
@@ -209,7 +211,13 @@
     "logo_type_unsupported": "The logo must be a PNG or JPEG image.",
     "domain_required": "Verify at least one email domain first: members sign in through the provider by their email's domain.",
     "domain_needed_by_enforcement": "This is the last verified domain while single sign-on is enforced. Stop enforcing first, or verify another domain.",
-    "export_not_failed": "Only an export that failed can be tried again."
+    "export_not_failed": "Only an export that failed can be tried again.",
+    "member_exists": "This person is already a member of the organization.",
+    "last_admin": "The organization needs at least one training manager. Make someone else a manager first.",
+    "member_is_emergency": "This is the emergency account for single sign-on, so it stays a training manager. Choose another emergency account on the Security page first.",
+    "member_assigned_to_stage": "An approval workflow names this person for one of its stages, so they keep a role that decides (reviewer, approver or manager). Change the stage first.",
+    "password_link_invalid": "This link no longer works: it was used or has expired. Ask for a new one from “Forgot your password?”.",
+    "password_invalid": "The password is too weak: at least ten characters, not only digits, and not like your email or name."
   },
   "common": {
     "create": "Create",
@@ -793,5 +801,35 @@
     "pdf": "Download PDF",
     "failed": "The files could not be made. The approval stands; the export can be tried again.",
     "retry": "Try again"
+  },
+  "members": {
+    "title": "Members of the organization",
+    "intro": "Add people by email with a role, and change their roles. Someone new gets an invitation to choose a password.",
+    "person": "Person",
+    "role": "Role",
+    "roleOf": "Role of {{name}}",
+    "secondFactor": "Two-factor",
+    "on": "On",
+    "off": "Off",
+    "add": "Add a member",
+    "addHint": "Someone with a Harak account is added and told; anyone else gets an invitation to choose a password. Where the organization requires its own sign-in, they are told to sign in there.",
+    "email": "Email",
+    "name": "Name (optional)",
+    "addSubmit": "Add and send the invitation",
+    "added": "{{email}} was added and sent an email."
+  },
+  "password": {
+    "forgotTitle": "Forgot your password",
+    "forgotHint": "Write your email, and we will send it a link to choose a new password.",
+    "sendLink": "Send the link",
+    "linkSent": "If this email has a Harak account, a link valid for three days was sent to it. Check your email.",
+    "setTitle": "Choose your password",
+    "rules": "At least ten characters, not only digits, and not like your email or name.",
+    "new": "Password",
+    "again": "Write it again",
+    "mismatch": "The two do not match.",
+    "save": "Save the password",
+    "setDone": "Your password is saved. Sign in with it now.",
+    "backToSignIn": "Back to sign-in"
   }
 }

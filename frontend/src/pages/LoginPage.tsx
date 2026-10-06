@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 
 import { api, errorCode } from '../api'
 import { useAuth } from '../auth'
@@ -128,6 +128,9 @@ export function LoginPage() {
                 onChange={(event) => setPassword(event.target.value)}
               />
             </label>
+            <Link to="/forgot-password" className="small" data-testid="login-forgot">
+              {t('login.forgot')}
+            </Link>
             {error && (
               <p role="alert" className="error" data-testid="login-error">
                 {t(`errors.${error}`, { defaultValue: t('errors.unknown') })}

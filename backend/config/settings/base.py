@@ -179,6 +179,9 @@ MAILERS = {
         "OPTIONS": (
             {k: v for k, v in _smtp.items() if v not in (None, "")}
             if _email["EMAIL_BACKEND"].endswith(".smtp.EmailBackend")
+            # filemail:////abs/path keeps each email as a file (the browser tests read invitations from there).
+            else {"file_path": _email["EMAIL_FILE_PATH"]}
+            if _email["EMAIL_BACKEND"].endswith(".filebased.EmailBackend")
             else {}
         ),
     }

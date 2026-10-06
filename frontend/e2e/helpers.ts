@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 
 import { type Browser, expect, type Locator, type Page } from '@playwright/test'
@@ -156,4 +158,46 @@ export function docxText(file: Buffer): string {
     entry += 46 + nameLength + file.readUInt16LE(entry + 30) + file.readUInt16LE(entry + 32)
   }
   throw new Error('no word/document.xml')
+}
+
+/** Where the backend keeps the emails it sends in these tests (EMAIL_URL in playwright.config.ts). */
+const MAIL_DIR = resolve(import.meta.dirname, '..', 'test-results', 'mail')
+
+/** The body of each email in a file Django's file backend wrote (messages separated by a line of dashes). */
+function messagesIn(file: string): Array<{ headers: string; body: string }> {
+  return readFileSync(file, 'utf-8')
+    .split(/^-{79}$/m)
+    .map((raw) => raw.trim())
+    .filter(Boolean)
+    .map((raw) => {
+      const split = raw.search(/\r?\n\r?\n/)
+      const headers = raw.slice(0, split)
+      const encoded = raw.slice(split).trim()
+      const body = /Content-Transfer-Encoding: base64/i.test(headers)
+        ? Buffer.from(encoded.replace(/\s+/g, ''), 'base64').toString('utf-8')
+        : encoded.replace(/=\r?\n/g, '').replace(/=3D/g, '=')
+      return { headers, body }
+    })
+}
+
+/** The body of the newest email to ``address`` sent after ``after`` (ms); waits for it to arrive. */
+export async function emailTo(address: string, after = 0): Promise<string> {
+  for (let tries = 0; tries < 50; tries += 1) {
+    const files = existsSync(MAIL_DIR) ? readdirSync(MAIL_DIR).map((name) => join(MAIL_DIR, name)) : []
+    const found = files
+      .filter((file) => statSync(file).mtimeMs > after)
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+      .flatMap((file) => messagesIn(file).reverse())
+      .find((message) => new RegExp(`^To: ${address.replace(/[.+]/g, '\\$&')}$`, 'm').test(message.headers))
+    if (found) return found.body
+    await new Promise((resolveWait) => setTimeout(resolveWait, 200))
+  }
+  throw new Error(`no email to ${address}`)
+}
+
+/** The set-password link in an email, as a path on the web client. */
+export function passwordLink(email: string): string {
+  const match = email.match(/\/set-password\?uid=[\w-]+&token=[\w-]+/)
+  if (!match) throw new Error('no set-password link in the email')
+  return match[0]
 }
