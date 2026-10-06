@@ -131,7 +131,7 @@ def required_for(user) -> bool:
 
 def disable(user, code: str) -> None:
     if required_for(user):
-        raise MfaError("an organization of yours requires two-factor authentication", code="mfa_required")
+        raise MfaError("an organization of yours requires two-factor authentication", code="mfa_disable_required")
     check_code(user, code)
     TOTPDevice.objects.filter(user=user).delete()
 

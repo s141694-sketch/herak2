@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.tenancy.middleware import entry_refusal
 
-from .models import Membership, Organization, TOTPDevice, User
+from .models import Membership, Organization, Role, TOTPDevice, User
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -31,6 +31,15 @@ class MemberSerializer(serializers.ModelSerializer):
     class Meta:
         model = Membership
         fields = ["id", "user", "role", "created_at"]
+
+    def to_representation(self, membership):
+        data = super().to_representation(membership)
+        request = self.context.get("request")
+        viewer = getattr(request, "membership", None)
+        if viewer is not None and viewer.role == Role.ADMIN:
+            # An admin resets a lost second factor (D67): they see who has one; other members do not.
+            data["mfa_enabled"] = TOTPDevice.objects.filter(user=membership.user, confirmed_at__isnull=False).exists()
+        return data
 
 
 class OrganizationSerializer(serializers.ModelSerializer):

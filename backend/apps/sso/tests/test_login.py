@@ -392,3 +392,24 @@ def test_the_interface_language_is_passed_to_the_provider_when_it_is_one_of_hara
     response, query = start(APIClient(), "noura@vtc.test", provider, language=language)
     assert response.status_code == 200
     assert query.get("ui_locales") == expected
+
+
+def test_a_browser_already_signed_in_is_told_on_its_own_page_why_the_provider_refused(world, provider):
+    with organization_context(world["org"]):
+        signed = member("signed@vtc.test", Role.AUTHOR)
+    client = APIClient()
+    client.force_login(signed)
+    response, query = start(client, "noura@vtc.test", provider)
+    refused = client.get("/api/auth/sso/callback/", {"state": query["state"][0], "error": "access_denied"})
+    assert urlparse(refused["Location"]).path == "/" and error_of(refused) == "sso_denied"
+    stale = client.get("/api/auth/sso/callback/", {"state": "old", "code": "c"})
+    assert urlparse(stale["Location"]).path == "/" and error_of(stale) == "sso_state_invalid"
+
+
+def test_an_admins_test_sign_in_that_expired_returns_to_the_security_settings(world, provider):
+    admin = APIClient()
+    admin.post("/api/auth/login/", {"email": "admin@vtc.test", "password": "x" * 12}, format="json")
+    admin.post(f"/api/sso/providers/{world['config'].pk}/test-login/")
+    stale = admin.get("/api/auth/sso/callback/", {"state": "old", "code": "c"})
+    location = urlparse(stale["Location"])
+    assert location.path == "/settings/security" and parse_qs(location.query)["sso_test"] == ["sso_state_invalid"]

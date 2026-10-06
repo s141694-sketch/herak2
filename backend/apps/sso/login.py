@@ -228,13 +228,20 @@ def complete(request) -> str:
     """Handles the provider's answer and returns where the browser goes next."""
     flow = request.session.pop(SESSION_FLOW, None)
     base = settings.APP_URL.rstrip("/")
+    testing = bool(flow) and flow["test_by"] is not None
+    # Where the answer is told: an admin's test on the security settings; a browser already signed in on its
+    # own page (the sign-in page would only send it on); anyone else on the sign-in page.
+    if testing:
+        done = f"{base}/settings/security?sso_test="
+    elif request.user.is_authenticated:
+        done = f"{base}/?sso_error="
+    else:
+        done = f"{base}/login?sso_error="
     if not flow or request.GET.get("state") != flow["state"] or time.time() - flow["started"] > FLOW_SECONDS:
-        return f"{base}/login?sso_error=sso_state_invalid"
+        return f"{done}sso_state_invalid"
     config = IdentityProviderConfig.all_organizations.filter(pk=flow["provider"]).first()
-    testing = flow["test_by"] is not None
     if config is None or (testing and (not request.user.is_authenticated or request.user.pk != flow["test_by"])):
-        return f"{base}/login?sso_error=sso_state_invalid"
-    done = f"{base}/settings/security?sso_test=" if testing else f"{base}/login?sso_error="
+        return f"{done}sso_state_invalid"
     if not testing and not config.enabled:
         return f"{done}sso_not_available"  # turned off while the person was at the provider
     try:

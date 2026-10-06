@@ -162,7 +162,7 @@ def test_turning_it_off_needs_a_code_and_is_refused_where_it_is_required(world):
     totp = enrol(admin)
     assert (
         admin.post("/api/auth/mfa/disable/", {"code": next_code(totp)}, format="json").json()["error"]["code"]
-        == "mfa_required"
+        == "mfa_disable_required"
     )
     world["org"].mfa_required_for_managers = False
     world["org"].save()
@@ -369,3 +369,14 @@ def test_an_expired_code_is_refused(world):
     password(signing_in, "author@vtc.test")
     expired = signing_in.post("/api/auth/mfa/verify/", {"code": totp.at(time.time() - 90)}, format="json")
     assert expired.status_code == 409 and expired.json()["error"]["code"] == "mfa_code_invalid"
+
+
+def test_admins_see_which_members_have_a_second_factor_and_others_do_not(world):
+    author = APIClient()
+    password(author, "author@vtc.test")
+    enrol(author)
+    admin = APIClient()
+    password(admin, "admin@vtc.test")
+    listed = {m["user"]["email"]: m["mfa_enabled"] for m in admin.get("/api/organizations/current/members/").json()}
+    assert listed == {"admin@vtc.test": False, "approver@vtc.test": False, "author@vtc.test": True}
+    assert all("mfa_enabled" not in m for m in author.get("/api/organizations/current/members/").json())
