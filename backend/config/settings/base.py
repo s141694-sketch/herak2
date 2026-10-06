@@ -39,6 +39,11 @@ env = environ.Env(
     UPLOAD_THROTTLE_RATE=(str, "60/hour"),
     EXPORT_SOFFICE=(str, "soffice"),
     EXPORT_PDF_SECONDS=(int, 120),
+    BACKUP_PG_DUMP=(str, "pg_dump"),
+    BACKUP_PG_RESTORE=(str, "pg_restore"),
+    BACKUP_DIR=(str, ""),
+    BACKUP_KEEP_DAYS=(int, 14),
+    BACKUP_SECONDS=(int, 3600),
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
@@ -312,3 +317,11 @@ IMPORT_EXTRACT_MEMORY_MB = env("IMPORT_EXTRACT_MEMORY_MB")
 # Exports (tasks 7.3-7.5; D78): LibreOffice converts the Word file to PDF, within this many seconds.
 EXPORT_SOFFICE = env("EXPORT_SOFFICE")
 EXPORT_PDF_SECONDS = env("EXPORT_PDF_SECONDS")
+
+# Backups (spec 7.4, task 8.3, D83): pg_dump and pg_restore of the server's major version, a destination folder
+# (off the database's host in production), and how many days of backups are kept.
+BACKUP_PG_DUMP = env("BACKUP_PG_DUMP")
+BACKUP_PG_RESTORE = env("BACKUP_PG_RESTORE")
+BACKUP_DIR = env("BACKUP_DIR")
+BACKUP_KEEP_DAYS = env("BACKUP_KEEP_DAYS")
+BACKUP_SECONDS = env("BACKUP_SECONDS")

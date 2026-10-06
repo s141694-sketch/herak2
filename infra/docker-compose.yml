@@ -87,6 +87,14 @@ services:
       retries: 5
       start_period: 20s
 
+  # A backup of the database and the files every day (spec 7.4, D83), kept BACKUP_KEEP_DAYS days. In production
+  # the backups volume must live off this host (a mounted network share or similar), or a lost host loses both.
+  backup:
+    <<: *backend
+    command: ["sh", "-c", "while true; do python manage.py backup --dest /backups || echo 'the backup failed'; sleep 86400; done"]
+    volumes:
+      - backups:/backups
+
   collab:
     build:
       context: ..
@@ -122,3 +130,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  backups:

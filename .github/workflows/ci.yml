@@ -43,6 +43,12 @@ jobs:
       - run: uv sync --frozen --python ${{ matrix.python }}
       - name: LibreOffice and Arabic fonts for the PDF export (D78)
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libreoffice-writer-nogui fonts-noto-core
+      - name: pg_dump and pg_restore of the server's version, for the backup tests (D83)
+        run: |
+          sudo apt-get install -y -q postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -q --no-install-recommends postgresql-client-18
+          pg_dump --version
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run python manage.py makemigrations --check --dry-run
@@ -88,12 +94,14 @@ jobs:
         run: npm run build -w frontend
 
   compose:
-    name: docker compose config
+    name: docker compose config and images
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - run: cp backend/.env.example backend/.env
       - run: docker compose -f infra/docker-compose.yml config --quiet
+      # The images build, with LibreOffice and the PostgreSQL 18 client in the backend's (D78, D83).
+      - run: docker compose -f infra/docker-compose.yml build backend collab frontend
 
   e2e:
     name: browser tests (playwright)
