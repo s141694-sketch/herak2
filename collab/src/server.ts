@@ -1,5 +1,5 @@
 import { hydrateStable, materialize, type Rows } from '@harak2/shared'
-import { type Document, OutgoingMessage, Server } from '@hocuspocus/server'
+import { type Connection, type Document, OutgoingMessage, Server } from '@hocuspocus/server'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 
 import * as Y from 'yjs'
@@ -22,6 +22,8 @@ export interface CollabServerOptions {
   retryMaxMs?: number
   /** A freeze Django never ends (it crashed mid-submission) is checked against Django after this long. */
   freezeTtlMs?: number
+  /** How long after its token ran out a connection that brought no fresh one is closed. */
+  expiryGraceMs?: number
   log?: (event: string, fields: Record<string, unknown>) => void
 }
 
@@ -65,6 +67,8 @@ export class CollabService {
   /** Open freezes per document, each with the timer that checks on it if Django never ends it. */
   private readonly freezes = new Map<string, Map<string, NodeJS.Timeout>>()
   private readonly retries = new Map<string, NodeJS.Timeout>()
+  /** For each open connection, the timer that closes it when its token runs out. */
+  private readonly expiries = new Map<Connection, NodeJS.Timeout>()
   private readonly log: NonNullable<CollabServerOptions['log']>
   private lastSeq = 0
   private stopping = false
@@ -94,6 +98,7 @@ export class CollabService {
         if (this.isHeld(documentName)) connection.readOnly = true
       },
       connected: async ({ documentName, connection }) => {
+        this.watchExpiry(connection)
         const status = this.status.get(documentName)
         if (this.isHeld(documentName)) connection.readOnly = true
         // Someone who opens the document now learns what the others were told. (A locked version needs no
@@ -144,15 +149,25 @@ export class CollabService {
         if (status.retryable && !this.stopping) throw new Error(`${documentName} keeps unsaved changes`)
         this.log('collab.unsaved_changes_dropped', { document: documentName, error: status.lastError })
       },
-      onStateless: async ({ connection, document, payload }) => {
-        // Clients announce changes that live outside the document (comments) so the others refresh.
-        let type: unknown
+      onStateless: async ({ connection, document, documentName, payload }) => {
+        // Clients announce changes that live outside the document (comments) so the others refresh, and bring
+        // fresh tokens before theirs run out.
+        let message: { type?: unknown; token?: unknown }
         try {
-          type = JSON.parse(payload).type
+          message = JSON.parse(payload)
         } catch {
           return
         }
-        if (type === 'comments-changed') document.broadcastStateless(payload, (other) => other !== connection)
+        if (message.type === 'comments-changed') document.broadcastStateless(payload, (other) => other !== connection)
+        if (message.type === 'refresh') await this.refresh(connection, documentName, message.token)
+      },
+      onDisconnect: async ({ context }) => {
+        for (const [connection, timer] of this.expiries) {
+          if ((connection.context as ConnectionContext) === context) {
+            clearTimeout(timer)
+            this.expiries.delete(connection)
+          }
+        }
       },
       afterUnloadDocument: async ({ documentName }) => {
         this.status.delete(documentName)
@@ -442,6 +457,44 @@ export class CollabService {
   }
 
   /**
+   * A connection lasts as long as its token: Django issues tokens only to sessions that may still work in the
+   * organization (its entry checks: single sign-on, its length, a second factor) with the person's rights of the
+   * moment, so a connection that cannot get a fresh one is closed (from the independent review of phase 6).
+   * Closing the socket makes the page connect again, with a token asked of Django then.
+   */
+  private watchExpiry(connection: Connection) {
+    clearTimeout(this.expiries.get(connection))
+    const grant = (connection.context as ConnectionContext).grant
+    const wait = Math.max(0, grant.expiresAt - Date.now()) + (this.options.expiryGraceMs ?? 5000)
+    this.expiries.set(
+      connection,
+      setTimeout(() => {
+        this.expiries.delete(connection)
+        if ((connection.context as ConnectionContext).grant.expiresAt > Date.now()) return this.watchExpiry(connection)
+        this.log('collab.token_expired', { document: grant.document, user: grant.userId })
+        connection.webSocket.close(4001, 'token expired')
+      }, wait),
+    )
+  }
+
+  /** A fresh token for the same person and document extends the connection; it may only narrow it to reading. */
+  private async refresh(connection: Connection, documentName: string, fresh: unknown) {
+    const context = connection.context as ConnectionContext
+    try {
+      const grant = await verifyToken(typeof fresh === 'string' ? fresh : '', documentName, this.options.tokenSecret)
+      if (grant.userId !== context.grant.userId) throw new AuthenticationRefused('token is for another person')
+      if (grant.mode === 'read') connection.readOnly = true
+      context.grant = { ...grant, mode: context.grant.mode === 'read' ? 'read' : grant.mode }
+      this.watchExpiry(connection)
+    } catch (error) {
+      this.log('collab.refresh_refused', { document: documentName, error: message(error) })
+      clearTimeout(this.expiries.get(connection))
+      this.expiries.delete(connection)
+      connection.webSocket.close(4001, 'token refused')
+    }
+  }
+
+  /**
    * Stops accepting connections and saves what it can within the time allowed. A save that still fails is
    * logged and dropped: holding the process open would not bring Django back.
    */
@@ -450,6 +503,8 @@ export class CollabService {
     for (const timer of this.retries.values()) clearTimeout(timer)
     this.retries.clear()
     for (const held of this.freezes.values()) for (const timer of held.values()) clearTimeout(timer)
+    for (const timer of this.expiries.values()) clearTimeout(timer)
+    this.expiries.clear()
     let timer: NodeJS.Timeout | undefined
     const timedOut = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(() => resolve('timeout'), timeoutMs)

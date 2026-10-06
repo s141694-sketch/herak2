@@ -8,6 +8,8 @@ export interface Grant {
   document: string
   mode: 'read' | 'write'
   name: string
+  /** When the token stops vouching for the connection (epoch milliseconds). */
+  expiresAt: number
 }
 
 export class AuthenticationRefused extends Error {}
@@ -33,5 +35,6 @@ export async function verifyToken(token: string, documentName: string, secret: s
     document: documentName,
     mode: payload.mode,
     name: String(payload.name ?? ''),
+    expiresAt: Number(payload.exp) * 1000,
   }
 }

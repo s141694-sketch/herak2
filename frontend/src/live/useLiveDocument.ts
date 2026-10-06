@@ -45,6 +45,7 @@ interface TokenResponse {
   token: string
   document: string
   mode: 'read' | 'write'
+  expires_in: number
 }
 
 export function collabUrl(): string {
@@ -53,7 +54,10 @@ export function collabUrl(): string {
 
 /**
  * Opens the live document of one version. A fresh short-lived token is fetched
- * on every (re)connection, so a reconnect after locking comes back read-only.
+ * on every (re)connection, so a reconnect after locking comes back read-only,
+ * and again halfway through each token's life: the service closes a connection
+ * whose token ran out, so one Django no longer grants (the session ended, the
+ * organization now asks for its provider) does not stay open.
  */
 export function useLiveDocument(versionId: number): LiveDocument | null {
   const [live, setLive] = useState<LiveDocument | null>(null)
@@ -61,15 +65,37 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
   useEffect(() => {
     const doc = new Y.Doc()
     let mode: LiveDocument['mode'] = null
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
     const update = (patch: Partial<LiveDocument>) => setLive((current) => (current && current.doc === doc ? { ...current, ...patch } : current))
+    const fetchToken = async () => {
+      const response = await http.post<TokenResponse>(`/api/program-versions/${versionId}/collab-token/`)
+      mode = response.mode
+      update({ mode })
+      return response
+    }
+    const refreshLater = (seconds: number) => {
+      clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(
+        async () => {
+          try {
+            const fresh = await fetchToken()
+            provider.sendStateless(JSON.stringify({ type: 'refresh', token: fresh.token }))
+            refreshLater(fresh.expires_in)
+          } catch {
+            // Refused or unreachable: the service closes the connection when the token runs out, and the
+            // reconnection asks Django again, which then says why.
+          }
+        },
+        Math.max(5, seconds / 2) * 1000,
+      )
+    }
     const provider = new HocuspocusProvider({
       url: collabUrl(),
       name: `program-version:${versionId}`,
       document: doc,
       token: async () => {
-        const response = await http.post<TokenResponse>(`/api/program-versions/${versionId}/collab-token/`)
-        mode = response.mode
-        update({ mode })
+        const response = await fetchToken()
+        refreshLater(response.expires_in)
         return response.token
       },
       onStatus: ({ status }) => update({ status: status as LiveStatus, ...(status !== 'connected' ? { synced: false } : {}) }),
@@ -99,6 +125,7 @@ export function useLiveDocument(versionId: number): LiveDocument | null {
     })
     setLive({ doc, provider, status: 'connecting', synced: false, everSynced: false, unsynced: 0, mode: null, authFailed: false, locked: false, frozen: false, commentsVersion: 0, saveError: undefined, saveErrorCode: null })
     return () => {
+      clearTimeout(refreshTimer)
       provider.destroy()
       doc.destroy()
       setLive(null)
