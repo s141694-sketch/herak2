@@ -10,7 +10,8 @@ approval, the request for the export) from the entry alone, so handling it again
 | submission                | full analysis (apps.quality.receivers), then the first stage told |
 | reviewer's decision       | the next stage told, or the authors when it was returned         |
 | delay                     | reminder, then escalation (apps.workflows.deadlines)             |
-| approval                  | the version is locked; export asked for (phase 7); everyone told |
+| approval                  | the version is locked; export asked for (task 7.5); everyone told |
+| export failed for good    | the organization's admins told (task 7.5)                        |
 """
 
 import sentry_sdk
@@ -32,7 +33,7 @@ from .models import Notification
 log = structlog.get_logger("harak2.notifications")
 S = ProgramVersion.Status
 E = Notification.Event
-HANDLED = {"program_version.transition", "workflow.reminder"}
+HANDLED = {"program_version.transition", "workflow.reminder", "program_version.export_failed"}
 
 
 @receiver(recorded)
@@ -65,6 +66,9 @@ def dispatch(entry_id: int) -> None:
 def _handle(entry: AuditLog, version: ProgramVersion) -> list[Notification]:
     if entry.event == "workflow.reminder":
         return _reminder(entry, version)
+    if entry.event == "program_version.export_failed":
+        admins = User.objects.filter(memberships__role=Role.ADMIN, memberships__organization_id=entry.organization_id)
+        return _notify(entry, version, E.EXPORT_FAILED, list(admins))
     target = entry.payload.get("to")
     if target == S.IN_STAGE:
         task = StageTask.objects.filter(instance__version=version, stage=entry.payload.get("stage")).last()
@@ -85,14 +89,17 @@ def _handle(entry: AuditLog, version: ProgramVersion) -> list[Notification]:
 
 @transaction.atomic
 def _request_export(version: ProgramVersion) -> None:
-    """Word and PDF are made in phase 7 (D60); the request is on record from now, once per version: the
-    version's row lock keeps two handlings of the approval from both recording it."""
+    """The request is on record once per version (the version's row lock keeps two handlings of the approval
+    from both recording it), and the export job made (task 7.5, D60, D79)."""
+    from apps.exports import jobs
+
     ProgramVersion.objects.select_for_update(no_key=True).get(pk=version.pk)
     asked = AuditLog.objects.filter(
         event="program_version.export_requested", target_type=version._meta.label_lower, target_id=str(version.pk)
     )
     if not asked.exists():
         record("program_version.export_requested", target=version, payload={"formats": ["docx", "pdf"]})
+    jobs.request_export(version)
 
 
 def _reminder(entry: AuditLog, version: ProgramVersion) -> list[Notification]:

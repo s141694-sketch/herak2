@@ -36,6 +36,7 @@ class Notification(OrganizationScopedModel):
         TASK_DUE_SOON = "task_due_soon", "task_due_soon"
         TASK_DUE = "task_due", "task_due"
         TASK_OVERDUE = "task_overdue", "task_overdue"
+        EXPORT_FAILED = "export_failed", "export_failed"
 
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
     event = models.CharField(max_length=30, choices=Event.choices)

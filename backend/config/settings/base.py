@@ -145,6 +145,8 @@ CELERY_BEAT_SCHEDULE: dict = {
     "workflow-deadlines": {"task": "workflows.check_deadlines", "schedule": crontab(minute="*/15")},
     # The daily digest at 07:00 in Muscat (03:00 UTC).
     "notification-digest": {"task": "notifications.daily_digest", "schedule": crontab(hour=3, minute=0)},
+    # Exports whose task never ran or whose worker was lost (task 7.5, D79).
+    "export-sweep": {"task": "exports.sweep", "schedule": crontab(minute="*/10")},
 }
 
 # Email (D59): any SMTP provider, from EMAIL_URL (e.g. smtp+tls://user:password@host:587); the console by default.

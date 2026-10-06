@@ -57,6 +57,19 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
     },
 }
 
+TEXTS[E.EXPORT_FAILED] = {
+    "ar": (
+        "تعذّر تصدير: {program}",
+        "تعذّر توليد ملفي Word وPDF للنسخة المعتمدة {number} من «{program}» بعد عدة محاولات. الاعتماد قائم، "
+        "ويمكن إعادة المحاولة من صفحة النسخة.",
+    ),
+    "en": (
+        "Export failed: {program}",
+        "The Word and PDF files of approved version {number} of “{program}” could not be made after several "
+        "attempts. The approval stands; try again from the version's page.",
+    ),
+}
+
 DIGEST = {
     "ar": ("ملخص حراك اليومي", "ما وصلك منذ آخر ملخص:"),
     "en": ("Harak daily digest", "What reached you since the last digest:"),
