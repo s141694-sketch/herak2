@@ -94,14 +94,48 @@ jobs:
         run: npm run build -w frontend
 
   compose:
-    name: docker compose config and images
+    name: docker compose stack and smoke check
     runs-on: ubuntu-latest
+    env:
+      COMPOSE: docker compose --env-file backend/.env -f infra/docker-compose.yml
     steps:
       - uses: actions/checkout@v5
-      - run: cp backend/.env.example backend/.env
-      - run: docker compose -f infra/docker-compose.yml config --quiet
+      # A production configuration as the runbook makes one, with fresh secrets, for https://localhost (task 8.6).
+      - name: configuration
+        run: |
+          secret() { openssl rand -hex 32; }
+          {
+            grep -v -E '^(HARAK_DOMAIN|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|APP_URL|SECRET_KEY|COLLAB_TOKEN_SECRET|COLLAB_SERVICE_SECRET|POSTGRES_PASSWORD|FIELD_ENCRYPTION_KEYS|EMAIL_URL)=' infra/pilot.env.example
+            echo "HARAK_DOMAIN=localhost"
+            echo "ALLOWED_HOSTS=localhost,backend"
+            echo "CSRF_TRUSTED_ORIGINS=https://localhost"
+            echo "APP_URL=https://localhost"
+            echo "SECRET_KEY=$(secret)"
+            echo "COLLAB_TOKEN_SECRET=$(secret)"
+            echo "COLLAB_SERVICE_SECRET=$(secret)"
+            echo "POSTGRES_PASSWORD=$(secret)"
+            echo "FIELD_ENCRYPTION_KEYS=$(openssl rand 32 | base64 | tr '+/' '-_')"
+            echo "EMAIL_URL=consolemail://"
+          } > backend/.env
+      - run: $COMPOSE config --quiet
       # The images build, with LibreOffice and the PostgreSQL 18 client in the backend's (D78, D83).
-      - run: docker compose -f infra/docker-compose.yml build backend collab frontend
+      - run: $COMPOSE build backend collab frontend
+      - run: $COMPOSE up -d
+      - run: infra/healthcheck.sh 300
+      # Caddy's local authority signed the certificate for localhost; the smoke check trusts it (D88).
+      - name: smoke check through TLS
+        run: |
+          for _ in $(seq 1 30); do
+            $COMPOSE cp caddy:/data/caddy/pki/authorities/local/root.crt root.crt 2>/dev/null && break
+            sleep 2
+          done
+          SMOKE_CACERT=root.crt infra/smoke.sh https://localhost
+      - name: an organization and its first manager, then the pilot's measures
+        run: |
+          $COMPOSE exec -T backend python manage.py create_organization --name "مركز التدريب" --slug ci --admin-email admin@ci.test
+          $COMPOSE exec -T backend python manage.py pilot_metrics --organization ci | grep "no programs"
+      - if: failure()
+        run: $COMPOSE ps && $COMPOSE logs --tail 80
 
   e2e:
     name: browser tests (playwright)

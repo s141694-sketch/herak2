@@ -1,0 +1,6 @@
+# TLS in front of nginx (spec 7, task 8.6, D88). For a public name, Caddy obtains and renews the certificate on its
+# own (ports 80 and 443 must reach this host); for localhost it signs one with its own local authority, which the
+# smoke check trusts in tests. It sends nginx X-Forwarded-Proto and the client's address in X-Forwarded-For.
+{$HARAK_DOMAIN} {
+	reverse_proxy frontend:80
+}

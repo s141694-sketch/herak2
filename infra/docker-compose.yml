@@ -1,3 +1,6 @@
+# Harak on one server (the pilot; runbook: docs/2026-10-06-harak2-runbook.md). Run from the repository's root:
+#   docker compose --env-file backend/.env -f infra/docker-compose.yml up -d
+# backend/.env starts from infra/pilot.env.example; compose takes HARAK_DOMAIN and POSTGRES_PASSWORD from it.
 name: harak2
 
 x-backend: &backend
@@ -7,9 +10,12 @@ x-backend: &backend
   env_file: ../backend/.env
   environment:
     DJANGO_SETTINGS_MODULE: config.settings.production
-    DATABASE_URL: postgres://harak:${POSTGRES_PASSWORD:-harak}@postgres:5432/harak
+    DATABASE_URL: postgres://harak:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in backend/.env}@postgres:5432/harak
     REDIS_URL: redis://redis:6379/0
     COLLAB_INTERNAL_URL: http://collab:1234
+    # Two proxies append to X-Forwarded-For before Django: the TLS front (caddy, or the organization's load balancer)
+    # and nginx. Rate limits then count the client's address, not the front's (D73, D88).
+    NUM_PROXIES: "2"
   depends_on:
     postgres:
       condition: service_healthy
@@ -22,7 +28,7 @@ services:
     environment:
       POSTGRES_DB: harak
       POSTGRES_USER: harak
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-harak}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in backend/.env}
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
@@ -61,7 +67,10 @@ services:
     # Reached only through nginx (the frontend service): its body limit, and the one proxy NUM_PROXIES counts (D73,
     # phase 7 review). Not published on the host.
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/"]
+      # As the TLS front would send it: otherwise the production settings answer with a redirect to https, which
+      # curl takes for success without the health view ever running (D88). "backend" is a host Django must allow
+      # anyway: the collaboration service calls it by that name.
+      test: ["CMD", "curl", "-fsS", "-H", "Host: backend", "-H", "X-Forwarded-Proto: https", "http://localhost:8000/api/health/"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -114,8 +123,10 @@ services:
     build:
       context: ..
       dockerfile: infra/frontend.Dockerfile
+    # Reached from the internet only through caddy. On this host, 8080 serves a TLS front of the host's own instead
+    # of caddy, and checks.
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -127,7 +138,31 @@ services:
       timeout: 5s
       retries: 10
 
+  # TLS for HARAK_DOMAIN (D88): a certificate from a public authority, renewed on its own, kept in caddy-data.
+  caddy:
+    image: caddy:2.11.7
+    environment:
+      HARAK_DOMAIN: ${HARAK_DOMAIN:?set HARAK_DOMAIN in backend/.env}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    depends_on:
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2019/config/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   redis-data:
   backups:
+  caddy-data:
+  caddy-config:
