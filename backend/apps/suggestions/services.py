@@ -306,7 +306,9 @@ def read_import_file(version: ProgramVersion, data: bytes, *, name: str, actor) 
         # Harak 1's NO_TEXT: a scanned PDF, or a file with too little Arabic to import.
         code = "file_no_text" if exc.code == "NO_TEXT" else "import_text_invalid"
         raise SuggestionError(str(exc), code=code) from exc
-    kept = files.store(data, name=name, content_type=CONTENT_TYPES[extracted.kind], kind=File.Kind.UPLOAD, actor=actor)
+    kept = files.store(
+        data, name=name, content_type=CONTENT_TYPES[extracted.kind], kind=File.Kind.UPLOAD, actor=actor, version=version
+    )
     return {
         "file": {"id": kept.pk, "name": kept.name},
         "text": "\n\n".join(page["text"] for page in read["doc"]["pages"]),

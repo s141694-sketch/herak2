@@ -16,14 +16,25 @@ def _key_name(name: str) -> str:
     return cleaned[-120:]
 
 
-def store(data: bytes, *, name: str, content_type: str, kind: str, actor) -> File:
+def _shortened(name: str, length: int = 255) -> str:
+    """The name cut to ``length`` characters, keeping its extension (a long program title, phase 7 review)."""
+    if len(name) <= length:
+        return name
+    stem, dot, extension = name.rpartition(".")
+    if not dot or len(extension) > 10:
+        return name[:length]
+    return f"{stem[: length - len(extension) - 1]}.{extension}"
+
+
+def store(data: bytes, *, name: str, content_type: str, kind: str, actor, version=None) -> File:
     """Keeps the bytes in the store under the active organization, then records them. A failure between the two
     leaves at most an object nobody refers to, never a row without its bytes."""
     key = f"{current_organization_id()}/{kind}/{uuid.uuid4().hex}/{_key_name(name)}"
     storage.write(key, data, content_type)
     return File.objects.create(
         kind=kind,
-        name=name[:255],
+        name=_shortened(name),
+        version=version,
         content_type=content_type,
         size=len(data),
         sha256=hashlib.sha256(data).hexdigest(),

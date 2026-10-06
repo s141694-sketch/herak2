@@ -73,6 +73,9 @@ def test_an_admin_uploads_the_logo_which_members_can_see_and_removes_it(world):
     [
         ("logo.gif", b"GIF89a" + b"\0" * 20, "logo_type_unsupported"),
         ("logo.png", PNG + b"\0" * 1_100_000, "logo_too_large"),
+        # From the phase 7 review: a JPEG Word cannot take (no JFIF or Exif header) failed every export after it.
+        ("logo.jpg", b"\xff\xd8\xff\xdb" + b"\0" * 200, "logo_type_unsupported"),
+        ("logo.png", b"\x89PNG\r\n\x1a\n" + b"\0" * 64, "logo_type_unsupported"),
     ],
 )
 def test_a_logo_is_a_png_or_jpeg_of_at_most_a_megabyte(world, name, data, code):

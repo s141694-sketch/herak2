@@ -3,8 +3,10 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
+from apps.files.uploads import UploadThrottle, too_long
 from apps.programs.models import ProgramVersion
 from apps.programs.views import require_edit
 from apps.tenancy.permissions import HasActiveOrganization
@@ -82,13 +84,16 @@ class ImportFileView(APIView):
 
     permission_classes = [HasActiveOrganization]
     parser_classes = [MultiPartParser]
+    throttle_classes = [UserRateThrottle, UploadThrottle]
 
     def post(self, request, pk):
         version = get_object_or_404(ProgramVersion.objects.select_related("program"), pk=pk)
         require_edit(request, version.program)
+        if too_long(request, settings.IMPORT_MAX_FILE_BYTES):
+            raise services.SuggestionError("the file is too large", code="import_file_too_large")
         upload = request.FILES.get("file")
         if upload is None:
             raise services.SuggestionError("choose a file", code="file_required")
         if upload.size > settings.IMPORT_MAX_FILE_BYTES:
-            raise services.SuggestionError("the file is too large", code="file_too_large")
+            raise services.SuggestionError("the file is too large", code="import_file_too_large")
         return Response(services.read_import_file(version, upload.read(), name=upload.name, actor=request.user))

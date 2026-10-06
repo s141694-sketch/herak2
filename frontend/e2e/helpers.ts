@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto'
+import { inflateRawSync } from 'node:zlib'
 
 import { type Browser, expect, type Locator, type Page } from '@playwright/test'
 
@@ -127,4 +128,32 @@ export async function keycloakSignIn(page: Page, username: string) {
   await page.locator('input[name="username"]').fill(username)
   await page.locator('input[name="password"]').fill('harak-sso-test')
   await page.locator('#kc-login').click()
+}
+
+/** The text of a Word file's body, a paragraph a line: its word/document.xml read out of the zip. */
+export function docxText(file: Buffer): string {
+  const end = file.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
+  if (end < 0) throw new Error('not a zip file')
+  let entry = file.readUInt32LE(end + 16)
+  for (let i = 0; i < file.readUInt16LE(end + 10); i += 1) {
+    const method = file.readUInt16LE(entry + 10)
+    const size = file.readUInt32LE(entry + 20)
+    const nameLength = file.readUInt16LE(entry + 28)
+    const name = file.toString('utf-8', entry + 46, entry + 46 + nameLength)
+    if (name === 'word/document.xml') {
+      const local = file.readUInt32LE(entry + 42)
+      const start = local + 30 + file.readUInt16LE(local + 26) + file.readUInt16LE(local + 28)
+      const data = file.subarray(start, start + size)
+      const xml = (method === 8 ? inflateRawSync(data) : data).toString('utf-8')
+      return xml
+        .replace(/<w:p[ >]/g, '\n$&')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+    }
+    entry += 46 + nameLength + file.readUInt16LE(entry + 30) + file.readUInt16LE(entry + 32)
+  }
+  throw new Error('no word/document.xml')
 }

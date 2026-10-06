@@ -1,3 +1,4 @@
+import { wordLists } from '@harak2/shared'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useRef, useState } from 'react'
@@ -34,7 +35,8 @@ export function BlockEditor({
     ],
     content,
     editable,
-    editorProps: { attributes: { class: 'block-editor', 'data-testid': testId ?? 'block-editor' } },
+    // Word's lists pasted in become real lists (D5).
+    editorProps: { attributes: { class: 'block-editor', 'data-testid': testId ?? 'block-editor' }, transformPastedHTML: wordLists },
     onBlur: async ({ editor: current }) => {
       const next = current.getJSON() as Json
       const serialized = JSON.stringify(next)

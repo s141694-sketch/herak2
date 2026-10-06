@@ -6,6 +6,8 @@ import io
 import os
 import shutil
 import subprocess
+import time
+import uuid
 
 import pytest
 from django.conf import settings
@@ -38,13 +40,18 @@ def test_the_pdf_is_the_word_file_converted_and_reads_in_the_trees_order(world):
     assert positions == sorted(positions)
 
 
-def test_a_conversion_that_takes_too_long_fails_plainly(monkeypatch):
-    def slow(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="soffice", timeout=1)
-
-    monkeypatch.setattr(pdf.subprocess, "run", slow)
+def test_a_conversion_that_takes_too_long_fails_plainly_and_leaves_nothing_running(tmp_path, settings):
+    """soffice is a script that starts soffice.bin: stopping only the script left the conversion running, and
+    it put its profile back in the removed folder (phase 7 review, D81). The whole process group is stopped."""
+    marker = f"harak2-orphan-{uuid.uuid4().hex}"
+    fake = tmp_path / "soffice"
+    fake.write_text(f"#!/bin/sh\nsh -c 'sleep 30; echo {marker}' &\nwait\n")
+    fake.chmod(0o755)
+    settings.EXPORT_SOFFICE, settings.EXPORT_PDF_SECONDS = str(fake), 1
     with pytest.raises(pdf.ConversionFailed, match="too long"):
         pdf.from_word(b"PK")
+    time.sleep(0.3)
+    assert subprocess.run(["pgrep", "-f", marker], capture_output=True).returncode == 1  # 1: none found
 
 
 def test_without_libreoffice_the_conversion_fails_plainly(settings):
@@ -54,7 +61,7 @@ def test_without_libreoffice_the_conversion_fails_plainly(settings):
 
 
 def test_a_conversion_that_makes_no_pdf_fails_plainly(monkeypatch):
-    monkeypatch.setattr(pdf.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", "boom"))
+    monkeypatch.setattr(pdf, "_run", lambda command, timeout: "boom")
     monkeypatch.setattr(pdf.shutil, "which", lambda name: "/usr/bin/soffice")
     with pytest.raises(pdf.ConversionFailed, match="no PDF"):
         pdf.from_word(b"PK")

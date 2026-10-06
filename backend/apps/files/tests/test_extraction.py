@@ -2,11 +2,16 @@
 python-docx, and plain text; the type is read from the content, and what cannot be read is refused plainly."""
 
 import io
+import time
 import zipfile
 from pathlib import Path
 
 import pytest
 from docx import Document
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
+from pypdf import PdfWriter
+from pypdf.generic import DictionaryObject, NameObject, StreamObject
 
 from apps.files import extraction
 
@@ -78,7 +83,7 @@ def test_a_file_over_the_size_limit_is_refused_before_it_is_read(settings):
     settings.IMPORT_MAX_FILE_BYTES = 1000
     with pytest.raises(extraction.Refused) as refused:
         extraction.extract(b"x" * 1001, "a.txt")
-    assert refused.value.code == "file_too_large"
+    assert refused.value.code == "import_file_too_large"
 
 
 def test_a_pdf_with_too_many_pages_is_refused(settings):
@@ -97,9 +102,100 @@ def test_a_word_file_that_would_unpack_to_much_more_than_its_size_is_refused(set
         bomb.writestr("word/media/padding.bin", b"\0" * 50_000)
     with pytest.raises(extraction.Refused) as refused:
         extraction.extract(out.getvalue(), "big.docx")
-    assert refused.value.code == "file_too_large"
+    assert refused.value.code == "import_file_too_large"
 
 
 def test_a_pdf_without_text_gives_no_text():
     """A scanned PDF has pages but no text: the caller then says to paste the text instead."""
     assert extraction.extract((FIXTURES / "scanned.pdf").read_bytes(), "scanned.pdf").text.strip() == ""
+
+
+# From the phase 7 review: what a file can make the server do is bounded (D80).
+
+
+def test_a_word_cell_spanning_millions_of_columns_is_read_at_once():
+    """python-docx's row.cells makes one entry per spanned column: 150 million took 15 s and 1.5 GB."""
+    document = Document()
+    cell = document.add_table(rows=1, cols=1).cell(0, 0)
+    cell.text = "خلية واسعة"
+    cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:gridSpan {nsdecls("w")} w:val="150000000"/>'))
+    out = io.BytesIO()
+    document.save(out)
+    started = time.monotonic()
+    assert "خلية واسعة" in extraction.extract(out.getvalue(), "wide.docx").text
+    assert time.monotonic() - started < 5
+
+
+def test_a_table_python_docx_cannot_lay_out_is_still_read():
+    """A cell continuing a vertical merge with nothing above it made python-docx raise, and the API answer 500."""
+    document = Document()
+    cell = document.add_table(rows=1, cols=1).cell(0, 0)
+    cell.text = "خلية"
+    cell._tc.get_or_add_tcPr().append(parse_xml(f"<w:vMerge {nsdecls('w')}/>"))
+    out = io.BytesIO()
+    document.save(out)
+    assert "خلية" in extraction.extract(out.getvalue(), "merged.docx").text
+
+
+def test_a_damaged_word_file_is_refused_as_unreadable():
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(word("نص"))) as original, zipfile.ZipFile(out, "w") as damaged:
+        for item in original.infolist():
+            data = original.read(item.filename)
+            damaged.writestr(item, data[: len(data) // 2] if item.filename == "word/document.xml" else data)
+    with pytest.raises(extraction.Refused) as refused:
+        extraction.extract(out.getvalue(), "damaged.docx")
+    assert refused.value.code == "file_unreadable"
+
+
+def heavy_pdf(pages: int) -> bytes:
+    """A small PDF whose pages share one long content stream: slow to read, though only a few kilobytes."""
+    writer = PdfWriter()
+    content = StreamObject()
+    content.set_data(b"0 0 m 1 1 l S\n" * 80_000)
+    content = writer._add_object(content.flate_encode())
+    font = {NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1")}
+    font[NameObject("/BaseFont")] = NameObject("/Helvetica")
+    fonts = DictionaryObject({NameObject("/F1"): writer._add_object(DictionaryObject(font))})
+    resources = DictionaryObject({NameObject("/Font"): fonts})
+    for _ in range(pages):
+        page = writer.add_blank_page(100, 100)
+        page[NameObject("/Contents")] = content
+        page[NameObject("/Resources")] = resources
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def test_reading_a_file_stops_at_the_time_allowed(settings):
+    settings.IMPORT_EXTRACT_SECONDS = 1
+    data = heavy_pdf(40)
+    assert len(data) < 20_000
+    started = time.monotonic()
+    with pytest.raises(extraction.Refused) as refused:
+        extraction.extract(data, "heavy.pdf")
+    assert refused.value.code == "file_unreadable"
+    assert time.monotonic() - started < 4
+
+
+def test_text_longer_than_an_import_takes_is_refused_as_too_long():
+    from apps.agents.importing import MAX_TEXT_CHARS
+
+    with pytest.raises(extraction.Refused) as refused:
+        extraction.extract(("ن" * (MAX_TEXT_CHARS + 1)).encode(), "long.txt")
+    assert refused.value.code == "file_text_too_long"
+
+
+def test_a_word_file_made_by_libreoffice_reads_in_order():
+    """Plan 7.1 asks for files from Word or LibreOffice, not only python-docx (phase 7 review). This one was saved by
+    LibreOffice from an Arabic page: headings, a numbered list and a table."""
+    data = (FIXTURES / "curriculum-libreoffice.docx").read_bytes()
+    assert b"LibreOffice" in zipfile.ZipFile(io.BytesIO(data)).read("docProps/app.xml")
+    lines = [line for line in extraction.extract(data, "منهج.docx").text.split("\n") if line.strip()]
+    assert lines[:3] == ["الوحدة الأولى: السلامة في الورشة", "الدرس الأول: معدات الوقاية الشخصية", "الأهداف"]
+    assert (
+        lines.index("فحص الخوذة")
+        > lines.index("النشاط")
+        > lines.index("أن يطبق المتدرب إجراءات الإغلاق والتأمين قبل بدء أعمال الصيانة.")
+    )
+    assert lines[-1] == "الخاتمة"

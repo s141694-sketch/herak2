@@ -48,6 +48,12 @@ export class ApiError extends Error {
   }
 }
 
+/** A refusal without Harak's error body: a body over the proxy's limit (413) is refused before it reaches the server,
+ * and the only uploads that large are curricula for an import. */
+function fallbackCode(status: number): string {
+  return status === 413 ? 'import_file_too_large' : 'unknown'
+}
+
 /** The stable code of a failure; the UI looks it up under `errors.*` and falls back to `errors.unknown`. */
 export function errorCode(error: unknown): string {
   if (error instanceof ApiError) return error.status === 0 ? 'network' : error.code
@@ -86,7 +92,7 @@ export async function request<T>(path: string, init: { method?: string; body?: u
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     const error = body?.error ?? {}
-    throw new ApiError(response.status, error.code ?? 'unknown', error.message ?? response.statusText)
+    throw new ApiError(response.status, error.code ?? fallbackCode(response.status), error.message ?? response.statusText)
   }
   return body as T
 }
@@ -102,7 +108,7 @@ async function send<T>(path: string, init: RequestInit): Promise<T> {
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     const error = body?.error ?? {}
-    throw new ApiError(response.status, error.code ?? 'unknown', error.message ?? response.statusText)
+    throw new ApiError(response.status, error.code ?? fallbackCode(response.status), error.message ?? response.statusText)
   }
   return body as T
 }

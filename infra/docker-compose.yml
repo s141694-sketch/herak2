@@ -58,8 +58,8 @@ services:
   backend:
     <<: *backend
     command: ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile -"]
-    ports:
-      - "8000:8000"
+    # Reached only through nginx (the frontend service): its body limit, and the one proxy NUM_PROXIES counts (D73,
+    # phase 7 review). Not published on the host.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/"]
       interval: 10s
@@ -95,8 +95,7 @@ services:
     environment:
       PORT: "1234"
       DJANGO_INTERNAL_URL: http://backend:8000
-    ports:
-      - "1234:1234"
+    # Reached through nginx at /collab/, like the backend.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1234/health"]
       interval: 10s

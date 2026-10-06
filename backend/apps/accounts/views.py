@@ -7,11 +7,12 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.audit.services import record
 from apps.core.errors import Conflict
+from apps.files.uploads import UploadThrottle, too_long
 from apps.sso.models import IdentityProviderConfig
 from apps.tenancy.middleware import (
     SESSION_KEY,
@@ -293,16 +294,31 @@ class IdentityView(APIView):
         return Response(identity_payload(organization))
 
 
+def _word_takes(image: bytes) -> bool:
+    """Whether the Word export can place the image (D80): python-docx reads a JPEG only with a JFIF or Exif header,
+    and a logo it cannot read failed every export of the organization."""
+    from docx.image.image import Image
+
+    try:
+        Image.from_blob(image)
+    except Exception:  # noqa: BLE001 - any image python-docx cannot read is refused the same way
+        return False
+    return True
+
+
 class IdentityLogoView(APIView):
     """The logo: a PNG or JPEG of at most 1 MB, kept in the file store (task 7.0)."""
 
     permission_classes = [role_required(Role.ADMIN)]
     parser_classes = [MultiPartParser]
+    throttle_classes = [UserRateThrottle, UploadThrottle]
 
     def post(self, request):
         from apps.files import services as files
         from apps.files.models import File
 
+        if too_long(request, LOGO_MAX_BYTES):
+            raise IdentityError("the logo is larger than 1 MB", code="logo_too_large")
         upload = request.FILES.get("file")
         if upload is None:
             raise IdentityError("choose an image", code="file_required")
@@ -310,7 +326,7 @@ class IdentityLogoView(APIView):
             raise IdentityError("the logo is larger than 1 MB", code="logo_too_large")
         data = upload.read()
         content_type = next((kind for magic, kind in LOGO_TYPES.items() if data.startswith(magic)), None)
-        if content_type is None:
+        if content_type is None or not _word_takes(data):
             raise IdentityError("the logo is a PNG or JPEG image", code="logo_type_unsupported")
         organization = request.organization
         organization.logo_file = files.store(

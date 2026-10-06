@@ -131,8 +131,10 @@ def _transition(
         version.save()
 
     program = Program.objects.select_for_update().get(pk=version.program_id)
-    program.status = PROGRAM_STATUS[to]
-    program.save(update_fields=["status"])
+    # The program's status follows its latest version: an older one's late export leaves a newer draft's alone.
+    if not ProgramVersion.objects.filter(program_id=program.pk, number__gt=version.number).exists():
+        program.status = PROGRAM_STATUS[to]
+        program.save(update_fields=["status"])
 
     record(
         "program_version.transition",

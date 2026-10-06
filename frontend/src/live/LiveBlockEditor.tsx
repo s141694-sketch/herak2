@@ -1,4 +1,4 @@
-import { blockFragment, editorExtensions } from '@harak2/shared'
+import { blockFragment, editorExtensions, wordLists } from '@harak2/shared'
 import type { HocuspocusProvider } from '@hocuspocus/provider'
 import type { Editor } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
@@ -38,7 +38,8 @@ export function LiveBlockEditor({
         CollaborationCaret.configure({ provider, user: { name: me.name, color: colorFor(me.id) } }),
       ],
       editable,
-      editorProps: { attributes: { class: 'block-editor', 'data-testid': 'block-editor' } },
+      // Word's lists pasted in become real lists (D5).
+      editorProps: { attributes: { class: 'block-editor', 'data-testid': 'block-editor' }, transformPastedHTML: wordLists },
       onFocus: () => announceBlock(provider, blockKey),
       onBlur: () => announceBlock(provider, null),
     },

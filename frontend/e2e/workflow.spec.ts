@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test'
 
-import { api, freshProgram, openLive, signIn } from './helpers'
+import { api, docxText, freshProgram, openLive, signIn } from './helpers'
 
 // Phase 5 acceptance: submit -> return -> resubmit -> approve through the default workflow of the training center
 // (a reviewer's stage, then an approver's), on the real services, with the pre-submit check, the comment rules,
@@ -108,7 +108,8 @@ test('a version is submitted, returned, resubmitted and approved', async ({ brow
   panel = await takeAndOpen(approver, title)
   await panel.getByTestId('decision-note').fill('معتمد')
   await panel.getByTestId('decision-approve').click()
-  await expect(panel.getByTestId('review-outcome')).toHaveText('اعتُمدت هذه النسخة.')
+  // Tasks run at once in these tests: the approval's request also makes the Word and PDF files.
+  await expect(panel.getByTestId('review-outcome')).toHaveText('اعتُمدت هذه النسخة.', { timeout: 60_000 })
   // Approved, and exported once its files are made (in the background; tasks run at once in these tests).
   const approved = await api<{ status: string }>(admin, 'GET', `/api/program-versions/${draftId}/`)
   expect(['approved', 'exported']).toContain(approved.status)
@@ -129,6 +130,11 @@ test('a version is submitted, returned, resubmitted and approved', async ({ brow
   const word = await download(author, exported.getByTestId('export-word'))
   expect(word.name).toMatch(/\.docx$/)
   expect(word.bytes.subarray(0, 2).toString()).toBe('PK')
+  // The Word file is the approved version: its cover, then the tree with its blocks (phase 7 review).
+  const lines = docxText(word.bytes).split('\n').filter((line) => line.trim())
+  expect(lines).toContain(title)
+  expect(lines.indexOf('الوحدة')).toBeGreaterThan(lines.indexOf(title))
+  expect(lines.indexOf('أن يعدد المتدرب مخاطر الموقع')).toBeGreaterThan(lines.indexOf('الوحدة'))
   const pdf = await download(author, exported.getByTestId('export-pdf'))
   expect(pdf.name).toMatch(/\.pdf$/)
   expect(pdf.bytes.subarray(0, 5).toString()).toBe('%PDF-')

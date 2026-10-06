@@ -34,6 +34,9 @@ env = environ.Env(
     IMPORT_MAX_FILE_BYTES=(int, 10 * 1024 * 1024),
     IMPORT_MAX_PAGES=(int, 300),
     IMPORT_MAX_UNPACKED_BYTES=(int, 50 * 1024 * 1024),
+    IMPORT_EXTRACT_SECONDS=(int, 20),
+    IMPORT_EXTRACT_MEMORY_MB=(int, 1024),
+    UPLOAD_THROTTLE_RATE=(str, "60/hour"),
     EXPORT_SOFFICE=(str, "soffice"),
     EXPORT_PDF_SECONDS=(int, 120),
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
@@ -260,6 +263,8 @@ REST_FRAMEWORK = {
         "anon": "60/minute",
         "login": env("LOGIN_THROTTLE_RATE"),
         "sso": env("SSO_THROTTLE_RATE"),
+        # Files kept by uploads (an import's file, a logo), per person (D80).
+        "upload": env("UPLOAD_THROTTLE_RATE"),
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     "NUM_PROXIES": env("NUM_PROXIES"),
@@ -300,6 +305,9 @@ FILES_CREATE_BUCKET = env("FILES_CREATE_BUCKET")
 IMPORT_MAX_FILE_BYTES = env("IMPORT_MAX_FILE_BYTES")
 IMPORT_MAX_PAGES = env("IMPORT_MAX_PAGES")
 IMPORT_MAX_UNPACKED_BYTES = env("IMPORT_MAX_UNPACKED_BYTES")
+# A file is read in a child process within this time and memory (D80); the time stays under gunicorn's 30 s.
+IMPORT_EXTRACT_SECONDS = env("IMPORT_EXTRACT_SECONDS")
+IMPORT_EXTRACT_MEMORY_MB = env("IMPORT_EXTRACT_MEMORY_MB")
 
 # Exports (tasks 7.3-7.5; D78): LibreOffice converts the Word file to PDF, within this many seconds.
 EXPORT_SOFFICE = env("EXPORT_SOFFICE")

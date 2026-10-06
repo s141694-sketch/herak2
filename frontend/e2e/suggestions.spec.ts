@@ -230,7 +230,7 @@ test('an import is laid out by the rules, previewed, and added only when accepte
 // Tasks 7.1 and 7.2: the curriculum as a Word file. Its text comes back into the box for the author to check, and
 // the same preview follows; a scanned PDF says why it cannot be read, and the text is pasted instead.
 test('an import from a Word file shows its text, then the same preview; a scanned PDF is pasted instead', async ({ browser }) => {
-  test.setTimeout(90_000)
+  test.setTimeout(120_000)
   const admin = await signIn(browser, 'multi@example.com')
   const author = await signIn(browser, 'author@example.com')
   const { versionId } = await freshProgram(admin)
@@ -239,8 +239,16 @@ test('an import from a Word file shows its text, then the same preview; a scanne
   await author.getByTestId('import-open').click()
   await author.getByTestId('import-file').setInputFiles('e2e/fixtures/scanned.pdf')
   await expect(author.getByTestId('import-file-error')).toContainText('الصق النص')
-  await expect(author.getByTestId('import-text')).toBeEditable()
+  // The refusal leaves the paste box, and pasting goes on to the same preview (phase 7 review).
+  await author.getByTestId('import-text').fill(CURRICULUM)
+  await author.getByTestId('import-submit').click()
+  await expect(author.getByTestId('import-suggestion').getByTestId('import-node')).toHaveCount(2)
+  await author.getByTestId('suggestion-dismiss').click()
+  await author.getByTestId('suggestion-dismiss-confirm').click()
+  await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'dismissed')
+  await author.getByTestId('suggestion-outcome').getByRole('button').click()
 
+  await author.getByTestId('import-open').click()
   await author.getByTestId('import-file').setInputFiles('e2e/fixtures/curriculum.docx')
   await expect(author.getByTestId('import-file-read')).toContainText('curriculum.docx')
   await expect(author.getByTestId('import-text')).toHaveValue(/أن يعدد المتدرب أنواع المخاطر في موقع العمل/)

@@ -122,3 +122,74 @@ def test_a_version_not_approved_has_no_export(world):  # noqa: F811
     reader = APIClient()
     reader.force_login(world["author"])
     assert reader.get(f"/api/program-versions/{world['version'].pk}/export/").json() == {"status": "none"}
+
+
+# From the phase 7 review (D81).
+
+
+def test_a_failure_without_a_message_is_still_told_by_its_kind(world, act, converter):  # noqa: F811
+    """A logo python-docx could not read failed with an empty message: the admins were told nothing."""
+    converter["script"].extend([pdf.ConversionFailed()] * jobs.MAX_ATTEMPTS)
+    approve(world, act)
+    assert job_of(world).last_error == "ConversionFailed"
+
+
+def test_a_late_export_leaves_the_status_of_a_newer_draft_alone(world, act, converter, monkeypatch):  # noqa: F811
+    from apps.programs import services as programs
+    from apps.programs.models import Program
+
+    monkeypatch.setattr(jobs, "enqueue", lambda job, **kwargs: None)  # the export waits (retries, the broker down)
+    approve(world, act)
+    with organization_context(world["org"]):
+        programs.start_new_version(world["version"].program, actor=world["author"])
+        jobs.run(job_of(world).pk)
+        assert ProgramVersion.objects.get(pk=world["version"].pk).status == S.EXPORTED
+        assert Program.objects.get(pk=world["version"].program_id).status == Program.Status.DRAFT
+
+
+@pytest.mark.parametrize("late", ["fails", "succeeds"])
+def test_an_attempt_that_outlived_its_turn_changes_nothing_and_keeps_no_files(world, act, monkeypatch, late):  # noqa: F811
+    """Attempt A stalls; the sweep hands the job to attempt B, which finishes; A's end must not reopen the job or
+    keep a second pair of files (plan 7.5: processing twice makes no second file)."""
+    from apps.files.models import File
+
+    monkeypatch.setattr(jobs, "enqueue", lambda job, **kwargs: None)
+    approve(world, act)
+    job_id = job_of(world).pk
+    calls = []
+
+    def convert(docx):
+        calls.append(docx)
+        if len(calls) == 1:  # attempt A: while it stalls, the job is taken up again and done
+            ExportJob.all_organizations.filter(pk=job_id).update(updated_at="2026-01-01T00:00Z")
+            assert jobs.run(job_id)[0] == "done"
+            if late == "fails":
+                raise pdf.ConversionFailed("A gave up")
+        return FAKE_PDF
+
+    monkeypatch.setattr(pdf, "from_word", convert)
+    assert jobs.run(job_id)[0] == "stale"
+    job = job_of(world)
+    assert (job.status, job.attempts, job.last_error) == (ExportJob.Status.DONE, 2, "")
+    with organization_context(world["org"]):
+        assert File.objects.filter(kind=File.Kind.EXPORT).count() == 2
+
+
+def test_the_sweep_counts_waiting_again_from_when_it_takes_a_job_up(world, act, monkeypatch):  # noqa: F811
+    """Otherwise every sweep queued the same waiting job again while the workers were down."""
+    monkeypatch.setattr(jobs, "enqueue", lambda job, **kwargs: None)
+    approve(world, act)
+    ExportJob.all_organizations.update(updated_at="2026-01-01T00:00Z")
+    jobs.sweep()
+    assert job_of(world).updated_at.year > 2026 or job_of(world).updated_at.month > 1
+
+
+def test_export_files_keep_their_extension_and_their_version_whatever_the_title(world, act, converter):  # noqa: F811
+    from apps.programs.models import Program
+
+    Program.all_organizations.filter(pk=world["version"].program_id).update(title="ب" * 300)
+    approve(world, act)
+    job = job_of(world)
+    assert job.word_file.name.endswith(" - 1.docx") and len(job.word_file.name) <= 255
+    assert job.pdf_file.name.endswith(" - 1.pdf")
+    assert job.word_file.version_id == job.pdf_file.version_id == world["version"].pk

@@ -24,6 +24,10 @@ class File(OrganizationScopedModel):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
+    # The version an import's file was uploaded to, or an export was made from (spec 4.6); none for a logo.
+    version = models.ForeignKey(
+        "programs.ProgramVersion", on_delete=models.SET_NULL, null=True, blank=True, related_name="files"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

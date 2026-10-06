@@ -12,7 +12,7 @@ from docx.oxml.ns import qn
 from apps.accounts.models import Organization, Role
 from apps.exports import word
 from apps.programs import services
-from apps.programs.models import ProgramVersion
+from apps.programs.models import Program, ProgramVersion
 from apps.programs.tests.factories import member, program, published_template
 from apps.tenancy.context import organization_context
 
@@ -203,3 +203,124 @@ def test_the_organizations_logo_is_on_the_cover(world):
     with organization_context(world["org"]):
         document = Document(io.BytesIO(word.build(world["version"], logo=PNG)))
     assert len(document.inline_shapes) == 1
+
+
+# From the phase 7 review (D81): what an approved version holds never makes its Word file impossible, and the file
+# follows Word's schema.
+
+
+def build_with(world, *blocks, title=None, node_title="الوحدة الثالثة"):
+    with organization_context(world["org"]):
+        version, owner = world["version"], world["owner"]
+        node = services.add_node(version, title=node_title, actor=owner)
+        for content in blocks:
+            services.add_block(version, node=node, type="content", content=content, actor=owner)
+        if title is not None:
+            Program.objects.filter(pk=version.program_id).update(title=title)
+            version.refresh_from_db()
+        return Document(io.BytesIO(word.build(ProgramVersion.objects.get(pk=version.pk))))
+
+
+def test_characters_a_word_file_cannot_hold_are_left_out_instead_of_failing_it(world):
+    """A vertical tab from text pasted out of Word or a PDF made lxml refuse the whole file, five times, for good."""
+    content = doc(para(*text("سطر\x0bأول\x0c ثم\x01 نص")))
+    document = build_with(world, content, title="برنامج\x01 السلامة", node_title="الوحدة\x0b الثالثة")
+    texts = [p.text for p in document.paragraphs]
+    assert "سطرأول ثم نص" in texts and "الوحدة الثالثة" in texts
+    assert "برنامج السلامة" in texts
+
+
+def test_a_title_longer_than_words_properties_take_is_cut_there(world):
+    document = build_with(world, title="ب" * 300)
+    assert document.core_properties.title == "ب" * 255
+    assert "ب" * 300 in [p.text for p in document.paragraphs]
+
+
+# The order of the children Word's schema (ISO/IEC 29500, wml.xsd) gives the elements this export writes into.
+SCHEMA_ORDER = {
+    "pPr": "pStyle keepNext keepLines pageBreakBefore framePr widowControl numPr suppressLineNumbers pBdr shd tabs "
+    "suppressAutoHyphens kinsoku wordWrap overflowPunct topLinePunct autoSpaceDE autoSpaceDN bidi adjustRightInd "
+    "snapToGrid spacing ind contextualSpacing mirrorIndents suppressOverlap jc textDirection textAlignment "
+    "textboxTightWrap outlineLvl divId cnfStyle rPr sectPr pPrChange",
+    "rPr": "rStyle rFonts b bCs i iCs caps smallCaps strike dstrike outline shadow emboss imprint noProof snapToGrid "
+    "vanish webHidden color spacing w kern position sz szCs highlight u effect bdr shd fitText vertAlign rtl cs em "
+    "lang eastAsianLayout specVanish oMath",
+    "sectPr": "headerReference footerReference footnotePr endnotePr type pgSz pgMar paperSrc pgBorders lnNumType "
+    "pgNumType cols formProt vAlign noEndnote titlePg textDirection bidi rtlGutter docGrid printerSettings "
+    "sectPrChange",
+    "numbering": "numPicBullet abstractNum num numIdMacAtCleanup",
+    "num": "abstractNumId lvlOverride",
+    "lvlOverride": "startOverride lvl",
+    "lvl": "start numFmt lvlRestart pStyle isLgl suff lvlText lvlPicBulletId legacy lvlJc pPr rPr",
+}
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def out_of_order(root) -> list:
+    wrong = []
+    for element in root.iter():
+        if not isinstance(element.tag, str) or not element.tag.startswith(W):
+            continue
+        sequence = SCHEMA_ORDER.get(element.tag[len(W) :])
+        if sequence is None:
+            continue
+        sequence = sequence.split()
+        tags = [child.tag[len(W) :] for child in element if isinstance(child.tag, str) and child.tag.startswith(W)]
+        positions = [sequence.index(tag) for tag in tags if tag in sequence]
+        if positions != sorted(positions):
+            wrong.append((element.tag[len(W) :], tags))
+    return wrong
+
+
+def test_the_document_follows_the_order_words_schema_gives_each_element(world):
+    """bidi was put before pStyle and numPr in every heading and list item, and after docGrid in the sections: Word
+    may call such a file unreadable (LibreOffice opens it)."""
+    listed = {
+        "type": "orderedList",
+        "attrs": {"type": "i"},
+        "content": [{"type": "listItem", "content": [para(*text("بند"))]}],
+    }
+    document = build_with(world, doc({"type": "blockquote", "content": [para(*text("اقتباس"))]}, listed))
+    parts = [document.part.element, document.styles.element, document.part.numbering_part.element]
+    parts += [section.header._element for section in document.sections] + [s.footer._element for s in document.sections]
+    assert [wrong for part in parts for wrong in out_of_order(part)] == []
+
+
+def test_a_line_break_after_a_link_stays_after_it(world):
+    link = text("الموقع", marks=[{"type": "link", "attrs": {"href": "https://example.com"}}])
+    document = build_with(world, doc(para(*text("انظر "), *link, {"type": "hardBreak"}, *text("ثم"))))
+    paragraph = next(p for p in document.paragraphs if p._p.find(qn("w:hyperlink")) is not None and "انظر" in p.text)
+    inline = [child for child in paragraph._p if child.tag in (qn("w:r"), qn("w:hyperlink"))]
+    kinds = ["break" if child.find(qn("w:br")) is not None else child.tag.split("}")[1] for child in inline]
+    assert kinds.index("break") > kinds.index("hyperlink"), kinds
+
+
+def test_a_numbered_list_keeps_a_start_of_zero_and_its_kind_of_numbers(world):
+    listed = {
+        "type": "orderedList",
+        "attrs": {"start": 0, "type": "a"},
+        "content": [{"type": "listItem", "content": [para(*text("البند الأول"))]}],
+    }
+    document = build_with(world, doc(listed))
+    item = next(p for p in document.paragraphs if p.text == "البند الأول")
+    num_id = int(item._p.pPr.numPr.numId.val)
+    num = next(
+        n for n in document.part.numbering_part.element.findall(qn("w:num")) if int(n.get(qn("w:numId"))) == num_id
+    )
+    override = num.find(qn("w:lvlOverride"))
+    assert override.find(qn("w:startOverride")).get(qn("w:val")) == "0"
+    assert override.find(qn("w:lvl")).find(qn("w:numFmt")).get(qn("w:val")) == "lowerLetter"
+
+
+def test_the_cover_takes_the_organizations_color(world):
+    document = built(world)
+    title = next(p for p in document.paragraphs if p.text == "برنامج السلامة المهنية")
+    assert str(title.runs[0].font.color.rgb) == "0B6E4F"
+
+
+def test_a_logo_word_cannot_place_leaves_the_cover_without_it_rather_than_failing(world):
+    """A logo kept before its check at upload (D81) still lets every export through."""
+    with organization_context(world["org"]):
+        document = Document(io.BytesIO(word.build(world["version"], logo=b"\xff\xd8\xff\xdb" + b"\0" * 200)))
+    assert len(document.inline_shapes) == 0
+    assert "برنامج السلامة المهنية" in [p.text for p in document.paragraphs]

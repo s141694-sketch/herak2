@@ -103,3 +103,45 @@ def test_an_import_cannot_name_a_file_someone_else_uploaded(world):  # noqa: F81
         format="json",
     )
     assert asked.status_code == 400
+
+
+def test_a_body_larger_than_the_limit_is_refused_before_it_is_read(world, settings):  # noqa: F811
+    """From the phase 7 review: the size was checked after Django had written the whole body to disk (D80)."""
+    settings.IMPORT_MAX_FILE_BYTES = 1000
+    client = signed_in()
+    response = client.post(
+        f"/api/program-versions/{world['version'].pk}/import-file/",
+        {"file": SimpleUploadedFile("big.txt", b"x" * 200_000)},
+        format="multipart",
+    )
+    assert response.status_code == 409 and response.json()["error"]["code"] == "import_file_too_large"
+
+
+def test_uploads_are_limited_per_person(world, monkeypatch):  # noqa: F811
+    from django.core.cache import cache
+
+    from apps.files.uploads import UploadThrottle
+
+    cache.clear()
+    monkeypatch.setitem(UploadThrottle.THROTTLE_RATES, "upload", "2/hour")
+    client = signed_in()
+    codes = [upload(client, world["version"], word(*LINES), "a.docx").status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+    cache.clear()
+
+
+def test_an_uploaded_file_is_linked_to_its_version(world):  # noqa: F811
+    """Plan 7.0: a file records the version it belongs to (phase 7 review)."""
+    assert upload(signed_in(), world["version"], word(*LINES), "a.docx").status_code == 200
+    with organization_context(world["org"]):
+        assert File.objects.get().version_id == world["version"].pk
+
+
+def test_reversed_arabic_in_a_file_is_put_right_by_harak_1s_rule(world):  # noqa: F811
+    """Plan 7.1: text a PDF tool wrote reversed is corrected as pasted text is, and the author is told."""
+    reversed_text = "\n".join(line[::-1] for line in LINES).encode()
+    response = upload(signed_in(), world["version"], reversed_text, "reversed.txt")
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert "REVERSED_TEXT_FIXED" in body["warnings"]
+    assert LINES[0] in body["text"]

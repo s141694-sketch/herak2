@@ -1,14 +1,20 @@
 """The Word file of a version (task 7.3; spec 2.2 publishing, 3 module 7; D77), written with python-docx from the
 version's rows: a cover with the organization's identity, then the tree, its levels as heading levels in its
 order, each node's blocks under it. The document reads right to left; each paragraph takes the direction of its
-first strong letter, so English passages stay left to right."""
+first strong letter, so English passages stay left to right.
+
+From the phase 7 review (D81): nothing a version holds makes its file impossible. Characters XML cannot hold (a
+vertical tab pasted from Word) are left out, the title is cut to the 255 characters Word's properties take, and a
+logo Word cannot place is left off the cover. Elements are written in the order Word's schema gives them."""
 
 import io
 import re
 import unicodedata
 from collections import defaultdict
+from copy import deepcopy
 from zoneinfo import ZoneInfo
 
+import structlog
 from docx import Document
 from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
@@ -21,11 +27,44 @@ from apps.programs.models import ProgramVersion
 
 from .labels import label
 
+log = structlog.get_logger("harak2.exports")
+
 FONT = "Arial"  # in Word everywhere, and with Arabic letters; LibreOffice falls back to a font that has them
 HEX = re.compile(r"^#?([0-9A-Fa-f]{6})$")
 BULLETS = ["List Bullet", "List Bullet 2", "List Bullet 3"]
 NUMBERS = ["List Number", "List Number 2", "List Number 3"]
 TIMEZONE = ZoneInfo("Asia/Muscat")
+# What XML 1.0 cannot hold: control characters other than tab, line feed and carriage return, and two non-characters.
+NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+PROPERTY_LENGTH = 255  # Word's document properties
+NUMBER_FORMATS = {"1": "decimal", "a": "lowerLetter", "A": "upperLetter", "i": "lowerRoman", "I": "upperRoman"}
+# The children that come after bidi in Word's schema, in a paragraph's properties and in a section's.
+AFTER_BIDI = {
+    "pPr": (
+        "w:adjustRightInd",
+        "w:snapToGrid",
+        "w:spacing",
+        "w:ind",
+        "w:contextualSpacing",
+        "w:mirrorIndents",
+        "w:suppressOverlap",
+        "w:jc",
+        "w:textDirection",
+        "w:textAlignment",
+        "w:textboxTightWrap",
+        "w:outlineLvl",
+        "w:divId",
+        "w:cnfStyle",
+        "w:rPr",
+        "w:sectPr",
+        "w:pPrChange",
+    ),
+    "sectPr": ("w:rtlGutter", "w:docGrid", "w:printerSettings", "w:sectPrChange"),
+}
+
+
+def clean(text: str) -> str:
+    return NOT_XML.sub("", text or "")
 
 
 def build(version: ProgramVersion, *, logo: bytes | None = None) -> bytes:
@@ -35,13 +74,13 @@ def build(version: ProgramVersion, *, logo: bytes | None = None) -> bytes:
     document = Document()
     _setup(document, color)
     section = document.sections[0]
-    section._sectPr.append(_element("w:bidi"))
-    _cover(document, version, logo=logo)
+    section._sectPr.insert_element_before(_element("w:bidi"), *AFTER_BIDI["sectPr"])
+    _cover(document, version, logo=logo, color=color)
     body = document.add_section(WD_SECTION.NEW_PAGE)
-    _header_and_footer(body, organization.name, program.title)
+    _header_and_footer(body, clean(organization.name), clean(program.title))
     _tree(document, version)
-    document.core_properties.title = program.title
-    document.core_properties.author = organization.name
+    document.core_properties.title = clean(program.title)[:PROPERTY_LENGTH]
+    document.core_properties.author = clean(organization.name)[:PROPERTY_LENGTH]
     out = io.BytesIO()
     document.save(out)
     return out.getvalue()
@@ -122,7 +161,7 @@ def right_to_left(text: str) -> bool:
 
 def _direct(paragraph, text: str) -> None:
     if right_to_left(text):
-        paragraph._p.get_or_add_pPr().insert(0, _element("w:bidi"))
+        paragraph._p.get_or_add_pPr().insert_element_before(_element("w:bidi"), *AFTER_BIDI["pPr"])
         for run in paragraph.runs:
             run._r.get_or_add_rPr().append(_element("w:rtl"))
 
@@ -130,21 +169,25 @@ def _direct(paragraph, text: str) -> None:
 # --- Cover, header and footer ------------------------------------------------------------------------------
 
 
-def _cover(document, version: ProgramVersion, *, logo: bytes | None) -> None:
+def _cover(document, version: ProgramVersion, *, logo: bytes | None, color: RGBColor | None) -> None:
     program = version.program
     if logo:
         picture = document.add_paragraph()
         picture.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        picture.add_run().add_picture(io.BytesIO(logo), height=Cm(3))
-    lines = [(program.organization.name, Pt(16), True), (program.title, Pt(26), True)]
+        try:
+            picture.add_run().add_picture(io.BytesIO(logo), height=Cm(3))
+        except Exception as exc:  # noqa: BLE001 - a logo Word cannot place must not stop the export
+            log.warning("exports.logo_left_out", program=program.pk, error=f"{type(exc).__name__}: {exc}")
+            picture._p.getparent().remove(picture._p)
+    lines = [(clean(program.organization.name), Pt(16), True), (clean(program.title), Pt(26), True)]
     if program.target_role:
-        lines.append((label("target_role", role=program.target_role), Pt(13), False))
+        lines.append((label("target_role", role=clean(program.target_role)), Pt(13), False))
     lines.append((label("version", number=version.number), Pt(13), False))
     if version.approved_at and version.approved_by:
         when = version.approved_at.astimezone(TIMEZONE).strftime("%Y-%m-%d")
         lines.append(
             (
-                label("approved", name=version.approved_by.full_name or version.approved_by.email, date=when),
+                label("approved", name=clean(version.approved_by.full_name or version.approved_by.email), date=when),
                 Pt(12),
                 False,
             )
@@ -152,7 +195,10 @@ def _cover(document, version: ProgramVersion, *, logo: bytes | None) -> None:
     for text, size, bold in lines:
         paragraph = document.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _format(paragraph.add_run(text), bold=bold, size=size)
+        run = paragraph.add_run(text)
+        _format(run, bold=bold, size=size)
+        if bold and color is not None:  # the organization's name and the program's title take its colour
+            run.font.color.rgb = color
         _direct(paragraph, text)
 
 
@@ -190,8 +236,9 @@ def _tree(document, version: ProgramVersion) -> None:
     writer = _Writer(document)
 
     def visit(node, depth: int) -> None:
-        heading = document.add_heading(node.title, level=min(depth, 5))
-        _direct(heading, node.title)
+        title = clean(node.title)
+        heading = document.add_heading(title, level=min(depth, 5))
+        _direct(heading, title)
         kind = None
         for block in blocks.get(node.pk, []):
             if block.type != kind:  # each kind of block is introduced once in a row
@@ -230,7 +277,9 @@ class _Writer:
             for item in node.get("content", []):
                 self.item(item, depth=depth, style=BULLETS[min(depth, 2)])
         elif kind == "orderedList":
-            number = self.restarted(NUMBERS[min(depth, 2)], (node.get("attrs") or {}).get("start") or 1)
+            attrs = node.get("attrs") or {}
+            start = attrs.get("start")
+            number = self.restarted(NUMBERS[min(depth, 2)], 1 if start is None else start, attrs.get("type"))
             for item in node.get("content", []):
                 self.item(item, depth=depth, style=NUMBERS[min(depth, 2)], number=number)
         elif kind == "blockquote":
@@ -238,7 +287,7 @@ class _Writer:
                 self.block(child, depth=depth, style="Quote")
         elif kind == "codeBlock":
             paragraph = self.document.add_paragraph()
-            run = paragraph.add_run("".join(part.get("text", "") for part in node.get("content", [])))
+            run = paragraph.add_run(clean("".join(part.get("text", "") for part in node.get("content", []))))
             run.font.name = "Courier New"
         elif kind == "horizontalRule":
             paragraph = self.document.add_paragraph()
@@ -256,8 +305,9 @@ class _Writer:
                 self.block(child, depth=depth, style=style if first else None, number=number if first else None)
                 first = False
 
-    def restarted(self, style: str, start: int) -> int:
-        """A numbering of its own for this list, from ``start``: Word would otherwise go on from the last one."""
+    def restarted(self, style: str, start: int, kind: str | None = None) -> int:
+        """A numbering of its own for this list, from ``start`` and in its kind of numbers (1, a, A, i, I): Word
+        would otherwise go on from the last list."""
         base = self.document.styles[style].element.pPr.numPr.numId.val
         abstract = next(
             n.find(qn("w:abstractNumId")).get(qn("w:val"))
@@ -269,6 +319,18 @@ class _Writer:
         num.append(_element("w:abstractNumId", {"w:val": abstract}))
         override = _element("w:lvlOverride", {"w:ilvl": "0"})
         override.append(_element("w:startOverride", {"w:val": str(int(start))}))
+        if kind in NUMBER_FORMATS and kind != "1":
+            # The list's first level as the style defines it (its indents), in this list's kind of numbers.
+            level = deepcopy(
+                next(
+                    a.find(qn("w:lvl"))
+                    for a in self.numbering.findall(qn("w:abstractNum"))
+                    if a.get(qn("w:abstractNumId")) == abstract
+                )
+            )
+            level.find(qn("w:start")).set(qn("w:val"), str(int(start)))
+            level.find(qn("w:numFmt")).set(qn("w:val"), NUMBER_FORMATS[kind])
+            override.append(level)
         num.append(override)
         self.numbering.append(num)
         return number
@@ -281,7 +343,8 @@ class _Writer:
             numpr.get_or_add_numId().val = number
         for part in inline:
             if part.get("type") == "hardBreak":
-                (paragraph.runs[-1] if paragraph.runs else paragraph.add_run()).add_break(WD_BREAK.LINE)
+                # A run of its own at the paragraph's end: the last run may be inside a link, which runs skips.
+                paragraph.add_run().add_break(WD_BREAK.LINE)
             elif part.get("type") == "text":
                 self.text(paragraph, part)
         _direct(paragraph, paragraph.text)
@@ -290,9 +353,9 @@ class _Writer:
     def text(self, paragraph, part: dict) -> None:
         marks = {mark.get("type"): mark.get("attrs") or {} for mark in part.get("marks") or []}
         if "link" in marks:
-            self.link(paragraph, part["text"], marks["link"].get("href", ""), marks)
+            self.link(paragraph, clean(part["text"]), clean(marks["link"].get("href", "")), marks)
             return
-        run = paragraph.add_run(part.get("text", ""))
+        run = paragraph.add_run(clean(part.get("text", "")))
         self.style(run, marks)
 
     @staticmethod

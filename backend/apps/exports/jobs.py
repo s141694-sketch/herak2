@@ -3,7 +3,10 @@
 (task 7.4); a failed attempt is tried again at growing intervals, up to MAX_ATTEMPTS, then the job is marked failed
 and the organization's admins are told, and an admin may try it again. The approval is never undone. A sweep takes up
 an export whose task never ran (the broker was down at the approval) or whose worker was lost. Once both files are
-kept, the version moves to "exported" through the single point of transitions."""
+kept, the version moves to "exported" through the single point of transitions.
+
+From the phase 7 review (D81): an attempt ends only the attempt it was. One that outlived its turn (the sweep gave
+the job to another) changes nothing and keeps no files, and a failure is told with its kind as well as its message."""
 
 from datetime import timedelta
 
@@ -65,7 +68,8 @@ def generate(job_id: int) -> None:
 
 
 def run(job_id: int) -> tuple[str, ExportJob]:
-    """One attempt. Returns what follows: "done", "retry", "failed" or "busy" (another attempt is under way)."""
+    """One attempt. Returns what follows: "done", "retry", "failed", "busy" (another attempt is under way) or
+    "stale" (this attempt outlived its turn)."""
     job = ExportJob.all_organizations.get(pk=job_id)
     with organization_context(job.organization_id):
         with transaction.atomic():
@@ -76,13 +80,28 @@ def run(job_id: int) -> tuple[str, ExportJob]:
                 return "busy", job
             job.status, job.attempts = ExportJob.Status.RUNNING, job.attempts + 1
             job.save(update_fields=["status", "attempts", "updated_at"])
+        attempt = job.attempts
         version = ProgramVersion.objects.select_related("program__organization", "approved_by").get(pk=job.version_id)
         try:
             made = _make(version)
         except Exception as exc:  # any failure of an attempt: told, tried again, never undoing the approval
-            log.warning("exports.attempt_failed", job=job.pk, attempt=job.attempts, error=str(exc))
-            return _failed(job, version, exc), job
-        return _done(job, version, made), job
+            log.warning("exports.attempt_failed", job=job.pk, attempt=attempt, error=_reason(exc))
+            return _failed(job, version, exc, attempt), job
+        return _done(job, version, made, attempt), job
+
+
+def _reason(error: Exception) -> str:
+    message = str(error)
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__
+
+
+def _current(job: ExportJob, attempt: int) -> ExportJob | None:
+    """The job, locked, if this attempt is still the one under way; None if it outlived its turn."""
+    job = ExportJob.objects.select_for_update().get(pk=job.pk)
+    if job.status != ExportJob.Status.RUNNING or job.attempts != attempt:
+        log.warning("exports.stale_attempt", job=job.pk, attempt=attempt, now=job.attempts, status=job.status)
+        return None
+    return job
 
 
 def _make(version: ProgramVersion) -> tuple[File, File]:
@@ -90,17 +109,34 @@ def _make(version: ProgramVersion) -> tuple[File, File]:
     logo = storage.read(organization.logo_file.key) if organization.logo_file_id else None
     docx = word.build(version, logo=logo)
     converted = pdf.from_word(docx)
-    name = f"{version.program.title} - {version.number}"
-    word_file = files.store(docx, name=f"{name}.docx", content_type=WORD, kind=File.Kind.EXPORT, actor=None)
+    suffix = f" - {version.number}"
+    name = f"{word.clean(version.program.title)[: 240 - len(suffix)]}{suffix}"
+    word_file = files.store(
+        docx, name=f"{name}.docx", content_type=WORD, kind=File.Kind.EXPORT, actor=None, version=version
+    )
     pdf_file = files.store(
-        converted, name=f"{name}.pdf", content_type="application/pdf", kind=File.Kind.EXPORT, actor=None
+        converted,
+        name=f"{name}.pdf",
+        content_type="application/pdf",
+        kind=File.Kind.EXPORT,
+        actor=None,
+        version=version,
     )
     return word_file, pdf_file
 
 
+def _discard(made: tuple[File, File]) -> None:
+    for file in made:
+        storage.remove(file.key)
+        file.delete()
+
+
 @transaction.atomic
-def _done(job: ExportJob, version: ProgramVersion, made: tuple[File, File]) -> str:
-    job = ExportJob.objects.select_for_update().get(pk=job.pk)
+def _done(job: ExportJob, version: ProgramVersion, made: tuple[File, File], attempt: int) -> str:
+    job = _current(job, attempt)
+    if job is None:  # another attempt finished, or will: its files are the export's, these are not kept
+        _discard(made)
+        return "stale"
     job.word_file, job.pdf_file = made
     job.status, job.last_error, job.finished_at = ExportJob.Status.DONE, "", timezone.now()
     job.save()
@@ -111,9 +147,11 @@ def _done(job: ExportJob, version: ProgramVersion, made: tuple[File, File]) -> s
 
 
 @transaction.atomic
-def _failed(job: ExportJob, version: ProgramVersion, error: Exception) -> str:
-    job = ExportJob.objects.select_for_update().get(pk=job.pk)
-    job.last_error = str(error)[:2000]
+def _failed(job: ExportJob, version: ProgramVersion, error: Exception, attempt: int) -> str:
+    job = _current(job, attempt)
+    if job is None:
+        return "stale"
+    job.last_error = _reason(error)[:2000]
     final = job.attempts >= MAX_ATTEMPTS
     job.status = ExportJob.Status.FAILED if final else ExportJob.Status.PENDING
     job.save(update_fields=["last_error", "status", "updated_at"])
@@ -154,8 +192,11 @@ def sweep() -> None:
         ExportJob.all_organizations.filter(status=ExportJob.Status.RUNNING, updated_at__lt=now - RUNNING_TOO_LONG)
     )
     for job in stale:
+        # Waiting is counted again from now, so the next sweeps leave a job they just queued alone.
         if job.status == ExportJob.Status.RUNNING:
             ExportJob.all_organizations.filter(pk=job.pk, status=ExportJob.Status.RUNNING).update(
                 status=ExportJob.Status.PENDING, updated_at=now
             )
+        else:
+            ExportJob.all_organizations.filter(pk=job.pk, status=ExportJob.Status.PENDING).update(updated_at=now)
         enqueue(job)
