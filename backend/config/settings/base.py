@@ -22,6 +22,7 @@ env = environ.Env(
     # Proxies in front of Django that add to X-Forwarded-For (nginx, as shipped): rate limits count the address the
     # nearest of them saw, so a client cannot pick its own. 0 when Django is reached directly.
     NUM_PROXIES=(int, 1),
+    DB_CONN_MAX_AGE=(int, 60),
     FILES_BUCKET=(str, "harak2-files"),
     FILES_ENDPOINT_URL=(str, ""),
     FILES_PUBLIC_ENDPOINT_URL=(str, ""),
@@ -126,7 +127,9 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {"default": env.db("DATABASE_URL")}
-DATABASES["default"]["CONN_MAX_AGE"] = 60
+# Connections kept per worker between requests. Gunicorn's workers live long, so keeping saves reconnecting;
+# runserver starts a thread per request, each of which would hold its own connection (development sets 0).
+DATABASES["default"]["CONN_MAX_AGE"] = env("DB_CONN_MAX_AGE")
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 REDIS_URL = env("REDIS_URL")
