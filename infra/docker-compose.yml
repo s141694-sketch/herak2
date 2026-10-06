@@ -133,7 +133,8 @@ services:
       collab:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null"]
+      # 127.0.0.1, not localhost: where the host has IPv6, localhost is ::1 first, and nginx listens on IPv4 only.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 10

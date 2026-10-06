@@ -97,7 +97,7 @@ jobs:
     name: docker compose stack and smoke check
     runs-on: ubuntu-latest
     env:
-      COMPOSE: docker compose --env-file backend/.env -f infra/docker-compose.yml
+      COMPOSE: docker compose --env-file backend/.env -f infra/docker-compose.yml -f infra/compose.ci.yml
     steps:
       - uses: actions/checkout@v5
       # A production configuration as the runbook makes one, with fresh secrets, for https://localhost (task 8.6).
@@ -105,7 +105,7 @@ jobs:
         run: |
           secret() { openssl rand -hex 32; }
           {
-            grep -v -E '^(HARAK_DOMAIN|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|APP_URL|SECRET_KEY|COLLAB_TOKEN_SECRET|COLLAB_SERVICE_SECRET|POSTGRES_PASSWORD|FIELD_ENCRYPTION_KEYS|EMAIL_URL)=' infra/pilot.env.example
+            grep -v -E '^(HARAK_DOMAIN|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|APP_URL|SECRET_KEY|COLLAB_TOKEN_SECRET|COLLAB_SERVICE_SECRET|POSTGRES_PASSWORD|FIELD_ENCRYPTION_KEYS|EMAIL_URL|FILES_[A-Z_]+)=' infra/pilot.env.example
             echo "HARAK_DOMAIN=localhost"
             echo "ALLOWED_HOSTS=localhost,backend"
             echo "CSRF_TRUSTED_ORIGINS=https://localhost"
@@ -116,6 +116,9 @@ jobs:
             echo "POSTGRES_PASSWORD=$(secret)"
             echo "FIELD_ENCRYPTION_KEYS=$(openssl rand 32 | base64 | tr '+/' '-_')"
             echo "EMAIL_URL=consolemail://"
+            # The in-memory store of infra/compose.ci.yml.
+            printf '%s\n' FILES_BUCKET=harak2-ci FILES_ENDPOINT_URL=http://s3:5000 FILES_ACCESS_KEY_ID=ci \
+              FILES_SECRET_ACCESS_KEY=ci FILES_REGION=us-east-1 FILES_CREATE_BUCKET=True
           } > backend/.env
       - run: $COMPOSE config --quiet
       # The images build, with LibreOffice and the PostgreSQL 18 client in the backend's (D78, D83).
@@ -134,6 +137,23 @@ jobs:
         run: |
           $COMPOSE exec -T backend python manage.py create_organization --name "مركز التدريب" --slug ci --admin-email admin@ci.test
           $COMPOSE exec -T backend python manage.py pilot_metrics --organization ci | grep "no programs"
+      # The runbook's restore (section 6), as written: a backup, then the database and the store lost, then both
+      # restored and checked by the restore command, then the stack up and checked again (D83, D88).
+      - name: backup, loss and restore on PostgreSQL 18
+        run: |
+          $COMPOSE exec -T backend python manage.py shell -c "from apps.files import storage; storage.write('ci/kept.txt', b'harak', 'text/plain')"
+          folder="$($COMPOSE exec -T backup python manage.py backup --dest /backups | sed -n 's/^backed up to //p')"
+          test -n "$folder"
+          $COMPOSE stop backend worker beat collab backup
+          $COMPOSE restart s3
+          $COMPOSE exec -T postgres dropdb -U harak harak
+          $COMPOSE exec -T postgres createdb -U harak harak
+          $COMPOSE run --rm --no-deps backup python manage.py restore "$folder"
+          $COMPOSE up -d
+          infra/healthcheck.sh 300
+          SMOKE_CACERT=root.crt infra/smoke.sh https://localhost
+          $COMPOSE exec -T backend python manage.py pilot_metrics --organization ci | grep "no programs"
+          $COMPOSE exec -T backend python manage.py shell -c "from apps.files import storage; assert storage.read('ci/kept.txt') == b'harak'"
       - if: failure()
         run: $COMPOSE ps && $COMPOSE logs --tail 80
 
