@@ -1,3 +1,4 @@
+from django.db.models import Exists, OuterRef
 from django.shortcuts import get_object_or_404
 from rest_framework import exceptions, generics, status
 from rest_framework.response import Response
@@ -41,7 +42,14 @@ class ProgramListView(generics.ListCreateAPIView):
     serializer_class = ProgramSerializer
 
     def get_queryset(self):
-        return Program.objects.select_related("owner").prefetch_related("versions")
+        # Whether the reader edits each program, in the same query: asked per program, it cost one query each
+        # (the load test, task 8.2).
+        editor = ProgramCollaborator.objects.filter(program=OuterRef("pk"), user=self.request.user)
+        return (
+            Program.objects.select_related("owner")
+            .prefetch_related("versions")
+            .annotate(is_collaborator=Exists(editor))
+        )
 
     def create(self, request, *args, **kwargs):
         if request.membership.role not in services.EDITING_ROLES:

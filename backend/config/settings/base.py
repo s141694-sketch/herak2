@@ -37,6 +37,7 @@ env = environ.Env(
     IMPORT_EXTRACT_SECONDS=(int, 20),
     IMPORT_EXTRACT_MEMORY_MB=(int, 1024),
     UPLOAD_THROTTLE_RATE=(str, "60/hour"),
+    USER_THROTTLE_RATE=(str, "600/minute"),
     EXPORT_SOFFICE=(str, "soffice"),
     EXPORT_PDF_SECONDS=(int, 120),
     BACKUP_PG_DUMP=(str, "pg_dump"),
@@ -264,7 +265,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.UserRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {
-        "user": "600/minute",
+        "user": env("USER_THROTTLE_RATE"),
         "anon": "60/minute",
         "login": env("LOGIN_THROTTLE_RATE"),
         "sso": env("SSO_THROTTLE_RATE"),

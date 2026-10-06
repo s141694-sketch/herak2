@@ -15,7 +15,11 @@ def _permissions(serializer, program) -> dict:
         return {"edit": False, "manage": False, "collaborate": False}
     from . import services
 
-    collaborate = services.can_edit(program, request.user, membership.role)
+    known = getattr(program, "is_collaborator", None)  # annotated by the list
+    if known is None:
+        collaborate = services.can_edit(program, request.user, membership.role)
+    else:
+        collaborate = membership.role in services.EDITING_ROLES and known
     return {
         "edit": collaborate,
         "manage": services.can_manage(program, request.user, membership.role),

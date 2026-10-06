@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.accounts.models import Organization, Role
+from apps.accounts.models import Organization, Role, User
 from apps.tenancy.context import organization_context
 from apps.workflows.tests.factories import one_stage_template
 
@@ -163,3 +163,35 @@ def test_responses_say_what_the_caller_may_do(world):
     author.post(f"/api/program-versions/{version_id}/submit/", {"reason": "سبب"}, format="json")
     locked = author.get(f"/api/program-versions/{version_id}/").json()["permissions"]
     assert (locked["edit"], locked["collaborate"]) == (False, True)
+
+
+def test_the_program_list_takes_as_many_queries_for_many_programs_as_for_one(world):
+    """Found by the load test (task 8.2): each program's permissions asked for its collaborators, one query per
+    program; the list of 350 programs took 460 ms where every other page took 20."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from apps.programs.tests.factories import program
+
+    org = Organization.objects.get(slug="a")
+    author = User.objects.get(email="author@example.com")
+    client = APIClient()
+    client.force_login(author)
+
+    def count() -> tuple[int, int]:
+        with CaptureQueriesContext(connection) as queries:
+            listed = client.get("/api/programs/")
+        assert listed.status_code == 200
+        return len(listed.json()), len(queries)
+
+    with organization_context(org):
+        program(author, template=world["template"], framework=world["framework"])
+    count()  # the session's first request does more than the list
+    one = count()
+    with organization_context(org):
+        for _ in range(5):
+            program(author, template=world["template"], framework=world["framework"])
+    many = count()
+    assert (one[0], many[0]) == (1, 6)
+    assert many[1] == one[1]
+    assert all(p["permissions"]["edit"] for p in client.get("/api/programs/").json())
