@@ -19,6 +19,9 @@ os.environ.setdefault("SSO_ALLOW_PRIVATE_ADDRESSES", "True")  # the local Keyclo
 # A test-only key: it protects nothing outside the test database. Production refuses it (public_keys.py).
 os.environ.setdefault("FIELD_ENCRYPTION_KEYS", TEST_FIELD_KEY)
 
+os.environ.setdefault("FILES_BUCKET", "harak2-test")
+os.environ.setdefault("FILES_CREATE_BUCKET", "True")  # in moto, which every test runs inside (conftest.py)
+
 from .base import *  # noqa: E402, F403
 
 INSTALLED_APPS = [*INSTALLED_APPS, "apps.tenancy.tests.testapp"]  # noqa: F405

@@ -19,4 +19,10 @@ os.environ.setdefault("SSO_ALLOW_PRIVATE_ADDRESSES", "True")  # the local Keyclo
 # A development-only key; production takes its keys from the environment and refuses this one (D64).
 os.environ.setdefault("FIELD_ENCRYPTION_KEYS", DEVELOPMENT_FIELD_KEY)
 
+# Files go to a local S3-compatible store: moto's server (frontend/e2e starts it on port 5059), or MinIO (D75).
+os.environ.setdefault("FILES_ENDPOINT_URL", "http://127.0.0.1:5059")
+os.environ.setdefault("FILES_ACCESS_KEY_ID", "dev-only")
+os.environ.setdefault("FILES_SECRET_ACCESS_KEY", "dev-only")
+os.environ.setdefault("FILES_CREATE_BUCKET", "True")
+
 from .base import *  # noqa: E402, F403

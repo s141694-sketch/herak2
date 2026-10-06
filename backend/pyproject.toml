@@ -23,10 +23,12 @@ dependencies = [
     "cryptography==50.0.2",
     "dnspython==2.8.0",
     "pyotp==2.10.0",
+    "boto3==1.43.108",
 ]
 
 [dependency-groups]
 dev = [
+    "moto[s3,server]==5.2.3",
     "pytest==9.1.1",
     "pytest-django==4.14.0",
     "ruff==0.16.10",

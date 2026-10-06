@@ -38,6 +38,14 @@ export default defineConfig({
   },
   webServer: [
     {
+      // The S3-compatible store for exports and uploads (D75): moto's server, in memory, as in development.
+      command: 'uv run moto_server -H 127.0.0.1 -p 5059',
+      cwd: '../backend',
+      url: 'http://127.0.0.1:5059/',
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
       command: 'uv run python manage.py migrate --noinput && uv run python manage.py seed_e2e && uv run python manage.py runserver 127.0.0.1:8000 --noreload',
       cwd: '../backend',
       url: 'http://127.0.0.1:8000/api/health/',

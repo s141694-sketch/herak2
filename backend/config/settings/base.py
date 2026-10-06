@@ -21,6 +21,14 @@ env = environ.Env(
     # Proxies in front of Django that add to X-Forwarded-For (nginx, as shipped): rate limits count the address the
     # nearest of them saw, so a client cannot pick its own. 0 when Django is reached directly.
     NUM_PROXIES=(int, 1),
+    FILES_BUCKET=(str, "harak2-files"),
+    FILES_ENDPOINT_URL=(str, ""),
+    FILES_PUBLIC_ENDPOINT_URL=(str, ""),
+    FILES_ACCESS_KEY_ID=(str, ""),
+    FILES_SECRET_ACCESS_KEY=(str, ""),
+    FILES_REGION=(str, "us-east-1"),
+    FILES_LINK_SECONDS=(int, 60),
+    FILES_CREATE_BUCKET=(bool, False),
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
@@ -75,6 +83,7 @@ INSTALLED_APPS = [
     "apps.workflows",
     "apps.notifications",
     "apps.sso",
+    "apps.files",
 ]
 
 MIDDLEWARE = [
@@ -256,3 +265,15 @@ if SENTRY_DSN:
         send_default_pii=False,
         traces_sample_rate=0.0,
     )
+
+# Stored files (spec 3 storage, 7.4; D75): an S3-compatible store. The endpoint is empty for the cloud provider's
+# own; FILES_PUBLIC_ENDPOINT_URL is the address browsers reach when it differs (compose). Keys may be empty where
+# the platform gives the server its own credentials. Links last FILES_LINK_SECONDS.
+FILES_BUCKET = env("FILES_BUCKET")
+FILES_ENDPOINT_URL = env("FILES_ENDPOINT_URL")
+FILES_PUBLIC_ENDPOINT_URL = env("FILES_PUBLIC_ENDPOINT_URL")
+FILES_ACCESS_KEY_ID = env("FILES_ACCESS_KEY_ID")
+FILES_SECRET_ACCESS_KEY = env("FILES_SECRET_ACCESS_KEY")
+FILES_REGION = env("FILES_REGION")
+FILES_LINK_SECONDS = env("FILES_LINK_SECONDS")
+FILES_CREATE_BUCKET = env("FILES_CREATE_BUCKET")
