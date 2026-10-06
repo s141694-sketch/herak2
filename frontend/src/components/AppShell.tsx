@@ -54,9 +54,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               {t('nav.tasks')}
             </NavLink>
             {session.organization.role === 'admin' && (
-              <NavLink to="/settings/security" data-testid="nav-security">
-                {t('nav.security')}
-              </NavLink>
+              <>
+                <NavLink to="/settings/security" data-testid="nav-security">
+                  {t('nav.security')}
+                </NavLink>
+                <NavLink to="/settings/identity" data-testid="nav-identity">
+                  {t('nav.identity')}
+                </NavLink>
+              </>
             )}
           </nav>
         )}

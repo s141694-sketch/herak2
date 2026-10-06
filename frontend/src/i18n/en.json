@@ -57,7 +57,8 @@
     "workflows": "Approval workflows",
     "tasks": "My tasks",
     "security": "Security",
-    "accountSecurity": "My account security"
+    "accountSecurity": "My account security",
+    "identity": "Identity"
   },
   "errors": {
     "invalid_credentials": "The email or password is incorrect. Check them and try again.",
@@ -200,7 +201,9 @@
     "file_unreadable": "The file could not be read. Save it again as PDF or Word (.docx), or paste the text.",
     "file_encrypted": "The PDF is protected with a password. Save a copy without one, or paste the text.",
     "file_too_many_pages": "The file has more than 300 pages. Split it, or paste the text.",
-    "file_no_text": "No text was found in the file; it may be a scanned image. Paste the text instead."
+    "file_no_text": "No text was found in the file; it may be a scanned image. Paste the text instead.",
+    "logo_too_large": "The logo is larger than 1 MB. Choose a smaller image.",
+    "logo_type_unsupported": "The logo must be a PNG or JPEG image."
   },
   "common": {
     "create": "Create",
@@ -762,5 +765,18 @@
     "resetFactor": "Reset",
     "confirmResetFactor": "Reset the two-factor authentication of {{name}}? Their current app will no longer work.",
     "factorReset": "The two-factor authentication of {{name}} was reset."
+  },
+  "identity": {
+    "title": "The organization's identity",
+    "intro": "The logo and color appear on the Word and PDF files made when a program is approved.",
+    "logo": "Logo",
+    "logoAlt": "The organization's logo",
+    "noLogo": "No logo yet.",
+    "chooseLogo": "Choose a logo",
+    "logoHint": "A PNG or JPEG image of at most 1 MB.",
+    "removeLogo": "Remove the logo",
+    "color": "Primary color",
+    "colorHint": "The color of the headings in exported files.",
+    "saved": "Saved."
   }
 }

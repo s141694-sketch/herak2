@@ -41,6 +41,8 @@ jobs:
           enable-cache: true
       - run: uv python install ${{ matrix.python }}
       - run: uv sync --frozen --python ${{ matrix.python }}
+      - name: LibreOffice and Arabic fonts for the PDF export (D78)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libreoffice-writer-nogui fonts-noto-core
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run python manage.py makemigrations --check --dry-run
@@ -60,6 +62,7 @@ jobs:
           curl -sf http://localhost:8180/realms/safety/.well-known/openid-configuration > /dev/null
       - run: uv run pytest
         env:
+          HARAK_REQUIRE_SOFFICE: "1"
           DATABASE_URL: postgres://harak:harak@127.0.0.1:54329/harak
           REDIS_URL: redis://127.0.0.1:6380/1
           KEYCLOAK_URL: http://localhost:8180

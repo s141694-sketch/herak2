@@ -13,6 +13,8 @@ urlpatterns = [
     path("auth/mfa/disable/", views.MfaDisableView.as_view(), name="auth-mfa-disable"),
     path("auth/switch-organization/", views.SwitchOrganizationView.as_view(), name="auth-switch-organization"),
     path("organizations/current/", views.CurrentOrganizationView.as_view(), name="organization-current"),
+    path("organizations/current/identity/", views.IdentityView.as_view(), name="organization-identity"),
+    path("organizations/current/identity/logo/", views.IdentityLogoView.as_view(), name="organization-identity-logo"),
     path("organizations/current/members/", views.MemberListView.as_view(), name="member-list"),
     path("organizations/current/members/<int:pk>/", views.MemberDetailView.as_view(), name="member-detail"),
     path(

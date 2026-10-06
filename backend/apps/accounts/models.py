@@ -76,7 +76,8 @@ class Organization(models.Model):
 
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=80, unique=True)
-    logo = models.FileField(upload_to="organizations/logos/", blank=True)
+    # The organization's identity (spec 4.1), which its exported files carry: a logo in the file store, and colors.
+    logo_file = models.ForeignKey("files.File", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     brand_colors = models.JSONField(default=dict, blank=True)
     work_days = models.JSONField(default=default_work_days, validators=[validate_work_days])
     pre_submit_critical_behavior = models.CharField(

@@ -4,12 +4,14 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import exceptions, generics, status
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from apps.audit.services import record
+from apps.core.errors import Conflict
 from apps.sso.models import IdentityProviderConfig
 from apps.tenancy.middleware import (
     SESSION_KEY,
@@ -25,17 +27,23 @@ from apps.tenancy.permissions import HasActiveOrganization, role_required
 from . import mfa
 from .models import Membership, Role, TOTPDevice
 from .serializers import (
+    IdentitySerializer,
     LoginSerializer,
     MemberSerializer,
     OrganizationSerializer,
     SignInRulesSerializer,
     SwitchOrganizationSerializer,
+    identity_payload,
     session_payload,
 )
 
 
 class LoginThrottle(AnonRateThrottle):
     scope = "login"
+
+
+class IdentityError(Conflict):
+    default_code = "identity_error"
 
 
 class InvalidCredentials(exceptions.ValidationError):
@@ -255,3 +263,70 @@ class MemberMfaResetView(APIView):
         TOTPDevice.objects.filter(user=membership.user).delete()
         record("mfa.reset", actor=request.user, target=membership, payload={"user": membership.user_id})
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+LOGO_TYPES = {b"\x89PNG\r\n\x1a\n": "image/png", b"\xff\xd8\xff": "image/jpeg"}
+LOGO_MAX_BYTES = 1024 * 1024
+
+
+class IdentityView(APIView):
+    """The organization's identity (spec 4.1), carried by its exported files: every member sees it, an admin sets
+    it."""
+
+    permission_classes = [HasActiveOrganization]
+
+    def get(self, request):
+        return Response(identity_payload(request.organization))
+
+    def patch(self, request):
+        if request.membership.role != Role.ADMIN:
+            raise exceptions.PermissionDenied("only an admin sets the organization's identity")
+        serializer = IdentitySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        organization = request.organization
+        color = serializer.validated_data["primary_color"].upper()
+        colors = {k: v for k, v in (organization.brand_colors or {}).items() if k != "primary"}
+        organization.brand_colors = {**colors, **({"primary": color} if color else {})}
+        organization.save(update_fields=["brand_colors"])
+        record("organization.identity_set", actor=request.user, target=organization, payload={"primary": color})
+        return Response(identity_payload(organization))
+
+
+class IdentityLogoView(APIView):
+    """The logo: a PNG or JPEG of at most 1 MB, kept in the file store (task 7.0)."""
+
+    permission_classes = [role_required(Role.ADMIN)]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        from apps.files import services as files
+        from apps.files.models import File
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            raise IdentityError("choose an image", code="file_required")
+        if upload.size > LOGO_MAX_BYTES:
+            raise IdentityError("the logo is larger than 1 MB", code="logo_too_large")
+        data = upload.read()
+        content_type = next((kind for magic, kind in LOGO_TYPES.items() if data.startswith(magic)), None)
+        if content_type is None:
+            raise IdentityError("the logo is a PNG or JPEG image", code="logo_type_unsupported")
+        organization = request.organization
+        organization.logo_file = files.store(
+            data, name=upload.name, content_type=content_type, kind=File.Kind.LOGO, actor=request.user
+        )
+        organization.save(update_fields=["logo_file"])
+        record(
+            "organization.logo_set",
+            actor=request.user,
+            target=organization,
+            payload={"file": organization.logo_file_id},
+        )
+        return Response(identity_payload(organization))
+
+    def delete(self, request):
+        organization = request.organization
+        organization.logo_file = None
+        organization.save(update_fields=["logo_file"])
+        record("organization.logo_removed", actor=request.user, target=organization)
+        return Response(identity_payload(organization))

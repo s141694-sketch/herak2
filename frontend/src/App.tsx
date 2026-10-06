@@ -8,6 +8,7 @@ import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage'
 import { FrameworkListPage } from './pages/competencies/FrameworkListPage'
 import { FrameworkPage } from './pages/competencies/FrameworkPage'
 import { HomePage } from './pages/HomePage'
+import { IdentitySettingsPage } from './pages/IdentitySettingsPage'
 import { LoginPage } from './pages/LoginPage'
 import { DiffPage } from './pages/programs/DiffPage'
 import { ProgramListPage } from './pages/programs/ProgramListPage'
@@ -39,6 +40,7 @@ function OrganizationRoutes() {
       <Route path="/tasks" element={<TasksPage />} />
       <Route path="/workflows" element={<WorkflowsPage />} />
       <Route path="/settings/security" element={<SecuritySettingsPage />} />
+      <Route path="/settings/identity" element={<IdentitySettingsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

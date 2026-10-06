@@ -11,7 +11,7 @@ from .models import File
 
 class FileDownloadView(APIView):
     """The API decides who may have a file; the store then serves it through a link that expires (spec 7.4).
-    Exports are for every member of the organization; an uploaded file, for whoever uploaded it."""
+    Exports and the logo are for every member of the organization; an uploaded file, for whoever uploaded it."""
 
     permission_classes = [HasActiveOrganization]
 

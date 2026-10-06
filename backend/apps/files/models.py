@@ -5,12 +5,14 @@ from apps.tenancy.models import OrganizationScopedModel
 
 
 class File(OrganizationScopedModel):
-    """A file kept in the S3-compatible store (spec 3 storage, 4.6): one uploaded for an import, or one made by an
-    export. The row says what it is and where it lies; the bytes never pass through the database."""
+    """A file kept in the S3-compatible store (spec 3 storage, 4.6): one uploaded for an import, one made by an
+    export, or the organization's logo. The row says what it is and where it lies; the bytes never pass through
+    the database."""
 
     class Kind(models.TextChoices):
         UPLOAD = "upload", "upload"
         EXPORT = "export", "export"
+        LOGO = "logo", "logo"
 
     kind = models.CharField(max_length=10, choices=Kind.choices)
     name = models.CharField(max_length=255)

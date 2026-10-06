@@ -32,6 +32,8 @@ env = environ.Env(
     IMPORT_MAX_FILE_BYTES=(int, 10 * 1024 * 1024),
     IMPORT_MAX_PAGES=(int, 300),
     IMPORT_MAX_UNPACKED_BYTES=(int, 50 * 1024 * 1024),
+    EXPORT_SOFFICE=(str, "soffice"),
+    EXPORT_PDF_SECONDS=(int, 120),
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
@@ -87,6 +89,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.sso",
     "apps.files",
+    "apps.exports",
 ]
 
 MIDDLEWARE = [
@@ -287,3 +290,6 @@ IMPORT_MAX_FILE_BYTES = env("IMPORT_MAX_FILE_BYTES")
 IMPORT_MAX_PAGES = env("IMPORT_MAX_PAGES")
 IMPORT_MAX_UNPACKED_BYTES = env("IMPORT_MAX_UNPACKED_BYTES")
 
+# Exports (tasks 7.3-7.5; D78): LibreOffice converts the Word file to PDF, within this many seconds.
+EXPORT_SOFFICE = env("EXPORT_SOFFICE")
+EXPORT_PDF_SECONDS = env("EXPORT_PDF_SECONDS")

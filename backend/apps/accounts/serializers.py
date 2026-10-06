@@ -118,3 +118,22 @@ def session_payload(request) -> dict:
             for membership, data in zip(memberships, MembershipSerializer(memberships, many=True).data, strict=True)
         ],
     }
+
+
+class IdentitySerializer(serializers.Serializer):
+    """The organization's identity as an admin sets it (spec 4.1): its primary color; the logo has its own route."""
+
+    primary_color = serializers.RegexField(r"^#[0-9A-Fa-f]{6}$", allow_blank=True)
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict) and not isinstance(data.get("primary_color", ""), str):
+            raise serializers.ValidationError({"primary_color": "a color such as #0B6E4F"})
+        return super().to_internal_value(data)
+
+
+def identity_payload(organization) -> dict:
+    logo = organization.logo_file
+    return {
+        "primary_color": (organization.brand_colors or {}).get("primary", ""),
+        "logo": {"id": logo.pk, "name": logo.name} if logo else None,
+    }

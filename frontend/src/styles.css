@@ -265,3 +265,13 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* The organization's logo, as it will appear on exported files (task 7.3). */
+.logo-preview {
+  max-height: 64px;
+  max-width: 200px;
+  object-fit: contain;
+  border: 1px solid var(--border, #ddd);
+  padding: 4px;
+  background: #fff;
+}
