@@ -275,3 +275,9 @@ input, select { font: inherit; padding: 4px var(--space); border: 1px solid var(
   padding: 4px;
   background: #fff;
 }
+
+/* A download that looks like the other buttons (the export's Word and PDF files). */
+a.secondary.download {
+  display: inline-block;
+  text-decoration: none;
+}

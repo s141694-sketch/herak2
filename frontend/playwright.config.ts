@@ -35,7 +35,11 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:5173',
-    launchOptions: executablePath ? { executablePath } : {},
+    launchOptions: {
+      ...(executablePath ? { executablePath } : {}),
+      // Without a UTF-8 locale Chromium saves a download with an Arabic name as "download"; users' browsers have one.
+      env: { ...process.env, LANG: process.env.LANG || 'C.UTF-8' },
+    },
   },
   webServer: [
     {

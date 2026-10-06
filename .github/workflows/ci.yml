@@ -130,6 +130,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
+      - name: LibreOffice and Arabic fonts, so approval in the browser ends with a real PDF (D78)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libreoffice-writer-nogui fonts-noto-core
       - name: Keycloak for the single sign-on journey (D62)
         run: |
           docker run -d --name keycloak -p 8180:8180 \

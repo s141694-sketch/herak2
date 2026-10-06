@@ -205,7 +205,8 @@
     "logo_too_large": "الشعار أكبر من 1 ميغابايت. اختر صورة أصغر.",
     "logo_type_unsupported": "يجب أن يكون الشعار صورة PNG أو JPEG.",
     "domain_required": "وثّق نطاق بريد واحدًا على الأقل أولًا: يدخل الأعضاء عبر المزوّد بنطاق بريدهم.",
-    "domain_needed_by_enforcement": "هذا آخر نطاق موثّق والدخول الموحد مفروض. أوقف الفرض أولًا، أو وثّق نطاقًا آخر."
+    "domain_needed_by_enforcement": "هذا آخر نطاق موثّق والدخول الموحد مفروض. أوقف الفرض أولًا، أو وثّق نطاقًا آخر.",
+    "export_not_failed": "لا يُعاد إلا تصدير فشل."
   },
   "common": {
     "create": "إنشاء",
@@ -702,7 +703,8 @@
       "version_approved": "اعتُمدت النسخة {{number}} من «{{program}}»",
       "task_due_soon": "تذكير: يحين موعد مرحلة «{{stage}}» من «{{program}}» في {{due}}",
       "task_due": "حان موعد مرحلة «{{stage}}» من «{{program}}»",
-      "task_overdue": "تصعيد: تأخرت مرحلة «{{stage}}» من «{{program}}» (المسؤول: {{responsible}})"
+      "task_overdue": "تصعيد: تأخرت مرحلة «{{stage}}» من «{{program}}» (المسؤول: {{responsible}})",
+      "export_failed": "تعذّر توليد ملفي Word وPDF للنسخة {{number}} من «{{program}}»: أعد المحاولة من صفحتها"
     }
   },
   "mfa": {
@@ -780,5 +782,13 @@
     "color": "اللون الأساسي",
     "colorHint": "لون العناوين في الملفات المصدَّرة.",
     "saved": "حُفظ."
+  },
+  "export": {
+    "title": "ملفا Word وPDF",
+    "making": "جارٍ توليد ملفي Word وPDF…",
+    "word": "تنزيل Word",
+    "pdf": "تنزيل PDF",
+    "failed": "تعذّر توليد الملفين. الاعتماد قائم، ويمكن إعادة محاولة التصدير.",
+    "retry": "إعادة المحاولة"
   }
 }

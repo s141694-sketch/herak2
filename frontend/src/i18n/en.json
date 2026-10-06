@@ -205,7 +205,8 @@
     "logo_too_large": "The logo is larger than 1 MB. Choose a smaller image.",
     "logo_type_unsupported": "The logo must be a PNG or JPEG image.",
     "domain_required": "Verify at least one email domain first: members sign in through the provider by their email's domain.",
-    "domain_needed_by_enforcement": "This is the last verified domain while single sign-on is enforced. Stop enforcing first, or verify another domain."
+    "domain_needed_by_enforcement": "This is the last verified domain while single sign-on is enforced. Stop enforcing first, or verify another domain.",
+    "export_not_failed": "Only an export that failed can be tried again."
   },
   "common": {
     "create": "Create",
@@ -702,7 +703,8 @@
       "version_approved": "Version {{number}} of “{{program}}” was approved",
       "task_due_soon": "Reminder: the stage “{{stage}}” of “{{program}}” is due {{due}}",
       "task_due": "The stage “{{stage}}” of “{{program}}” is due now",
-      "task_overdue": "Escalation: the stage “{{stage}}” of “{{program}}” is late (responsible: {{responsible}})"
+      "task_overdue": "Escalation: the stage “{{stage}}” of “{{program}}” is late (responsible: {{responsible}})",
+      "export_failed": "The Word and PDF files of version {{number}} of “{{program}}” could not be made: try again from its page"
     }
   },
   "mfa": {
@@ -780,5 +782,13 @@
     "color": "Primary color",
     "colorHint": "The color of the headings in exported files.",
     "saved": "Saved."
+  },
+  "export": {
+    "title": "Word and PDF files",
+    "making": "The Word and PDF files are being made…",
+    "word": "Download Word",
+    "pdf": "Download PDF",
+    "failed": "The files could not be made. The approval stands; the export can be tried again.",
+    "retry": "Try again"
   }
 }

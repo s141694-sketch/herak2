@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from '@playwright/test'
 
 import { api, freshProgram, openLive, signIn } from './helpers'
 
@@ -109,8 +109,9 @@ test('a version is submitted, returned, resubmitted and approved', async ({ brow
   await panel.getByTestId('decision-note').fill('معتمد')
   await panel.getByTestId('decision-approve').click()
   await expect(panel.getByTestId('review-outcome')).toHaveText('اعتُمدت هذه النسخة.')
+  // Approved, and exported once its files are made (in the background; tasks run at once in these tests).
   const approved = await api<{ status: string }>(admin, 'GET', `/api/program-versions/${draftId}/`)
-  expect(approved.status).toBe('approved')
+  expect(['approved', 'exported']).toContain(approved.status)
   await expect(panel.getByTestId('decisions').locator('li')).toHaveCount(2)
 
   // The same panel in English.
@@ -119,7 +120,55 @@ test('a version is submitted, returned, resubmitted and approved', async ({ brow
   await expect(panel).toContainText('Review and approval')
   await expect(panel.getByTestId('review-outcome')).toHaveText('This version is approved.')
   await approver.screenshot({ path: 'e2e/screenshots/81-review-approved-en.png', fullPage: true })
+
+  // Approval ends with the Word and PDF files (phase 7): made in the background, then downloaded by the author.
+  await author.reload()
+  const exported = author.getByTestId('export-panel')
+  await expect(exported).toHaveAttribute('data-status', 'done', { timeout: 60_000 })
+  await author.screenshot({ path: 'e2e/screenshots/83-export-ready-ar.png', fullPage: true })
+  const word = await download(author, exported.getByTestId('export-word'))
+  expect(word.name).toMatch(/\.docx$/)
+  expect(word.bytes.subarray(0, 2).toString()).toBe('PK')
+  const pdf = await download(author, exported.getByTestId('export-pdf'))
+  expect(pdf.name).toMatch(/\.pdf$/)
+  expect(pdf.bytes.subarray(0, 5).toString()).toBe('%PDF-')
+  const version = await api<{ status: string }>(author, 'GET', `/api/program-versions/${draftId}/`)
+  expect(version.status).toBe('exported')
+  // The same panel in English.
+  await author.getByRole('button', { name: 'اللغة' }).click()
+  await expect(exported.getByTestId('export-word')).toHaveText('Download Word')
+  await expect(exported.getByTestId('export-pdf')).toHaveText('Download PDF')
+
+  // A failed export, as the pages show it (the failure and the retry themselves are the backend's tests):
+  // the approval stands, the reason shows, and only an admin may try again, which the panel then follows.
+  const exportPath = `**/api/program-versions/${draftId}/export/`
+  const failure = { status: 'failed', attempts: 5, finished_at: null, word: null, pdf: null, last_error: 'ConversionFailed: timed out' }
+  await author.route(exportPath, (route) => route.fulfill({ json: failure }))
+  await author.reload()
+  await expect(author.getByTestId('export-panel')).toHaveAttribute('data-status', 'failed')
+  await expect(author.getByTestId('export-retry')).toHaveCount(0)
+  let failed = true
+  await admin.route(exportPath, (route) => (failed ? route.fulfill({ json: failure }) : route.fallback()))
+  await admin.route(`**/api/program-versions/${draftId}/export/retry/`, (route) => {
+    failed = false
+    return route.fulfill({ json: { ...failure, status: 'pending', attempts: 0 } })
+  })
+  await admin.goto(`/program-versions/${draftId}`)
+  const panelOfAdmin = admin.getByTestId('export-panel')
+  await expect(panelOfAdmin.getByTestId('export-failed')).toContainText('تعذّر توليد الملفين. الاعتماد قائم')
+  await expect(panelOfAdmin.getByTestId('export-failed')).toContainText('ConversionFailed: timed out')
+  await panelOfAdmin.getByTestId('export-retry').click()
+  await expect(panelOfAdmin).toHaveAttribute('data-status', 'done')
+  await expect(panelOfAdmin.getByTestId('export-word')).toBeVisible()
 })
+
+async function download(page: Page, link: Locator) {
+  const [file] = await Promise.all([page.waitForEvent('download'), link.click()])
+  const stream = await file.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(chunk as Buffer)
+  return { name: file.suggestedFilename(), bytes: Buffer.concat(chunks) }
+}
 
 test('an admin defines a workflow; others read it', async ({ browser }) => {
   test.setTimeout(90_000)

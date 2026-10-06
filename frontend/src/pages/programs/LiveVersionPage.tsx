@@ -24,6 +24,7 @@ import { ErrorMessage } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
 import { canWithdraw, ReviewPanel, useVersionWorkflow } from '../workflows/ReviewPanel'
+import { ExportPanel } from './ExportPanel'
 import { LiveBlockEditor } from '../../live/LiveBlockEditor'
 import { type Presence, usePresence } from '../../live/presence'
 import { type LiveBlock, type LiveNode, type Snapshot, useSnapshot } from '../../live/snapshot'
@@ -268,6 +269,7 @@ export function LiveVersionPage({
           onCommentsChanged={() => commentContext?.reload()}
         />
       )}
+      {(version.status === 'approved' || version.status === 'exported') && <ExportPanel versionId={version.id} />}
       {resolvedCount > 0 && (
         <p>
           <button type="button" className="link-button" data-testid="toggle-resolved" onClick={() => setShowResolved((shown) => !shown)}>

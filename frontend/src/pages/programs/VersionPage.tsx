@@ -9,6 +9,7 @@ import { ErrorMessage, Loading } from '../../components/ErrorMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAction, useResource } from '../../hooks/useResource'
 import { canWithdraw, ReviewPanel, useVersionWorkflow } from '../workflows/ReviewPanel'
+import { ExportPanel } from './ExportPanel'
 import { LiveVersionPage } from './LiveVersionPage'
 import {
   type AlignmentLink,
@@ -108,6 +109,7 @@ export function VersionPage() {
         onChanged={refresh}
         onCommentsChanged={refresh}
       />
+      {(status === 'approved' || status === 'exported') && <ExportPanel versionId={version.data.id} />}
 
       <h2>{t('programs.targets')}</h2>
       <ul className="plain" data-testid="version-targets">
