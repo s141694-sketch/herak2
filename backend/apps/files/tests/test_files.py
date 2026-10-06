@@ -86,3 +86,11 @@ def test_an_uploaded_file_is_given_back_only_to_whoever_uploaded_it(world):
     file = stored(world, kind=File.Kind.UPLOAD, actor="author")
     assert signed_in("author@a.test").get(f"/api/files/{file.pk}/download/").status_code == 302
     assert signed_in("admin@a.test").get(f"/api/files/{file.pk}/download/").status_code == 404
+
+
+def test_where_the_settings_allow_it_the_bucket_is_made_on_first_use(world, settings):
+    """Development and the browser tests start with an empty store (moto's server)."""
+    settings.FILES_BUCKET = "made-on-first-use"
+    world["storage"]._ready.clear()
+    world["storage"].write("1/export/x/a.txt", b"a", "text/plain")
+    assert world["storage"].read("1/export/x/a.txt") == b"a"

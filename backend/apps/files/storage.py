@@ -41,17 +41,24 @@ def _public():
     )
 
 
+# Buckets known to exist in this process.
+_ready: set[str] = set()
+
+
 def ensure_bucket() -> None:
-    """Creates the bucket where the settings allow it (development and tests); production provisions its own."""
-    if not settings.FILES_CREATE_BUCKET:
+    """Creates the bucket where the settings allow it (development and tests, whose stores start empty); production
+    provisions its own."""
+    if not settings.FILES_CREATE_BUCKET or settings.FILES_BUCKET in _ready:
         return
     try:
         _server().head_bucket(Bucket=settings.FILES_BUCKET)
     except ClientError:
         _server().create_bucket(Bucket=settings.FILES_BUCKET)
+    _ready.add(settings.FILES_BUCKET)
 
 
 def write(key: str, data: bytes, content_type: str) -> None:
+    ensure_bucket()
     _server().put_object(Bucket=settings.FILES_BUCKET, Key=key, Body=data, ContentType=content_type)
 
 

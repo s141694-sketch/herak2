@@ -16,6 +16,7 @@ def _suggestion(org):
 
 
 register(Probe(route="version-suggestions", kind="nested", make=_version))
+register(Probe(route="version-import-file", kind="action", make=_version))
 register(Probe(route="suggestion-detail", kind="detail", make=_suggestion))
 register(Probe(route="suggestion-accept", kind="action", make=_suggestion))
 register(Probe(route="suggestion-dismiss", kind="action", make=_suggestion))

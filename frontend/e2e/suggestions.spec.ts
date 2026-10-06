@@ -226,3 +226,30 @@ test('an import is laid out by the rules, previewed, and added only when accepte
     ['import', 'dismissed'],
   ])
 })
+
+// Tasks 7.1 and 7.2: the curriculum as a Word file. Its text comes back into the box for the author to check, and
+// the same preview follows; a scanned PDF says why it cannot be read, and the text is pasted instead.
+test('an import from a Word file shows its text, then the same preview; a scanned PDF is pasted instead', async ({ browser }) => {
+  test.setTimeout(90_000)
+  const admin = await signIn(browser, 'multi@example.com')
+  const author = await signIn(browser, 'author@example.com')
+  const { versionId } = await freshProgram(admin)
+  await openLive(author, versionId)
+
+  await author.getByTestId('import-open').click()
+  await author.getByTestId('import-file').setInputFiles('e2e/fixtures/scanned.pdf')
+  await expect(author.getByTestId('import-file-error')).toContainText('الصق النص')
+  await expect(author.getByTestId('import-text')).toBeEditable()
+
+  await author.getByTestId('import-file').setInputFiles('e2e/fixtures/curriculum.docx')
+  await expect(author.getByTestId('import-file-read')).toContainText('curriculum.docx')
+  await expect(author.getByTestId('import-text')).toHaveValue(/أن يعدد المتدرب أنواع المخاطر في موقع العمل/)
+  await author.getByTestId('import-submit').click()
+  const preview = author.getByTestId('import-suggestion')
+  await expect(preview.getByTestId('import-node')).toHaveCount(2)
+  await expect(preview.locator('[data-testid="import-block"][data-type="objective"]')).toHaveCount(2)
+  await author.screenshot({ path: 'e2e/screenshots/63-import-from-word-ar.png', fullPage: true })
+  await author.getByTestId('suggestion-accept').click()
+  await expect(author.getByTestId('suggestion-outcome')).toHaveAttribute('data-status', 'accepted')
+  await expect(author.getByTestId('node-الدرس الأول: تحديد المخاطر')).toBeVisible()
+})

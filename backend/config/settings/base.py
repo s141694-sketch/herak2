@@ -29,6 +29,9 @@ env = environ.Env(
     FILES_REGION=(str, "us-east-1"),
     FILES_LINK_SECONDS=(int, 60),
     FILES_CREATE_BUCKET=(bool, False),
+    IMPORT_MAX_FILE_BYTES=(int, 10 * 1024 * 1024),
+    IMPORT_MAX_PAGES=(int, 300),
+    IMPORT_MAX_UNPACKED_BYTES=(int, 50 * 1024 * 1024),
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
@@ -277,3 +280,10 @@ FILES_SECRET_ACCESS_KEY = env("FILES_SECRET_ACCESS_KEY")
 FILES_REGION = env("FILES_REGION")
 FILES_LINK_SECONDS = env("FILES_LINK_SECONDS")
 FILES_CREATE_BUCKET = env("FILES_CREATE_BUCKET")
+
+# A curriculum uploaded for an import (task 7.1, spec 7.6; D76): at most this large, this many pages, and (for Word)
+# this large once unpacked.
+IMPORT_MAX_FILE_BYTES = env("IMPORT_MAX_FILE_BYTES")
+IMPORT_MAX_PAGES = env("IMPORT_MAX_PAGES")
+IMPORT_MAX_UNPACKED_BYTES = env("IMPORT_MAX_UNPACKED_BYTES")
+

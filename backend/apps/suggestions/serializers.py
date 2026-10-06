@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.accounts.serializers import UserSerializer
 from apps.agents.importing import MAX_TEXT_CHARS
+from apps.files.models import File
 from apps.quality.ai_layer import rules_only
 
 from .models import Suggestion
@@ -78,12 +79,19 @@ class SuggestionRequestSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=Suggestion.Kind.choices)
     block_key = serializers.UUIDField(required=False)
     text = serializers.CharField(required=False, max_length=MAX_TEXT_CHARS, trim_whitespace=False)
+    # The uploaded file the text came from (task 7.1), recorded with the import; one the person uploaded.
+    source_file = serializers.IntegerField(required=False)
 
     def validate(self, data):
         if data["kind"] == Suggestion.Kind.REWRITE and "block_key" not in data:
             raise serializers.ValidationError({"block_key": "say which objective to rewrite"})
         if data["kind"] == Suggestion.Kind.IMPORT and not data.get("text", "").strip():
             raise serializers.ValidationError({"text": "paste the text to import"})
+        if "source_file" in data:
+            user = self.context["request"].user
+            uploaded = File.objects.filter(pk=data["source_file"], kind=File.Kind.UPLOAD, created_by=user)
+            if data["kind"] != Suggestion.Kind.IMPORT or not uploaded.exists():
+                raise serializers.ValidationError({"source_file": "a file you uploaded for this import"})
         return data
 
 

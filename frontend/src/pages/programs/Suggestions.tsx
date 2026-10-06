@@ -382,12 +382,30 @@ function ImportPreview({ layout }: { layout: ImportResult }) {
 
 /** Curriculum text laid out on the tree: Harak's rules first, the import agent when it may help; nothing reaches
  * the document before the author accepts it. */
+interface ReadFile {
+  file: { id: number; name: string }
+  text: string
+  warnings: string[]
+}
+
 export function ImportSuggestion({ ctx }: { ctx: SuggestionContext }) {
   const { t } = useTranslation()
   const { suggestion, action, ask, decide, accept, reset } = useSuggestion(ctx, 'import', '')
   const [open, setOpen] = useState(false)
   const [source, setSource] = useState('')
   const [note, setNote] = useState<string | null>(null)
+  const reading = useAction()
+  const [read, setRead] = useState<ReadFile | null>(null)
+
+  /** Task 7.1: the file is kept and its text put in the box, for the author to check before asking. */
+  const readFile = async (file: File) => {
+    setRead(null)
+    const answer = await reading.run(() => http.upload<ReadFile>(`/api/program-versions/${ctx.versionId}/import-file/`, file))
+    if (answer) {
+      setRead(answer)
+      setSource(answer.text)
+    }
+  }
 
   if (!suggestion) {
     if (!open) {
@@ -404,9 +422,42 @@ export function ImportSuggestion({ ctx }: { ctx: SuggestionContext }) {
         className="suggestion panel"
         onSubmit={(event: FormEvent) => {
           event.preventDefault()
-          void ask({ kind: 'import', text: source })
+          void ask({ kind: 'import', text: source, ...(read ? { source_file: read.file.id } : {}) })
         }}
       >
+        <label className="field">
+          <span>{t('suggestions.importFile')}</span>
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            disabled={reading.busy || !ctx.editable}
+            data-testid="import-file"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) void readFile(file)
+            }}
+          />
+        </label>
+        <p className="muted small">{t('suggestions.importFileHint')}</p>
+        {reading.busy && (
+          <p className="muted" role="status">
+            {t('suggestions.importReading')}
+          </p>
+        )}
+        {read && (
+          <p className="notice" role="status" data-testid="import-file-read">
+            {t('suggestions.importFileRead', { name: read.file.name })}
+            {read.warnings.map((code) => (
+              <span key={code}> {t(`suggestions.importWarnings.${code}`, { defaultValue: '' })}</span>
+            ))}
+          </p>
+        )}
+        {reading.error && (
+          <div role="alert" className="error" data-testid="import-file-error">
+            <p>{t(`errors.${reading.error}`, { defaultValue: t('errors.unknown') })}</p>
+            <p>{t('suggestions.importPasteInstead')}</p>
+          </div>
+        )}
         <label className="field">
           <span>{t('suggestions.importText')}</span>
           <textarea required rows={10} value={source} maxLength={200_000} data-testid="import-text" onChange={(e) => setSource(e.target.value)} />

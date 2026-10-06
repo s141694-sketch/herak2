@@ -60,21 +60,23 @@ def _outline_request(version: ProgramVersion) -> dict:
     return drafting.outline_payload(program.title, program.target_role, levels, [_competency(c) for c in targets])
 
 
-def request(version: ProgramVersion, kind: str, *, actor, block_key=None, text: str = "") -> Suggestion:
+def request(
+    version: ProgramVersion, kind: str, *, actor, block_key=None, text: str = "", source_file: int | None = None
+) -> Suggestion:
     """A suggestion for the version's current content; an open one for the same content is returned instead."""
     if not version.is_editable:
         raise VersionLocked()
     # The rows are read below; a live draft's latest content reaches them first when the editor can be reached.
     # This calls the collaboration service, so it happens before the transaction, not while holding it.
     lifecycle.rows_requested.send(sender=ProgramVersion, version=version)
-    return _record_request(version, kind, actor=actor, block_key=block_key, text=text)
+    return _record_request(version, kind, actor=actor, block_key=block_key, text=text, source_file=source_file)
 
 
 def _levels(version: ProgramVersion) -> list[str]:
     return [level.name_ar for level in version.program.template_version.levels.order_by("depth")]
 
 
-def _import_request(version: ProgramVersion, text: str) -> dict:
+def _import_request(version: ProgramVersion, text: str, source_file: int | None) -> dict:
     """The text as Harak 1 reads it, and the layout its rules give on this template, kept to fall back on."""
     try:
         read = importing.read(text)
@@ -82,15 +84,18 @@ def _import_request(version: ProgramVersion, text: str) -> dict:
         code = "import_no_text" if exc.code == "NO_TEXT" else "import_text_invalid"
         raise SuggestionError(str(exc), code=code) from exc
     levels = _levels(version)
-    return {"text": text, "levels": levels, "rules": importing.rules_proposal(read, level_count=len(levels))}
+    payload = {"text": text, "levels": levels, "rules": importing.rules_proposal(read, level_count=len(levels))}
+    if source_file is not None:
+        payload["source_file"] = source_file
+    return payload
 
 
 @transaction.atomic
-def _record_request(version: ProgramVersion, kind: str, *, actor, block_key, text) -> Suggestion:
+def _record_request(version: ProgramVersion, kind: str, *, actor, block_key, text, source_file=None) -> Suggestion:
     if kind == Suggestion.Kind.REWRITE:
         payload, subject = _rewrite_request(version, block_key), str(block_key)
     elif kind == Suggestion.Kind.IMPORT:
-        payload, subject = _import_request(version, text), ""
+        payload, subject = _import_request(version, text, source_file), ""
     else:
         payload, subject = _outline_request(version), ""
     basis = _hash(payload)
@@ -277,3 +282,40 @@ def dismiss(suggestion: Suggestion, *, actor, reason: str = "") -> Suggestion:
         reason=reason,
         allowed=(Suggestion.Status.PENDING, Suggestion.Status.READY),
     )
+
+
+# --- Importing from a file (task 7.1) ---------------------------------------------------------------------------
+
+
+def read_import_file(version: ProgramVersion, data: bytes, *, name: str, actor) -> dict:
+    """Keeps the uploaded file and gives back its text as Harak 1's reader reads it (reversed Arabic put right), for
+    the author to check before asking for the import. Nothing is kept from a file whose text cannot be read."""
+    from apps.files import extraction
+    from apps.files import services as files
+    from apps.files.models import File
+
+    if not version.is_editable:
+        raise VersionLocked()
+    try:
+        extracted = extraction.extract(data, name)
+    except extraction.Refused as refused:
+        raise SuggestionError(str(refused), code=refused.code) from refused
+    try:
+        read = importing.read(extracted.text)
+    except importing.ImportTextInvalid as exc:
+        # Harak 1's NO_TEXT: a scanned PDF, or a file with too little Arabic to import.
+        code = "file_no_text" if exc.code == "NO_TEXT" else "import_text_invalid"
+        raise SuggestionError(str(exc), code=code) from exc
+    kept = files.store(data, name=name, content_type=CONTENT_TYPES[extracted.kind], kind=File.Kind.UPLOAD, actor=actor)
+    return {
+        "file": {"id": kept.pk, "name": kept.name},
+        "text": "\n\n".join(page["text"] for page in read["doc"]["pages"]),
+        "warnings": [warning["code"] for warning in read["doc"]["meta"]["warnings"]],
+    }
+
+
+CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "txt": "text/plain; charset=utf-8",
+}

@@ -76,7 +76,7 @@
     "import_not_pending": "This import was already applied.",
     "unsupported_file_type": "Only .csv and .xlsx files are accepted.",
     "file_encoding": "Save the CSV file as UTF-8 and upload it again.",
-    "file_too_large": "The file is larger than the limit (2 MB).",
+    "file_too_large": "The file is larger than 10 MB, or unpacks to much more. Split it, or paste the text.",
     "empty_file": "The file is empty.",
     "unreadable_file": "The Excel file could not be read.",
     "missing_columns": "The file is missing the code or title column.",
@@ -194,7 +194,13 @@
     "provider_endpoint_invalid": "The provider published an address that is not an https web address. Check the provider's configuration.",
     "provider_no_keys": "The provider publishes no signing keys. Check the provider's configuration, then test again.",
     "provider_address_not_allowed": "The provider's address is on a private network this server does not reach. Use the provider's public address.",
-    "provider_answer_invalid": "The provider's answer is not a valid OpenID Connect document. Check the issuer URL, then test again."
+    "provider_answer_invalid": "The provider's answer is not a valid OpenID Connect document. Check the issuer URL, then test again.",
+    "file_required": "Choose a file first.",
+    "file_type_unsupported": "This kind of file is not read. Use PDF, Word (.docx) or text, or paste the text.",
+    "file_unreadable": "The file could not be read. Save it again as PDF or Word (.docx), or paste the text.",
+    "file_encrypted": "The PDF is protected with a password. Save a copy without one, or paste the text.",
+    "file_too_many_pages": "The file has more than 300 pages. Split it, or paste the text.",
+    "file_no_text": "No text was found in the file; it may be a scanned image. Paste the text instead."
   },
   "common": {
     "create": "Create",
@@ -466,7 +472,7 @@
       "version_locked": "The version left draft before the suggestion was prepared, so it was not requested."
     },
     "import": "Import from text",
-    "importText": "Paste the curriculum text here",
+    "importText": "The curriculum text: from the file, or pasted here",
     "importSubmit": "Suggest how to lay out the text",
     "importConfirm": "Nothing is added to the document until you review the layout and accept it.",
     "importPreview": "Suggested layout",
@@ -486,7 +492,15 @@
     },
     "notWritten": "The acceptance was recorded, but the document changed before it could be written, so nothing was written. Request a new suggestion.",
     "hide": "Hide",
-    "importRulesAccuracy": "Harak's rules read headings and sections as written; review the nodes and block types before accepting."
+    "importRulesAccuracy": "Harak's rules read headings and sections as written; review the nodes and block types before accepting.",
+    "importFile": "Upload the curriculum file (PDF, Word or text)",
+    "importFileHint": "Its text appears below for you to check. A scanned PDF has no text: paste the text instead.",
+    "importReading": "Reading the file…",
+    "importFileRead": "Read from “{{name}}”: check the text below before asking for the layout.",
+    "importPasteInstead": "Paste the curriculum text in the box below instead.",
+    "importWarnings": {
+      "REVERSED_TEXT_FIXED": "The Arabic text was reversed and has been put right; check it."
+    }
   },
   "quality": {
     "title": "Quality report",
