@@ -86,7 +86,14 @@ def verify_domain(domain: VerifiedDomain, *, actor) -> VerifiedDomain:
     return domain
 
 
+@transaction.atomic
 def remove_domain(domain: VerifiedDomain, *, actor) -> None:
+    """A verified domain goes, except the last one while single sign-on is enforced: its members would have no way in
+    (passwords refused, and no domain to sign in through)."""
+    enforced = IdentityProviderConfig.objects.select_for_update().filter(enforced=True).exists()
+    others = VerifiedDomain.objects.filter(verified_at__isnull=False).exclude(pk=domain.pk)
+    if domain.verified_at is not None and enforced and not others.exists():
+        raise SsoError("stop enforcing single sign-on first", code="domain_needed_by_enforcement")
     record("sso.domain_removed", actor=actor, target=domain, payload={"domain": domain.domain})
     domain.delete()
 
@@ -271,6 +278,9 @@ def set_policy(config: IdentityProviderConfig, *, actor, enabled: bool, enforced
             raise SsoError("sign in once through the provider as a test first", code="provider_not_tested")
         if emergency_user is None:
             raise SsoError("name the emergency account first", code="emergency_account_required")
+        if not VerifiedDomain.objects.filter(verified_at__isnull=False).exists():
+            # Members sign in through the provider by their email's verified domain: without one nobody could.
+            raise SsoError("verify a domain first", code="domain_required")
     if emergency_user is not None and not Membership.objects.filter(user=emergency_user, role=Role.ADMIN).exists():
         raise SsoError("the emergency account is one of the organization's admins", code="emergency_account_invalid")
     if enforced and confirmed_device(emergency_user) is None:

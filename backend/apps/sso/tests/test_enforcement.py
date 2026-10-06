@@ -214,3 +214,61 @@ def with_second_factor(user):
         user=user, defaults={"secret_encrypted": secrets.encrypt(pyotp.random_base32()), "confirmed_at": timezone.now()}
     )
     return user
+
+
+# --- From the completeness check of the phase 6 review ----------------------------------------------------------
+
+
+def test_enforcement_needs_a_verified_domain_and_its_last_one_stays_while_enforced(world):
+    from apps.sso.models import VerifiedDomain
+
+    with organization_context(world["org"]):
+        VerifiedDomain.objects.all().delete()
+        with_second_factor(world["admin"])
+        with pytest.raises(Conflict) as refused:
+            services.set_policy(
+                mark_tested(world["config"]),
+                actor=world["admin"],
+                enabled=True,
+                enforced=True,
+                emergency_user=world["admin"],
+            )
+        assert refused.value.get_codes() == "domain_required"
+        domain = VerifiedDomain.objects.create(
+            domain="vtc.test", token="t", verified_at="2026-10-05T00:00Z", created_by=world["admin"]
+        )
+        services.set_policy(
+            world["config"], actor=world["admin"], enabled=True, enforced=True, emergency_user=world["admin"]
+        )
+        with pytest.raises(Conflict) as kept:
+            services.remove_domain(domain, actor=world["admin"])
+        assert kept.value.get_codes() == "domain_needed_by_enforcement"
+
+
+def test_a_person_refused_by_an_enforcing_organization_still_reaches_one_that_wants_a_second_factor(world):
+    """Signed out only when every organization asks for its provider: here the other one asks for a code they can
+    set up, so they stay signed in to do it."""
+    enforce(world)
+    world["other"].mfa_required_for_managers = True
+    world["other"].save()
+    with organization_context(world["other"]):
+        Membership.objects.filter(user=world["noura"]).update(role=Role.APPROVER)
+    client, response = password_login("noura@vtc.test")
+    assert response.status_code == 200
+    assert client.post("/api/auth/mfa/enrol/").status_code == 200
+
+
+def test_starting_single_sign_on_is_limited_for_signed_in_people_too(world, provider, settings):  # noqa: F811
+    IdentityProviderConfig.all_organizations.filter(pk=world["config"].pk).update(enabled=True)
+    client, _ = password_login("noura@vtc.test")
+    codes = [start(client, "noura@vtc.test", provider)[0].status_code for _ in range(40)]
+    assert 429 in codes
+
+
+def test_wrong_passwords_do_not_use_up_the_attempts_at_single_sign_on(world, provider):  # noqa: F811
+    IdentityProviderConfig.all_organizations.filter(pk=world["config"].pk).update(enabled=True)
+    anonymous = APIClient()
+    for _ in range(10):
+        anonymous.post("/api/auth/login/", {"email": "noura@vtc.test", "password": "wrong"}, format="json")
+    response, _ = start(APIClient(), "noura@vtc.test", provider)
+    assert response.status_code == 200

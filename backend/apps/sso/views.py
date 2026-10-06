@@ -4,7 +4,7 @@ from rest_framework import exceptions, generics, status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import Membership, Role
@@ -98,8 +98,16 @@ class ProviderTestView(APIView):
 # --- Signing in (tasks 6.5, 6.6) --------------------------------------------------------------------------
 
 
-class SsoStartThrottle(AnonRateThrottle):
-    scope = "login"
+class SsoThrottle(SimpleRateThrottle):
+    """Starting single sign-on, signed in or not (each person, else each address), apart from the password's
+    attempts: a mistyped password does not use up the way through the provider."""
+
+    scope = "sso"
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, "user", None)
+        ident = f"user-{user.pk}" if user is not None and user.is_authenticated else self.get_ident(request)
+        return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
 class SsoDiscoverView(APIView):
@@ -108,7 +116,7 @@ class SsoDiscoverView(APIView):
 
     authentication_classes = [SessionAuthentication]
     permission_classes = [AllowAny]
-    throttle_classes = [SsoStartThrottle]
+    throttle_classes = [SsoThrottle]
 
     def initial(self, request, *args, **kwargs):
         SessionAuthentication().enforce_csrf(request)
@@ -124,7 +132,7 @@ class SsoStartView(APIView):
 
     authentication_classes = [SessionAuthentication]
     permission_classes = [AllowAny]
-    throttle_classes = [SsoStartThrottle]
+    throttle_classes = [SsoThrottle]
 
     def initial(self, request, *args, **kwargs):
         SessionAuthentication().enforce_csrf(request)  # as the password login: no login CSRF

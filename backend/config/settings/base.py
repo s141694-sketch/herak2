@@ -18,6 +18,7 @@ env = environ.Env(
     SENTRY_ENVIRONMENT=(str, "development"),
     SESSION_COOKIE_AGE=(int, 8 * 60 * 60),
     LOGIN_THROTTLE_RATE=(str, "10/minute"),
+    SSO_THROTTLE_RATE=(str, "30/minute"),
     # Proxies in front of Django that add to X-Forwarded-For (nginx, as shipped): rate limits count the address the
     # nearest of them saw, so a client cannot pick its own. 0 when Django is reached directly.
     NUM_PROXIES=(int, 1),
@@ -249,7 +250,12 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.UserRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"user": "600/minute", "anon": "60/minute", "login": env("LOGIN_THROTTLE_RATE")},
+    "DEFAULT_THROTTLE_RATES": {
+        "user": "600/minute",
+        "anon": "60/minute",
+        "login": env("LOGIN_THROTTLE_RATE"),
+        "sso": env("SSO_THROTTLE_RATE"),
+    },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     "NUM_PROXIES": env("NUM_PROXIES"),
 }

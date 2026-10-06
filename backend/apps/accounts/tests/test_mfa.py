@@ -34,6 +34,13 @@ def world():
     return {"org": org, **people}
 
 
+def _verified_domain(admin):
+    """Enforcement needs a verified domain for members to sign in through (from the phase 6 review)."""
+    from apps.sso.models import VerifiedDomain
+
+    VerifiedDomain.objects.create(domain="vtc.test", token="t", verified_at="2026-10-05T00:00Z", created_by=admin)
+
+
 def password(client, email):
     return client.post("/api/auth/login/", {"email": email, "password": PASSWORD}, format="json")
 
@@ -133,6 +140,7 @@ def test_the_emergency_account_signs_in_with_password_and_code_under_enforcement
         config = sso.save_provider(
             None, actor=world["admin"], issuer="https://idp.vtc.test", client_id="c", client_secret="s"
         )
+        _verified_domain(world["admin"])
         IdentityProviderConfig.objects.filter(pk=config.pk).update(
             discovery_ok_at=config.config_changed_at, test_login_ok_at=config.config_changed_at
         )
@@ -223,6 +231,7 @@ def test_the_emergency_accounts_factor_is_not_reset_while_it_is_the_emergency_ac
         config = sso.save_provider(
             None, actor=world["admin"], issuer="https://idp.vtc.test", client_id="c", client_secret="s"
         )
+        _verified_domain(world["admin"])
         IdentityProviderConfig.objects.filter(pk=config.pk).update(
             discovery_ok_at=config.config_changed_at, test_login_ok_at=config.config_changed_at
         )
@@ -380,3 +389,15 @@ def test_admins_see_which_members_have_a_second_factor_and_others_do_not(world):
     listed = {m["user"]["email"]: m["mfa_enabled"] for m in admin.get("/api/organizations/current/members/").json()}
     assert listed == {"admin@vtc.test": False, "approver@vtc.test": False, "author@vtc.test": True}
     assert all("mfa_enabled" not in m for m in author.get("/api/organizations/current/members/").json())
+
+
+def test_the_admin_site_is_entered_through_harak_s_sign_in_with_its_second_factor(world, settings):
+    """Django's own admin login would skip the second factor (and enforcement): it sends people to Harak's."""
+    from django.test import Client
+
+    world["admin"].is_staff = True
+    world["admin"].save()
+    browser = Client()
+    response = browser.post("/admin/login/?next=/admin/", {"username": "admin@vtc.test", "password": PASSWORD})
+    assert response.status_code == 302 and response["Location"].startswith(settings.APP_URL)
+    assert browser.get("/api/auth/me/").status_code in (401, 403)

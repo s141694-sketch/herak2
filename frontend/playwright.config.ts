@@ -19,6 +19,7 @@ const backendEnv = {
   REDIS_URL: process.env.E2E_REDIS_URL ?? 'redis://127.0.0.1:6380/2',
   HARAK_ALLOW_SEED: '1',
   LOGIN_THROTTLE_RATE: '1000/minute',
+  SSO_THROTTLE_RATE: '1000/minute',
   LOG_LEVEL: 'WARNING',
   // No Celery worker runs here: tasks (quality runs, AI suggestions) run inside the request that queued them.
   CELERY_TASK_ALWAYS_EAGER: '1',

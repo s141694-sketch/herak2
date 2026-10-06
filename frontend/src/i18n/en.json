@@ -203,7 +203,9 @@
     "file_too_many_pages": "The file has more than 300 pages. Split it, or paste the text.",
     "file_no_text": "No text was found in the file; it may be a scanned image. Paste the text instead.",
     "logo_too_large": "The logo is larger than 1 MB. Choose a smaller image.",
-    "logo_type_unsupported": "The logo must be a PNG or JPEG image."
+    "logo_type_unsupported": "The logo must be a PNG or JPEG image.",
+    "domain_required": "Verify at least one email domain first: members sign in through the provider by their email's domain.",
+    "domain_needed_by_enforcement": "This is the last verified domain while single sign-on is enforced. Stop enforcing first, or verify another domain."
   },
   "common": {
     "create": "Create",

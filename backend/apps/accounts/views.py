@@ -112,8 +112,9 @@ def _finish_login(request, user, *, second_factor: bool) -> dict:
     memberships = list(memberships_of(user))
     refusals = [entry_refusal(request, m) for m in memberships]
     open_to_session = [m for m, refusal in zip(memberships, refusals, strict=True) if refusal is None]
-    if memberships and not open_to_session and "sso_required" in refusals:
-        # Every organization of this person asks for its own provider: a password does not open any (D66).
+    if memberships and all(refusal == "sso_required" for refusal in refusals):
+        # Every organization of this person asks for its own provider: a password does not open any (D66). Where
+        # another asks for something this session can do (set up a second factor), the person stays signed in.
         logout(request)
         raise EntryRefused("sign in through your organization", code="sso_required")
     _select_membership(request, open_to_session[0] if len(open_to_session) == 1 else None)
