@@ -6,6 +6,7 @@ import { api, http, type SessionPayload } from '../api'
 import { useAuth } from '../auth'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { useAction } from '../hooks/useResource'
+import { asciiDigits } from '../signIn'
 
 function CodeInput({ value, onChange, testId }: { value: string; onChange: (code: string) => void; testId: string }) {
   const { t } = useTranslation()
@@ -20,7 +21,7 @@ function CodeInput({ value, onChange, testId }: { value: string; onChange: (code
         required
         value={value}
         data-testid={testId}
-        onChange={(event) => onChange(event.target.value.replace(/\D/g, ''))}
+        onChange={(event) => onChange(asciiDigits(event.target.value))}
       />
     </label>
   )
@@ -55,7 +56,12 @@ export function AccountSecurityPage() {
   }
   const turnOff = async (event: FormEvent) => {
     event.preventDefault()
-    if ((await action.run(() => http.post('/api/auth/mfa/disable/', { code }))) === undefined) return
+    // The answer has no body (204): success is that the call did not fail.
+    const turnedOff = await action.run(async () => {
+      await http.post('/api/auth/mfa/disable/', { code })
+      return true
+    })
+    if (!turnedOff) return
     setCode('')
     setSession(await api.me())
     setDone('mfa.turnedOff')

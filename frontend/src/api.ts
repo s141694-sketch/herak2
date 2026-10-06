@@ -19,8 +19,17 @@ export interface OrganizationSummary {
 export interface SessionPayload {
   user: SessionUser
   organization: (OrganizationSummary & { role: Role }) | null
-  /** sso_required / mfa_required: the organization asks this session for its provider or a second factor first. */
-  memberships: Array<{ organization: OrganizationSummary; role: Role; sso_required: boolean; mfa_required: boolean }>
+  /** What the organization asks of this session first: its provider (D66), a password (a session opened by another
+   * organization's provider, D71) or a second factor (D67). */
+  memberships: Membership[]
+}
+
+export interface Membership {
+  organization: OrganizationSummary
+  role: Role
+  sso_required: boolean
+  password_required: boolean
+  mfa_required: boolean
 }
 
 /** A password that was right, from someone whose second factor is still to be checked. */
@@ -118,8 +127,10 @@ export const api = {
   login: (email: string, password: string) =>
     request<SessionPayload | MfaPending>('/api/auth/login/', { method: 'POST', body: { email, password } }),
   verifyMfa: (code: string) => request<SessionPayload>('/api/auth/mfa/verify/', { method: 'POST', body: { code } }),
-  /** Where the browser goes to sign in through the organization of this email (spec 7.2). */
-  startSso: (email: string) => request<{ redirect: string }>('/api/auth/sso/start/', { method: 'POST', body: { email } }),
+  /** Where the browser goes to sign in through the organization of this email, or through one of the signed-in
+   * person's organizations (spec 7.2); the provider's page is asked for the interface's language. */
+  startSso: (target: { email: string } | { organization: number }, language: string) =>
+    request<{ redirect: string }>('/api/auth/sso/start/', { method: 'POST', body: { ...target, language } }),
   logout: () => request<void>('/api/auth/logout/', { method: 'POST' }),
   switchOrganization: (organizationId: number) =>
     request<SessionPayload>('/api/auth/switch-organization/', { method: 'POST', body: { organization_id: organizationId } }),

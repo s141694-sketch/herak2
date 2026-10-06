@@ -1,36 +1,42 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router'
 
 import { api, errorCode } from '../api'
 import { useAuth } from '../auth'
 import { LanguageToggle } from '../components/LanguageToggle'
+import { asciiDigits, leaveFor } from '../signIn'
 
 /** Signing in (spec 7.1, 7.2): a password, then a code when the person uses a second factor; or through the
  * organization's identity provider, chosen by the email's domain. A refusal from the provider comes back here as
- * `?sso_error=<code>`. */
+ * `?sso_error=<code>`; an organization that wants the password sends the person here with `?email=&reason=`. */
 export function LoginPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { login, verifyMfa } = useAuth()
   const navigate = useNavigate()
-  const [params] = useSearchParams()
-  const [email, setEmail] = useState('')
+  const [params, setParams] = useSearchParams()
+  const [email, setEmail] = useState(params.get('email') ?? '')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [step, setStep] = useState<'password' | 'code'>('password')
-  const [error, setError] = useState<string | null>(params.get('sso_error'))
+  const [error, setError] = useState<string | null>(params.get('sso_error') ?? params.get('reason'))
   const [submitting, setSubmitting] = useState(false)
 
-  async function attempt(action: () => Promise<void>) {
+  // Read once: a reload, or the address copied elsewhere, does not repeat the message.
+  useEffect(() => {
+    if (params.size) setParams({}, { replace: true })
+  }, [params, setParams])
+
+  /** Runs one step; ``leaving`` keeps the form busy while the browser goes to the provider's page. */
+  async function attempt(action: () => Promise<'leaving' | void>) {
     setSubmitting(true)
     setError(null)
     try {
-      await action()
+      if ((await action()) === 'leaving') return
     } catch (caught) {
       setError(errorCode(caught))
-    } finally {
-      setSubmitting(false)
     }
+    setSubmitting(false)
   }
 
   const onPassword = (event: FormEvent) => {
@@ -48,16 +54,24 @@ export function LoginPage() {
         await verifyMfa(code)
         navigate('/', { replace: true })
       } catch (caught) {
-        if (errorCode(caught) === 'mfa_not_pending') setStep('password') // too many tries, or too late
+        // Too many tries or too late; or the organization wants its provider, whose button is on the first step.
+        if (['mfa_not_pending', 'sso_required'].includes(errorCode(caught))) backToPassword()
         throw caught
       }
     })
   }
 
+  const backToPassword = () => {
+    setStep('password')
+    setCode('')
+    setPassword('')
+  }
+
   const withOrganization = () =>
     void attempt(async () => {
-      const { redirect } = await api.startSso(email)
-      window.location.assign(redirect)
+      const { redirect } = await api.startSso({ email }, i18n.language)
+      leaveFor(redirect)
+      return 'leaving'
     })
 
   return (
@@ -124,7 +138,7 @@ export function LoginPage() {
                 autoFocus
                 value={code}
                 data-testid="mfa-code"
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+                onChange={(event) => setCode(asciiDigits(event.target.value))}
               />
             </label>
             {error && (
@@ -134,6 +148,9 @@ export function LoginPage() {
             )}
             <button type="submit" className="primary" disabled={submitting || code.length !== 6}>
               {t('login.verify')}
+            </button>
+            <button type="button" className="link-button" data-testid="mfa-back" onClick={backToPassword}>
+              {t('login.back')}
             </button>
           </form>
         )}

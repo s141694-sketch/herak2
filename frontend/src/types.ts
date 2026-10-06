@@ -366,6 +366,8 @@ export interface Member {
   user: UserRef
   role: string
   created_at: string
+  /** Whether the member has a second factor; given to admins only (they reset a lost one, D67). */
+  mfa_enabled?: boolean
 }
 
 export interface AppNotification {

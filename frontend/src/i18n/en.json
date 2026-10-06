@@ -19,7 +19,8 @@
     "withOrganizationHint": "Type your work email; if your organization uses single sign-on you go to its sign-in page.",
     "codeHint": "Open your authenticator app and type the six-digit code.",
     "code": "Verification code",
-    "verify": "Verify"
+    "verify": "Verify",
+    "back": "Back to the password"
   },
   "organization": {
     "chooseTitle": "Choose an organization",
@@ -29,7 +30,9 @@
     "noMembershipTitle": "No membership",
     "noMembershipHint": "Your account is not linked to any organization yet. Contact your training manager.",
     "ssoRequired": "Entered through your organization's identity provider",
-    "mfaRequired": "Requires two-factor authentication: turn it on first"
+    "mfaRequired": "Requires two-factor authentication: turn it on first",
+    "passwordRequired": "Opened with your password: sign in with it",
+    "optionWithHint": "{{name}} — {{hint}}"
   },
   "roles": {
     "admin": "Training manager",
@@ -152,10 +155,10 @@
     "mfa_required": "Your organization requires two-factor authentication for your role. Turn it on in “My account security”.",
     "entry_refused": "This session cannot enter that organization.",
     "sso_state_invalid": "The sign-in expired or did not start in this browser. Start again.",
-    "sso_email_unverified": "The identity provider has not verified your email, so it cannot be used to sign in.",
-    "sso_domain_not_allowed": "Your email is not in a domain this organization verified, so it cannot be used to sign in.",
+    "sso_email_unverified": "The identity provider has not verified your email, so it cannot be used to sign in. Verify it at your provider, or ask your organization's admin.",
+    "sso_domain_not_allowed": "Your email is not in a domain this organization verified, so it cannot be used to sign in. Use your work email, or ask your organization's admin.",
     "sso_token_invalid": "The identity provider's answer could not be verified. Try again, and tell your organization's admin if it happens again.",
-    "sso_denied": "The identity provider refused or cancelled the sign-in.",
+    "sso_denied": "The identity provider refused or cancelled the sign-in. Try again, or ask your organization's admin.",
     "provider_changed": "The provider's settings changed during the test sign-in. Test again.",
     "mfa_code_invalid": "The code is not right, or it was used already.",
     "mfa_not_pending": "The attempt expired. Sign in with your password again.",
@@ -173,7 +176,24 @@
     "domain_invalid": "This is not a valid domain name.",
     "domain_record_missing": "The verification record was not found in DNS yet. Publishing it can take a while.",
     "domain_taken": "Another organization has verified this domain.",
-    "encryption_not_configured": "No encryption key is set on the server, so no secret can be stored. Tell technical support."
+    "encryption_not_configured": "No encryption key is set on the server, so no secret can be stored. Tell technical support.",
+    "password_required": "This organization is opened with your password: you signed in through another organization's provider. Sign in with your email and password.",
+    "mfa_reset_self": "You cannot reset your own two-factor authentication here. Turn it off from “My account security”, or ask another admin.",
+    "mfa_reset_emergency": "This person is the emergency account, which must keep two-factor authentication. Name another emergency account or stop enforcing single sign-on first.",
+    "mfa_locked": "Too many wrong codes. Two-factor authentication is locked for 15 minutes; try again then.",
+    "mfa_disable_required": "An organization of yours requires two-factor authentication (or you are its emergency account), so it cannot be turned off.",
+    "sso_account_not_allowed": "This account cannot sign in through an organization's provider. Sign in with your password.",
+    "sso_account_disabled": "This account is disabled. Ask your organization's admin.",
+    "sso_test_email_unverified": "The test account's email is not verified by the provider, so members like it could not sign in. Verify emails at the provider, then test again.",
+    "sso_test_domain_not_allowed": "The test account's email is not in one of the organization's verified domains, so it could not sign in. Test with an account in a verified domain.",
+    "provider_secret_required": "A new issuer or client needs its client secret. Enter the secret for this provider.",
+    "domain_record_mismatch": "The TXT record was found but does not hold the value shown. Correct it in the domain's DNS settings, wait for it to spread, then verify again.",
+    "provider_unreachable": "The provider could not be reached. Check the issuer URL and that the provider is running, then test again.",
+    "provider_issuer_mismatch": "The provider names itself with another issuer. Copy the issuer exactly as the provider shows it, then test again.",
+    "provider_endpoint_invalid": "The provider published an address that is not an https web address. Check the provider's configuration.",
+    "provider_no_keys": "The provider publishes no signing keys. Check the provider's configuration, then test again.",
+    "provider_address_not_allowed": "The provider's address is on a private network this server does not reach. Use the provider's public address.",
+    "provider_answer_invalid": "The provider's answer is not a valid OpenID Connect document. Check the issuer URL, then test again."
   },
   "common": {
     "create": "Create",
@@ -719,6 +739,13 @@
     "emergencyHint": "One admin keeps signing in with a password and mandatory two-factor authentication, in case the provider fails.",
     "enforced": "Enforce single sign-on (no passwords for the organization's members)",
     "enforcedHint": "Needs a passing connection test and test sign-in since the last change, and an emergency account with two-factor authentication.",
-    "recordType": "TXT"
+    "recordType": "TXT",
+    "secretForNewProvider": "A new issuer or client needs its client secret: the stored one is only used with the provider it was given for.",
+    "memberFactors": "Members' two-factor authentication",
+    "memberFactorsIntro": "If a member lost the device with their authenticator app, reset their two-factor authentication; they set it up again after signing in.",
+    "noMemberFactors": "No other member uses two-factor authentication.",
+    "resetFactor": "Reset",
+    "confirmResetFactor": "Reset the two-factor authentication of {{name}}? Their current app will no longer work.",
+    "factorReset": "The two-factor authentication of {{name}} was reset."
   }
 }

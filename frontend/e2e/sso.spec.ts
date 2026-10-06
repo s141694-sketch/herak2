@@ -70,6 +70,18 @@ test('an admin sets up single sign-on, members sign in through it, and enforceme
   await outsider.getByTestId('login-sso').click()
   await expect(outsider.getByTestId('login-error')).toHaveText('لا يوجد دخول موحد لهذا البريد. ادخل بكلمة المرور.')
 
+  // The provider's page speaks the interface's language: in English, Keycloak's own page is in English too.
+  const english = await (await browser.newContext()).newPage()
+  await english.goto('/login')
+  await english.getByRole('button', { name: 'اللغة' }).click()
+  await expect(english.locator('html')).toHaveAttribute('dir', 'ltr')
+  await english.locator('input[name="email"]').fill('noura@vtc.test')
+  await english.getByTestId('login-sso').click()
+  await english.waitForURL(new RegExp(`^${KEYCLOAK}/realms/vtc/`))
+  await expect(english.locator('html')).toHaveAttribute('lang', 'en')
+  await keycloakSignIn(english, 'noura')
+  await expect(english.getByTestId('current-role')).toHaveText('Pending assignment')
+
   // Enforced, with the admin as the emergency account.
   await admin.getByTestId('sso-emergency').selectOption({ label: 'سالم المعمري' })
   await expect(admin.getByTestId('sso-emergency').locator('option:checked')).toHaveText('سالم المعمري')
@@ -96,11 +108,13 @@ test('an admin sets up single sign-on, members sign in through it, and enforceme
 test('sign-in refusals are explained in Arabic and in English', async ({ browser }) => {
   const page = await (await browser.newContext()).newPage()
   await page.goto('/login?sso_error=sso_domain_not_allowed')
-  await expect(page.getByTestId('login-error')).toHaveText('بريدك ليس في نطاق موثّق لهذه المؤسسة، فلا يمكن الدخول به.')
+  await expect(page.getByTestId('login-error')).toHaveText(
+    'بريدك ليس في نطاق موثّق لهذه المؤسسة، فلا يمكن الدخول به. استخدم بريد عملك، أو راجع مدير مؤسستك.',
+  )
   await page.getByRole('button', { name: 'اللغة' }).click()
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr')
   await expect(page.getByTestId('login-error')).toHaveText(
-    'Your email is not in a domain this organization verified, so it cannot be used to sign in.',
+    "Your email is not in a domain this organization verified, so it cannot be used to sign in. Use your work email, or ask your organization's admin.",
   )
   await page.goto('/login?sso_error=provider_unavailable')
   await expect(page.getByTestId('login-error')).toContainText('the emergency account signs in with a password')

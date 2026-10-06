@@ -1,15 +1,33 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { NavLink, useNavigate } from 'react-router'
+import { NavLink, useNavigate, useSearchParams } from 'react-router'
 
 import { useAuth } from '../auth'
+import { entryHint, useEnterOrganization } from '../signIn'
+import { ErrorMessage } from './ErrorMessage'
 import { LanguageToggle } from './LanguageToggle'
 import { NotificationBell } from './NotificationBell'
 
+/** Why an identity provider refused, for a browser that was already signed in (the server sends it to its own
+ * page with ?sso_error=). Read once, then taken out of the address so a reload does not repeat it. */
+function ProviderRefusal() {
+  const [params, setParams] = useSearchParams()
+  const [code] = useState(params.get('sso_error'))
+  useEffect(() => {
+    if (params.has('sso_error')) {
+      const rest = new URLSearchParams(params)
+      rest.delete('sso_error')
+      setParams(rest, { replace: true })
+    }
+  }, [params, setParams])
+  return <ErrorMessage code={code} testId="sso-refusal" />
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
-  const { session, logout, switchOrganization } = useAuth()
+  const { session, logout } = useAuth()
   const navigate = useNavigate()
+  const { enter, busy, error } = useEnterOrganization()
   if (!session) return null
 
   return (
@@ -48,12 +66,18 @@ export function AppShell({ children }: { children: ReactNode }) {
             <select
               data-testid="organization-switcher"
               value={session.organization?.id ?? ''}
-              onChange={(event) => void switchOrganization(Number(event.target.value))}
+              disabled={busy}
+              onChange={(event) => {
+                const chosen = session.memberships.find((m) => m.organization.id === Number(event.target.value))
+                if (chosen) void enter(chosen)
+              }}
             >
               {!session.organization && <option value="">{t('organization.none')}</option>}
               {session.memberships.map((m) => (
                 <option key={m.organization.id} value={m.organization.id}>
-                  {m.organization.name}
+                  {m.sso_required || m.password_required || m.mfa_required
+                    ? t('organization.optionWithHint', { name: m.organization.name, hint: t(entryHint(m)) })
+                    : m.organization.name}
                 </option>
               ))}
             </select>
@@ -74,7 +98,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           {t('nav.logout')}
         </button>
       </header>
-      <main className="content">{children}</main>
+      <main className="content">
+        <ErrorMessage code={error} testId="switch-error" />
+        <ProviderRefusal />
+        {children}
+      </main>
     </div>
   )
 }
