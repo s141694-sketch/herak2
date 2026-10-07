@@ -15,8 +15,11 @@ EXEMPT_ROUTES: dict[str, str] = {
     "health": "public liveness probe; reads no tenant data",
     "auth-csrf": "sets the CSRF cookie only",
     "auth-login": "authenticates a user; memberships listed are the user's own",
-    "auth-password-forgot": "emails a link to the address given; answers the same whether it has an account",
-    "auth-password-set": "sets the password of the person a signed, single-use link names; reads no tenant data",
+    "auth-password-forgot": "queues an email to the address given; answers the same whether it has an account",
+    "auth-password-set": (
+        "sets the password of the person a signed, single-use link names; reads only that person's own memberships, "
+        "to audit the change in each of their organizations"
+    ),
     "auth-logout": "ends the caller's session",
     "auth-me": "returns the caller and the caller's own memberships",
     "auth-mfa-verify": "before sign-in; the caller's own second factor, a person-wide table (D70)",

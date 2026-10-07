@@ -315,9 +315,12 @@ def set_policy(config: IdentityProviderConfig, *, actor, enabled: bool, enforced
     """Who may and who must sign in through the provider. Members sign in through it once its connection test
     passed; it becomes the only way in (enforcement) once a test sign-in passed too, and with an emergency
     admin account that keeps its password (spec 7.2, D66)."""
+    from apps.accounts.members import _lock_organization
     from apps.accounts.mfa import confirmed_device
     from apps.accounts.models import Membership, Role
 
+    # Waits for a role change in progress, which might be demoting the account named here (phase 8 review).
+    _lock_organization()
     config = IdentityProviderConfig.objects.select_for_update().get(pk=config.pk)
     if (enabled or enforced) and config.discovery_ok_at is None:
         raise SsoError("test the connection first", code="provider_not_tested")

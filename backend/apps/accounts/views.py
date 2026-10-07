@@ -63,6 +63,11 @@ def login_failures_key(email: str) -> str:
     return "login-failures:" + hashlib.sha256(email.strip().lower().encode()).hexdigest()
 
 
+def login_pause_key(email: str) -> str:
+    """Set when an account's wrong passwords reach the limit; its password sign-in waits while it lasts."""
+    return "login-paused:" + hashlib.sha256(email.strip().lower().encode()).hexdigest()
+
+
 class IdentityError(Conflict):
     default_code = "identity_error"
 
@@ -105,14 +110,19 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"].strip().lower()
-        failures = login_failures_key(email)
+        failures, paused = login_failures_key(email), login_pause_key(email)
+        pause_seconds = settings.LOGIN_ACCOUNT_PAUSE_MINUTES * 60
         # Checked before the password, so a paused account says nothing about whether it was right.
-        if cache.get(failures, 0) >= settings.LOGIN_ACCOUNT_FAILURES:
+        if cache.get(paused):
             raise LoginPaused()
         user = authenticate(request, username=email, password=serializer.validated_data["password"])
         if user is None:
-            cache.add(failures, 0, timeout=settings.LOGIN_ACCOUNT_PAUSE_MINUTES * 60)
-            cache.incr(failures)
+            cache.add(failures, 0, timeout=pause_seconds)
+            if cache.incr(failures) >= settings.LOGIN_ACCOUNT_FAILURES:
+                # The pause runs its whole length from the failure that reached the limit, as the message says,
+                # not to the end of the window the first failure opened (phase 8 review).
+                cache.set(paused, 1, timeout=pause_seconds)
+                cache.delete(failures)
             raise InvalidCredentials("invalid email or password")
         cache.delete(failures)
         if mfa.confirmed_device(user) is not None:
@@ -342,7 +352,7 @@ class SetPasswordView(APIView):
             raise PasswordLinkInvalid("the link is not valid any more: ask for a new one") from exc
         except members.ValidationError as exc:
             raise PasswordInvalid(" ".join(exc.messages)) from exc
-        cache.delete(login_failures_key(user.email))
+        cache.delete_many([login_failures_key(user.email), login_pause_key(user.email)])
         record_password_set(user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 

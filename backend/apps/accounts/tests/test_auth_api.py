@@ -224,7 +224,7 @@ def test_an_account_pauses_its_password_sign_in_after_too_many_wrong_passwords(w
 
 
 def test_the_pause_ends_and_a_right_password_clears_the_count(world, from_anywhere, settings):
-    from apps.accounts.views import login_failures_key
+    from apps.accounts.views import login_failures_key, login_pause_key
 
     settings.LOGIN_ACCOUNT_FAILURES = 3
     client = APIClient()
@@ -234,5 +234,5 @@ def test_the_pause_ends_and_a_right_password_clears_the_count(world, from_anywhe
     assert cache.get(login_failures_key("single@example.com")) is None
     for _ in range(3):
         login(APIClient(), "single@example.com", "wrong-password-123")
-    cache.delete(login_failures_key("single@example.com"))  # the pause's time has passed
+    cache.delete(login_pause_key("single@example.com"))  # the pause's time has passed
     assert login(APIClient(), "single@example.com", PASSWORD).status_code == 200

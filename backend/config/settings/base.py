@@ -40,6 +40,7 @@ env = environ.Env(
     USER_THROTTLE_RATE=(str, "600/minute"),
     LOGIN_ACCOUNT_FAILURES=(int, 10),
     LOGIN_ACCOUNT_PAUSE_MINUTES=(int, 15),
+    PASSWORD_RESET_EMAIL_MINUTES=(int, 5),
     EXPORT_SOFFICE=(str, "soffice"),
     EXPORT_PDF_SECONDS=(int, 120),
     BACKUP_PG_DUMP=(str, "pg_dump"),
@@ -324,6 +325,8 @@ IMPORT_EXTRACT_MEMORY_MB = env("IMPORT_EXTRACT_MEMORY_MB")
 # out the pause; the per-address limit (LOGIN_THROTTLE_RATE) stands as well.
 LOGIN_ACCOUNT_FAILURES = env("LOGIN_ACCOUNT_FAILURES")
 LOGIN_ACCOUNT_PAUSE_MINUTES = env("LOGIN_ACCOUNT_PAUSE_MINUTES")
+# One email with a link to choose a new password per address in this many minutes (phase 8 review, D89).
+PASSWORD_RESET_EMAIL_MINUTES = env("PASSWORD_RESET_EMAIL_MINUTES")
 
 # Exports (tasks 7.3-7.5; D78): LibreOffice converts the Word file to PDF, within this many seconds.
 EXPORT_SOFFICE = env("EXPORT_SOFFICE")

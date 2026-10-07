@@ -49,3 +49,17 @@ def test_a_slug_is_taken_once():
     with pytest.raises(CommandError, match="vtc"):
         call_command("create_organization", "--name", "آخر", "--slug", "vtc", "--admin-email", "x@vtc.test")
     assert Organization.objects.count() == 1 and not mail.outbox
+
+
+@pytest.mark.parametrize(
+    "arguments, named",
+    [
+        (["--name", "مركز", "--slug", "V T C", "--admin-email", "x@vtc.test"], "slug"),
+        (["--name", "   ", "--slug", "vtc", "--admin-email", "x@vtc.test"], "name"),
+        (["--name", "مركز", "--slug", "vtc", "--admin-email", "not-an-email"], "email"),
+    ],
+)
+def test_what_is_given_is_checked_before_anything_is_made(arguments, named):
+    with pytest.raises(CommandError, match=named):
+        call_command("create_organization", *arguments)
+    assert not Organization.objects.exists() and not User.objects.exists() and not mail.outbox
