@@ -31,6 +31,15 @@ fetch() {
 }
 header() { tr -d '\r' <"$work/headers" | grep -i "^$1:" | tail -1 | cut -d' ' -f2-; }
 
+# Right after services restart, nginx may take a few seconds to find a recreated one (D88): wait up to 30 s until the
+# API and the collaboration service answer, then check everything once.
+tries=0
+while [ "$tries" -lt 15 ]; do
+  [ "$(fetch /api/health/ -m 3)" = 200 ] && [ "$(fetch /collab/health -m 3)" = 200 ] && break
+  sleep 2
+  tries=$((tries + 1))
+done
+
 # 1. The interface and its script.
 if [ "$(fetch /)" = 200 ] && grep -q 'id="root"' "$work/body"; then
   ok "the interface loads"
