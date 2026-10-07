@@ -1,0 +1,14 @@
+# The images build from the repository's root (infra/*.Dockerfile). Nothing here is needed inside them, and some of
+# it must never be: backend/.env holds the deployment's secrets, which an image would keep in a layer (phase 8 review).
+**/.env
+**/.env.*
+**/node_modules
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/staticfiles
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+frontend/e2e/screenshots
+.git

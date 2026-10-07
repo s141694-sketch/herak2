@@ -186,7 +186,10 @@ export class CollabService {
           // A rejection with no value tells Hocuspocus the request was handled here.
           throw undefined
         }
-        const internal = /^\/internal\/documents\/([^/]+)\/(freeze|unfreeze|snapshot|lock)$/.exec(url.pathname)
+        // Matched on the path as sent: the URL parser reads a backslash as a slash, so "internal\documents" would
+        // reach these past nginx, which closes /collab/internal/ from outside (D88, phase 8 review).
+        const path = (request.url ?? '/').split('?')[0]
+        const internal = /^\/internal\/documents\/([^/]+)\/(freeze|unfreeze|snapshot|lock)$/.exec(path)
         if (internal && request.method === 'POST') {
           const name = decodeURIComponent(internal[1])
           if (!this.authorizedService(request.headers.authorization)) reply(403, { error: 'forbidden' })

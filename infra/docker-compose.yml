@@ -4,6 +4,9 @@
 name: harak2
 
 x-backend: &backend
+  # Every service comes back on its own after a crash, a Docker restart or a reboot, unless stopped by hand (phase 8
+  # review): "hc ps" shows any that did not.
+  restart: unless-stopped
   build:
     context: ..
     dockerfile: infra/backend.Dockerfile
@@ -25,6 +28,7 @@ x-backend: &backend
 services:
   postgres:
     image: postgres:18.6
+    restart: unless-stopped
     environment:
       POSTGRES_DB: harak
       POSTGRES_USER: harak
@@ -52,6 +56,7 @@ services:
 
   redis:
     image: redis:8.10.2
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
@@ -64,8 +69,7 @@ services:
   backend:
     <<: *backend
     command: ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile -"]
-    # Reached only through nginx (the frontend service): its body limit, and the one proxy NUM_PROXIES counts (D73,
-    # phase 7 review). Not published on the host.
+    # Reached only through nginx (the frontend service), whose body limit applies (D80). Not published on the host.
     healthcheck:
       # As the TLS front would send it: otherwise the production settings answer with a redirect to https, which
       # curl takes for success without the health view ever running (D88). "backend" is a host Django must allow
@@ -105,14 +109,18 @@ services:
       - backups:/backups
 
   collab:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: infra/collab.Dockerfile
-    env_file: ../backend/.env
+    # The two secrets it uses, and nothing else of backend/.env: it is the service browsers reach most directly
+    # (phase 8 review).
     environment:
       PORT: "1234"
       DJANGO_INTERNAL_URL: http://backend:8000
-    # Reached through nginx at /collab/, like the backend.
+      COLLAB_TOKEN_SECRET: ${COLLAB_TOKEN_SECRET:?set COLLAB_TOKEN_SECRET in backend/.env}
+      COLLAB_SERVICE_SECRET: ${COLLAB_SERVICE_SECRET:?set COLLAB_SERVICE_SECRET in backend/.env}
+    # Reached through nginx at /collab, like the backend.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1234/health"]
       interval: 10s
@@ -120,6 +128,7 @@ services:
       retries: 10
 
   frontend:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: infra/frontend.Dockerfile
@@ -142,6 +151,7 @@ services:
   # TLS for HARAK_DOMAIN (D88): a certificate from a public authority, renewed on its own, kept in caddy-data.
   caddy:
     image: caddy:2.11.7
+    restart: unless-stopped
     environment:
       HARAK_DOMAIN: ${HARAK_DOMAIN:?set HARAK_DOMAIN in backend/.env}
     volumes:

@@ -69,10 +69,12 @@ case "$base" in
       fail "HSTS" "no Strict-Transport-Security header"
     fi
     host="${base#https://}"
+    # Caddy answers plain HTTP with a redirect, and needs port 80 for its certificates. An organization's own
+    # load balancer may close it instead: then this is a note, not a failure.
     plain="$(curl -sS -m 10 -o /dev/null -w '%{http_code} %{redirect_url}' "http://$host/" 2>/dev/null || true)"
     case "$plain" in
       30[178]\ https://*) ok "plain HTTP is sent to HTTPS" ;;
-      000*) ok "plain HTTP: nothing listens" ;;
+      000*) echo "note  plain HTTP does not answer on port 80: right behind a load balancer that closes it; with caddy, port 80 must reach this host" ;;
       *) fail "plain HTTP is sent to HTTPS" "$plain" ;;
     esac
     ;;
@@ -85,15 +87,16 @@ if [ "$(fetch /collab/health)" = 200 ] && grep -q '"service":"collab"' "$work/bo
 else
   fail "the collaboration service" "status $(cat "$work/status")"
 fi
+# The address the editor itself opens, /collab without a slash (frontend/src/live/useLiveDocument.ts): a WebSocket
+# handshake does not follow redirects, so anything but 101 here means live editing cannot connect.
 # shellcheck disable=SC2086
-upgrade="$(curl -sS -m 5 $tls --http1.1 -o /dev/null -w '%{http_code}' -H 'Connection: Upgrade' \
+upgrade="$(curl -sS -m 5 $tls --http1.1 -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Connection: Upgrade' \
   -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: c21va2UtY2hlY2stMDAwMA==' \
-  "$base/collab/" 2>/dev/null || true)"
-if [ "$upgrade" = 101 ]; then
-  ok "live editing connects"
-else
-  fail "live editing connects" "status $upgrade, not 101"
-fi
+  "$base/collab" 2>/dev/null || true)"
+case "$upgrade" in
+  101*) ok "live editing connects" ;;
+  *) fail "live editing connects" "status $upgrade, not 101" ;;
+esac
 
 # 4. Signing in: the CSRF cookie, the trusted origin and the session. Refused credentials prove the whole path.
 fetch /api/auth/csrf/ >/dev/null

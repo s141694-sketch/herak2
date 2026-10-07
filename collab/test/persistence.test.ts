@@ -1,6 +1,7 @@
 import { addBlock, addNode, blockFragment, hydrateStable, materialize, setBlockContent } from '@harak2/shared'
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider'
 import { Buffer } from 'node:buffer'
+import http from 'node:http'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import * as Y from 'yjs'
@@ -223,6 +224,31 @@ describe('internal endpoints for Django', () => {
 
   it('refuses callers without the service secret', async () => {
     expect((await call(`/internal/documents/${NAME}/freeze`, 'wrong')).status).toBe(403)
+  })
+
+  it('answers only the path as written: one spelled with backslashes is not an internal endpoint', async () => {
+    // nginx closes /collab/internal/ from outside (D88); a URL parser would read "internal\documents" as
+    // "internal/documents" past it (phase 8 review). fetch would normalise the path itself, so a raw request.
+    const body = await new Promise<string>((resolve, reject) => {
+      const request = http.request(
+        {
+          host: '127.0.0.1',
+          port: PORT,
+          method: 'POST',
+          path: `/internal\\documents/${NAME}/freeze`,
+          headers: { Authorization: 'Service svc-secret-of-the-right-length-0123456789' },
+        },
+        (response) => {
+          let text = ''
+          response.on('data', (chunk) => (text += chunk))
+          response.on('end', () => resolve(text))
+        },
+      )
+      request.on('error', reject)
+      request.end()
+    })
+    expect(body).not.toContain('snapshot')
+    expect(service.isFrozen(NAME)).toBe(false)
   })
 
   const titles = (client: { doc: Y.Doc }) => [...client.doc.getMap<Y.Map<unknown>>('nodes').values()].map((n) => n.get('title'))
