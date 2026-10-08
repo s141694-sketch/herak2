@@ -8,6 +8,8 @@
 alias hc='docker compose --env-file backend/.env -f infra/docker-compose.yml'
 ```
 
+أول نشر خطوة بخطوة، بالأمر `infra/deploy.sh` الذي ينفّذ الأقسام 2 و3 والمؤسسة الأولى: `docs/2026-10-08-harak2-server-deploy.md`.
+
 ## 1. ما يلزم قبل البدء
 
 | البند | التفصيل |

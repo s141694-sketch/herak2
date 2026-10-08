@@ -195,6 +195,50 @@ jobs:
           infra/try-local.sh --reset
           test ! -f backend/.env
 
+  deploy-script:
+    name: the server deployment script
+    runs-on: ubuntu-latest
+    env:
+      # As infra/deploy.sh setup would be answered, with CI's in-memory store standing for the provider's bucket.
+      HARAK_DOMAIN: localhost
+      FILES_BUCKET: harak2-ci
+      FILES_ENDPOINT_URL: http://s3:5000
+      FILES_REGION: us-east-1
+      FILES_ACCESS_KEY_ID: ci
+      FILES_SECRET_ACCESS_KEY: ci
+      FILES_CREATE_BUCKET: "True"
+      HARAK_COMPOSE_EXTRA: infra/compose.ci.yml
+    steps:
+      - uses: actions/checkout@v5
+      - name: setup, start, and refusing to write over the configuration
+        run: |
+          infra/deploy.sh setup < /dev/null
+          test "$(stat -c %a backend/.env)" = 600
+          ! infra/deploy.sh setup < /dev/null
+          infra/deploy.sh start
+      - name: an organization, its manager's password from the printed link, an invited colleague's link
+        run: |
+          ORG_NAME="مركز التدريب" ORG_SLUG=center ADMIN_EMAIL=manager@example.com infra/deploy.sh organization | tee org.log
+          link="$(grep -o 'https://localhost/set-password?[^[:space:]]*' org.log)"
+          query="${link#*\?}"
+          uid="$(echo "$query" | sed -n 's/.*uid=\([^&]*\).*/\1/p')"
+          token="$(echo "$query" | sed -n 's/.*token=\([^&]*\).*/\1/p')"
+          org="$(echo "$query" | sed -n 's/.*org=\([0-9]*\).*/\1/p')"
+          api() { curl -sk -b jar -c jar -H "Content-Type: application/json" -H "Referer: https://localhost/" \
+            -H "X-CSRFToken: $(awk '$6=="csrftoken"{print $7}' jar 2>/dev/null)" "$@"; }
+          api https://localhost/api/auth/csrf/ > /dev/null
+          api -X POST https://localhost/api/auth/password/set/ -o /dev/null -w "%{http_code}\n" \
+            -d "{\"uid\":\"$uid\",\"token\":\"$token\",\"password\":\"a-server-password-123\",\"organization\":$org}" | grep 204
+          api -X POST https://localhost/api/auth/login/ \
+            -d '{"email":"manager@example.com","password":"a-server-password-123"}' | grep '"slug":"center"'
+          api -X POST https://localhost/api/organizations/current/members/ \
+            -d '{"email":"colleague@example.com","role":"author"}' | grep '"status":"invited"'
+          infra/deploy.sh link colleague@example.com center | grep -o 'https://localhost/set-password?[^[:space:]]*&org=[0-9]*'
+          infra/deploy.sh link manager@example.com center | grep "no link"
+          infra/deploy.sh status
+      - if: failure()
+        run: docker compose --env-file backend/.env -f infra/docker-compose.yml -f infra/compose.ci.yml logs --tail 60
+
   e2e:
     name: browser tests (playwright)
     runs-on: ubuntu-latest
