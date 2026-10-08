@@ -1,9 +1,11 @@
 """Members of an organization (spec 2.1: the training manager runs the space and its users; D87).
 
-An admin adds people by email with a role, and changes roles. Someone new gets an invitation whose link sets their
-password; someone with an account already is told they were added; where the organization signs people in
-through its provider (enforced), the invitation says to sign in there. Anyone who forgot their password asks for a
-new link, and the answer never says whether the email has an account.
+An admin adds people by email with a role, and changes roles. Joining takes the person's acceptance (D90): what
+the admin makes is an invitation, which grants and shows nothing until its person accepts it. Someone without a
+password gets a link to choose one, which proves the email and accepts; someone with an account signs in and
+accepts or declines; where the organization signs people in through its provider (enforced), the invitation says
+to sign in there, and that sign-in accepts. An admin cancels an invitation not yet answered. Anyone who forgot
+their password asks for a new link, and the answer never says whether the email has an account.
 
 What a role change must not break: the organization keeps an admin, its emergency account stays an admin (D66),
 and a person a workflow stage or a review in progress names keeps a role that decides (D61). Role changes, and the
@@ -26,6 +28,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
@@ -69,9 +72,9 @@ def _invite(user: User, organization) -> None:
     if _signs_in_through_provider(organization):
         _send(
             user,
-            (f"أُضفت إلى {name} في حراك", f"You were added to {name} on Harak"),
-            f"أضافك مدير التدريب إلى {name} في حراك. ادخل عبر مزوّد مؤسستك: {settings.APP_URL}",
-            f"Your training manager added you to {name} on Harak. Sign in through your organization: "
+            (f"دعوة إلى {name} في حراك", f"An invitation to {name} on Harak"),
+            f"دعاك مدير التدريب إلى {name} في حراك. ادخل عبر مزوّد مؤسستك لتقبل الدعوة: {settings.APP_URL}",
+            f"Your training manager invited you to {name} on Harak. Sign in through your organization to accept: "
             f"{settings.APP_URL}",
         )
     elif not user.has_usable_password():  # new, or an account that has only ever signed in through a provider
@@ -86,9 +89,10 @@ def _invite(user: User, organization) -> None:
     else:
         _send(
             user,
-            (f"أُضفت إلى {name} في حراك", f"You were added to {name} on Harak"),
-            f"أضافك مدير التدريب إلى {name} في حراك. ادخل بحسابك المعتاد: {settings.APP_URL}",
-            f"Your training manager added you to {name} on Harak. Sign in with your usual account: {settings.APP_URL}",
+            (f"دعوة إلى {name} في حراك", f"An invitation to {name} on Harak"),
+            f"دعاك مدير التدريب إلى {name} في حراك. ادخل بحسابك المعتاد لتقبل الدعوة أو ترفضها: {settings.APP_URL}",
+            f"Your training manager invited you to {name} on Harak. Sign in with your usual account to accept or "
+            f"decline: {settings.APP_URL}",
         )
 
 
@@ -152,11 +156,12 @@ def add_member(organization, *, email: str, role: str, full_name: str = "", acto
     new = user is None
     if new:
         user = User.objects.create_user(email=email, password=None, full_name=full_name.strip())
-    if Membership.objects.filter(user=user).exists():
+    if Membership.with_invitations.filter(user=user).exists():
         raise MemberError("this person is already a member", code="member_exists")
     try:
         with transaction.atomic():
-            membership = Membership.objects.create(user=user, role=role)
+            # An invitation until the person accepts it (D90), whoever they are.
+            membership = Membership.with_invitations.create(user=user, role=role, accepted_at=None)
     except IntegrityError as exc:  # added twice at once
         raise MemberError("this person is already a member", code="member_exists") from exc
     record("membership.added", actor=actor, target=membership, payload={"user": user.pk, "role": role, "new": new})
@@ -170,11 +175,12 @@ def set_role(membership: Membership, *, role: str, actor) -> Membership:
     from apps.workflows.models import STAGE_ROLES
 
     _lock_organization()
-    membership = Membership.objects.select_for_update().get(pk=membership.pk)
+    membership = Membership.with_invitations.select_for_update().get(pk=membership.pk)
     before = membership.role
     if role == before:
         return membership
-    if before == Role.ADMIN and role != Role.ADMIN:
+    # An invitation counts as no one's admin and no emergency account yet: only accepted memberships are guarded.
+    if before == Role.ADMIN and role != Role.ADMIN and not membership.is_invitation:
         if Membership.objects.filter(role=Role.ADMIN).count() <= 1:
             raise MemberError("the organization needs an admin", code="last_admin")
         if IdentityProviderConfig.objects.filter(emergency_user=membership.user).exists():
@@ -190,6 +196,66 @@ def set_role(membership: Membership, *, role: str, actor) -> Membership:
         payload={"from": before, "to": role, "user": membership.user_id},
     )
     return membership
+
+
+@transaction.atomic
+def cancel_invitation(membership: Membership, *, actor) -> None:
+    """An admin withdraws an invitation not yet answered. A member is never removed (D87)."""
+    membership = Membership.with_invitations.select_for_update().get(pk=membership.pk)
+    if not membership.is_invitation:
+        raise MemberError("only an invitation not yet accepted is cancelled", code="member_not_invited")
+    record("membership.invitation_cancelled", actor=actor, target=membership, payload={"user": membership.user_id})
+    membership.delete()
+
+
+def _invitation_of(user: User, pk: int) -> Membership:
+    """The person's own invitation, not yet answered; any other id is not found (Membership.DoesNotExist)."""
+    return Membership.including_invitations.select_for_update().get(pk=pk, user=user, accepted_at__isnull=True)
+
+
+def _accept(membership: Membership, *, how: str) -> None:
+    from apps.tenancy.context import organization_context
+
+    membership.accepted_at = timezone.now()
+    with organization_context(membership.organization_id):
+        Membership.with_invitations.filter(pk=membership.pk).update(accepted_at=membership.accepted_at)
+        record(
+            "membership.accepted",
+            actor=membership.user,
+            target=membership,
+            payload={"user": membership.user_id, "role": membership.role, "how": how},
+        )
+
+
+@transaction.atomic
+def accept_invitation(user: User, pk: int) -> Membership:
+    membership = _invitation_of(user, pk)
+    _accept(membership, how="answered")
+    return membership
+
+
+@transaction.atomic
+def decline_invitation(user: User, pk: int) -> None:
+    from apps.tenancy.context import organization_context
+
+    membership = _invitation_of(user, pk)
+    with organization_context(membership.organization_id):
+        record("membership.declined", actor=user, target=membership, payload={"user": user.pk})
+        Membership.with_invitations.filter(pk=membership.pk).delete()
+
+
+def accept_by_signing_in(user: User) -> None:
+    """Signing in through the provider of the organization in context accepts its invitation (D90); a first
+    sign-in with none makes a pending member (D65)."""
+    invitation = Membership.with_invitations.filter(user=user).first()
+    if invitation is None:
+        try:
+            with transaction.atomic():
+                Membership.objects.create(user=user, role=Role.PENDING)
+        except IntegrityError:  # a first sign-in of the same person at the same moment made it
+            pass
+    elif invitation.is_invitation:
+        _accept(invitation, how="provider")
 
 
 def _named_by_a_stage(user: User) -> bool:
@@ -229,9 +295,29 @@ def set_password(uid: str, token: str, password: str) -> User:
     if not user.is_active or not default_token_generator.check_token(user, token):
         raise PasswordLinkInvalid()
     validate_password(password, user)  # raises ValidationError
-    user.set_password(password)
-    user.save(update_fields=["password"])
+    proves_the_invitation = not user.has_usable_password()
+    with transaction.atomic():
+        user.set_password(password)
+        user.save(update_fields=["password"])
+        if proves_the_invitation:
+            # The link went to an account without a password, as an invitation's does: choosing one from it proves
+            # the email, and accepts the person's invitations (D90). A reset of an account with a password does not.
+            for invitation in Membership.including_invitations.select_for_update().filter(
+                user=user, accepted_at__isnull=True
+            ):
+                _accept(invitation, how="password_link")
     return user
 
 
-__all__ = ["EDITABLE_ROLES", "MemberError", "PasswordLinkInvalid", "ValidationError", "add_member", "set_role"]
+__all__ = [
+    "EDITABLE_ROLES",
+    "MemberError",
+    "PasswordLinkInvalid",
+    "ValidationError",
+    "accept_by_signing_in",
+    "accept_invitation",
+    "add_member",
+    "cancel_invitation",
+    "decline_invitation",
+    "set_role",
+]

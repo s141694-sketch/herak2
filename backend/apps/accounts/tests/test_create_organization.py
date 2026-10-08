@@ -30,18 +30,20 @@ def test_an_organization_opens_with_its_first_manager_who_is_invited():
         stdout=out,
     )
     organization = Organization.objects.get(slug="vtc")
-    membership = Membership.all_organizations.get(organization=organization)
+    membership = Membership.including_invitations.get(organization=organization)  # accepted from the link (D90)
     assert (membership.user.email, membership.role) == ("manager@vtc.test", Role.ADMIN)
     [invitation] = mail.outbox
     assert invitation.to == ["manager@vtc.test"] and "/set-password?uid=" in invitation.body
     assert "vtc" in out.getvalue()
 
 
-def test_an_existing_account_becomes_the_manager_without_a_new_password():
+def test_an_existing_account_is_invited_to_manage_without_a_new_password():
     User.objects.create_user(email="manager@vtc.test", password="an-existing-password-1")
     call_command("create_organization", "--name", "مركز", "--slug", "vtc", "--admin-email", "manager@vtc.test")
     [message] = mail.outbox
     assert "/set-password" not in message.body
+    # The account's owner accepts after signing in, as any invitation of an existing account (D90).
+    assert Membership.including_invitations.get(user__email="manager@vtc.test").accepted_at is None
 
 
 def test_a_slug_is_taken_once():

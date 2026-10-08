@@ -3,9 +3,10 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.functions import Lower
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from apps.tenancy.models import OrganizationScopedModel
+from apps.tenancy.models import OrganizationScopedManager, OrganizationScopedModel
 
 
 class UserManager(BaseUserManager):
@@ -108,16 +109,42 @@ class Role(models.TextChoices):
     PENDING = "pending", _("pending assignment")
 
 
+class AcceptedMembershipManager(OrganizationScopedManager):
+    def get_queryset(self):
+        return super().get_queryset().filter(accepted_at__isnull=False)
+
+
+class AcceptedAcrossOrganizationsManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(accepted_at__isnull=False)
+
+
 class Membership(OrganizationScopedModel):
     """Links a user to an organization with one role. Pending members have no permissions.
 
     Organization-scoped like every tenant table; the login and switch flows,
     which run before a context exists, go through `Membership.all_organizations`.
+
+    A membership is accepted, or it is an invitation its person has not answered yet (D90): `objects` and
+    `all_organizations` see accepted memberships only, so an invitation grants and shows nothing wherever
+    memberships are read. Only the members page (`with_invitations`, this organization) and the person's own
+    invitations (`including_invitations`, across organizations) see invitations.
     """
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
+    # When the person accepted; none while it is an invitation. A membership made any other way is accepted.
+    accepted_at = models.DateTimeField(null=True, blank=True, default=timezone.now)
+
+    objects = AcceptedMembershipManager()
+    all_organizations = AcceptedAcrossOrganizationsManager()
+    with_invitations = OrganizationScopedManager()
+    including_invitations = models.Manager()
+
+    @property
+    def is_invitation(self) -> bool:
+        return self.accepted_at is None
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "organization"], name="accounts_membership_unique")]

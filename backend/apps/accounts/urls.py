@@ -12,6 +12,11 @@ urlpatterns = [
     path("auth/mfa/confirm/", views.MfaConfirmView.as_view(), name="auth-mfa-confirm"),
     path("auth/mfa/disable/", views.MfaDisableView.as_view(), name="auth-mfa-disable"),
     path("auth/switch-organization/", views.SwitchOrganizationView.as_view(), name="auth-switch-organization"),
+    path(
+        "auth/invitations/<int:pk>/<str:answer>/",
+        views.InvitationAnswerView.as_view(),
+        name="auth-invitation-answer",
+    ),
     path("auth/password/forgot/", views.ForgotPasswordView.as_view(), name="auth-password-forgot"),
     path("auth/password/set/", views.SetPasswordView.as_view(), name="auth-password-set"),
     path("organizations/current/", views.CurrentOrganizationView.as_view(), name="organization-current"),

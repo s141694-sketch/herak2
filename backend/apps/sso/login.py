@@ -28,7 +28,8 @@ from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
 from rest_framework.exceptions import APIException
 
-from apps.accounts.models import Membership, Organization, Role, User
+from apps.accounts import members
+from apps.accounts.models import Organization, User
 from apps.audit.services import record
 from apps.core.errors import Conflict
 from apps.tenancy.context import organization_context
@@ -220,7 +221,8 @@ def _identify(config: IdentityProviderConfig, claims: dict) -> User:
             identity = _known(config, claims)
             user = _admissible(identity.user)
     ExternalIdentity.objects.filter(pk=identity.pk).update(last_login_at=timezone.now())
-    Membership.objects.get_or_create(user=user, defaults={"role": Role.PENDING})
+    # Signing in here accepts this organization's invitation, if any; or makes a pending member (D65, D90).
+    members.accept_by_signing_in(user)
     return user
 
 

@@ -273,7 +273,8 @@ class MemberListView(generics.ListAPIView):
     serializer_class = MemberSerializer
 
     def get_queryset(self):
-        return Membership.objects.select_related("user").order_by("user__email")
+        # Invitations too: the admin follows them and may cancel them (D90).
+        return Membership.with_invitations.select_related("user").order_by("user__email")
 
     def post(self, request):
         if request.membership.role != Role.ADMIN:
@@ -285,13 +286,19 @@ class MemberListView(generics.ListAPIView):
 
 
 class MemberDetailView(generics.RetrieveAPIView):
-    """A member; an admin changes their role (spec 2.1, D87)."""
+    """A member; an admin changes their role (spec 2.1, D87), and cancels an invitation not yet answered (D90)."""
 
     permission_classes = [HasActiveOrganization]
     serializer_class = MemberSerializer
 
     def get_queryset(self):
-        return Membership.objects.select_related("user")
+        return Membership.with_invitations.select_related("user")
+
+    def delete(self, request, pk):
+        if request.membership.role != Role.ADMIN:
+            raise exceptions.PermissionDenied("only an admin cancels invitations")
+        members.cancel_invitation(self.get_object(), actor=request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def patch(self, request, pk):
         if request.membership.role != Role.ADMIN:
@@ -301,6 +308,22 @@ class MemberDetailView(generics.RetrieveAPIView):
         serializer.is_valid(raise_exception=True)
         membership = members.set_role(membership, role=serializer.validated_data["role"], actor=request.user)
         return Response(MemberSerializer(membership, context={"request": request}).data)
+
+
+class InvitationAnswerView(APIView):
+    """The person accepts or declines their own invitation (D90); before any organization is open, as after."""
+
+    permission_classes = [IsAuthenticated]
+    answers = {"accept": members.accept_invitation, "decline": members.decline_invitation}
+
+    def post(self, request, pk, answer):
+        if answer not in self.answers:
+            raise exceptions.NotFound("accept or decline")
+        try:
+            self.answers[answer](request.user, pk)
+        except Membership.DoesNotExist as exc:
+            raise exceptions.NotFound("no such invitation") from exc
+        return Response(session_payload(request))
 
 
 class PasswordLinkInvalid(exceptions.ValidationError):

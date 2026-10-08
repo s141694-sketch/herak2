@@ -34,6 +34,13 @@ class MemberSerializer(serializers.ModelSerializer):
 
     def to_representation(self, membership):
         data = super().to_representation(membership)
+        if membership.is_invitation:
+            # Until the person accepts, the organization knows the email it typed and nothing the person keeps
+            # elsewhere: not the name, not the second factor (D90).
+            data["status"] = "invited"
+            data["user"]["full_name"] = ""
+            return data
+        data["status"] = "member"
         request = self.context.get("request")
         viewer = getattr(request, "membership", None)
         if viewer is not None and viewer.role == Role.ADMIN:
@@ -98,6 +105,11 @@ def session_payload(request) -> dict:
         .order_by("organization__name")
     )
     active = getattr(request, "membership", None)
+    invitations = (
+        Membership.including_invitations.filter(user=request.user, accepted_at__isnull=True)
+        .select_related("organization")
+        .order_by("organization__name")
+    )
     return {
         "user": {
             **UserSerializer(request.user).data,
@@ -116,6 +128,15 @@ def session_payload(request) -> dict:
                 "mfa_required": refusal == "mfa_required",
             }
             for membership, data in zip(memberships, MembershipSerializer(memberships, many=True).data, strict=True)
+        ],
+        # Invitations the person has not answered (D90): they accept or decline them.
+        "invitations": [
+            {
+                "id": invitation.pk,
+                "organization": OrganizationSummarySerializer(invitation.organization).data,
+                "role": invitation.role,
+            }
+            for invitation in invitations
         ],
     }
 

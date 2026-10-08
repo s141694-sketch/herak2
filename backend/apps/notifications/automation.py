@@ -67,7 +67,11 @@ def _handle(entry: AuditLog, version: ProgramVersion) -> list[Notification]:
     if entry.event == "workflow.reminder":
         return _reminder(entry, version)
     if entry.event == "program_version.export_failed":
-        admins = User.objects.filter(memberships__role=Role.ADMIN, memberships__organization_id=entry.organization_id)
+        admins = User.objects.filter(
+            memberships__role=Role.ADMIN,
+            memberships__organization_id=entry.organization_id,
+            memberships__accepted_at__isnull=False,  # an invitation is no one's admin yet (D90)
+        )
         return _notify(entry, version, E.EXPORT_FAILED, list(admins))
     target = entry.payload.get("to")
     if target == S.IN_STAGE:
@@ -108,7 +112,11 @@ def _reminder(entry: AuditLog, version: ProgramVersion) -> list[Notification]:
         return []  # decided between the reminder and its handling
     kind = entry.payload["kind"]
     if kind == Reminder.Kind.ESCALATION:
-        admins = User.objects.filter(memberships__role=Role.ADMIN, memberships__organization_id=entry.organization_id)
+        admins = User.objects.filter(
+            memberships__role=Role.ADMIN,
+            memberships__organization_id=entry.organization_id,
+            memberships__accepted_at__isnull=False,  # an invitation is no one's admin yet (D90)
+        )
         responsible = ", ".join(u.full_name or u.email for u in _responsible(task))
         return _notify(entry, version, E.TASK_OVERDUE, list(admins), task=task, extra={"responsible": responsible})
     event = E.TASK_DUE_SOON if kind == Reminder.Kind.BEFORE_DUE else E.TASK_DUE
