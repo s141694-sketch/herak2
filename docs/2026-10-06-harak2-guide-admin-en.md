@@ -13,10 +13,11 @@ The training manager sets up the organization's space once: members, competencie
 
 From the menu: **Members**.
 
-- **Adding someone:** under **Add a member**, write their email and name and choose a role, then **Add and send the invitation**.
-  - Someone without an account gets an invitation to choose a password.
-  - Someone with an account is told they were added.
-  - Where the organization enforces single sign-on, they are told to sign in through its provider.
+- **Inviting someone:** under **Invite someone**, write their email and name and choose a role, then **Send the invitation**. No one joins without accepting (D90):
+  - Someone without a password gets an invitation to choose one, and joins.
+  - Someone with a Harak account signs in, then chooses **Accept** or **Decline**.
+  - Where the organization enforces single sign-on, signing in through its provider accepts.
+  - Until then their row says "Awaiting acceptance" with their email alone, and they do not work in the organization. You may **Cancel the invitation**, or change its role before it is accepted.
 - **Changing a role:** use the list beside each name. The roles are training manager, author, reviewer, approver and pending assignment.
 - **Taking away access:** "pending assignment" removes all of a person's permissions without removing them.
 - **What a role change must keep:**
@@ -48,6 +49,8 @@ From the menu: **Members**.
 - what happens **on resubmission**: it returns to this stage, or starts again from the first.
 
 The **Default** workflow applies to every program that has no other. Reminders go out one work day before the due time and at it. The manager is told after two work days late.
+
+**Whoever edits a program does not decide on it (D91):** they do not take a stage's task on it nor decide one, even holding the role. A program whose workflow names one of its editors by name for a stage cannot be submitted. So give every stage people who hold its role and do not edit programs.
 
 ## 6. Programs
 

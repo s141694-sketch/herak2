@@ -8,6 +8,8 @@ Authors write a program's content together, at the same time, with its quality r
 2. Open **Programs**, the program, then its draft **Version**.
 3. At the top: "Connected. Changes are saved automatically." What you write reaches your colleagues at once and saves itself.
 
+If another organization invites you, its invitation shows at the top of every page once you sign in: **Accept** or **Decline**. You join an organization only if you accept.
+
 ## 2. Writing
 
 - **The tree:** write a title in **Add <level>**, such as "Add Module", then press Enter. Under each node you add its next level.

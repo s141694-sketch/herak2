@@ -8,6 +8,10 @@ The approver takes the final decision. A program reaches them after the review s
 2. In the second case, **Take the task** first.
 3. Open the task.
 
+You do not decide on a program you edit: whoever edits a program does not decide on it.
+
+If another organization invites you, its invitation shows at the top of every page once you sign in: **Accept** or **Decline**. You join an organization only if you accept.
+
 ## 2. What you see
 
 Under **Review and approval**:

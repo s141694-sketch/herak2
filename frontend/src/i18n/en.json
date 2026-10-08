@@ -171,7 +171,7 @@
     "mfa_not_pending": "The attempt expired. Sign in with your password again.",
     "mfa_already_enabled": "Two-factor authentication is on.",
     "mfa_not_enrolled": "This account has no two-factor authentication.",
-    "mfa_reset_other_organizations": "This person also works in other organizations, so one organization cannot reset their two-factor authentication.",
+    "mfa_reset_other_organizations": "This person also works in other organizations, so one organization cannot reset their two-factor authentication. Ask the platform's operator, who resets it after checking who they are.",
     "mfa_enable_first": "Turn on two-factor authentication for your account and sign in with it first, so the organization does not close on you.",
     "emergency_account_needs_mfa": "The emergency account must have two-factor authentication on.",
     "emergency_account_required": "Choose the emergency account before enforcing.",
