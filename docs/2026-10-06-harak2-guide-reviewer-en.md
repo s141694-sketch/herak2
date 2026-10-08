@@ -16,7 +16,7 @@ Under **Review and approval**:
 
 - Who submitted it and when, and the workflow's stages.
 - If it was submitted with critical findings: how many, with **The author's reason:**
-- On a resubmission after a return: the previous submission's decisions, and the comments marked resolved since.
+- On a resubmission after a return: the previous submission's decisions, and the "Must fix" comments marked resolved since.
 
 Beside the content, the **Quality report**: Bloom's level of each objective, how competencies, objectives and assessments align, completeness, and why each finding was made.
 
@@ -24,8 +24,8 @@ Beside the content, the **Quality report**: Bloom's level of each objective, how
 
 Select the text, then **Comment on selection**. Choose the **Category**:
 
-- **Must fix:** the author must handle it before submitting again.
-- **Suggestion:** the author may take it or leave it.
+- **Must fix:** the author must handle it. While a "Must fix" comment is open, the last stage cannot approve. Submitting for review and approving earlier stages do not wait for it.
+- **Suggestion:** the author may take it or leave it; it never blocks a decision.
 
 Then **Add comment**. The comment stays on its text however the author edits around it.
 
@@ -33,7 +33,7 @@ Then **Add comment**. The comment stays on its text however the author edits aro
 
 Write a **Decision note**, then choose one of the two:
 
-- **Approve the stage:** the version moves to the next stage, or is approved if yours was the last.
+- **Approve the stage:** the version moves to the next stage, or is approved if yours was the last. At the last stage, approval is refused while the program has an open "Must fix" comment.
 - **Return for changes:** needs the decision note and at least one open comment on this version. The author is told and gets a new draft.
 
 ![After a return](../frontend/e2e/screenshots/93-returned-journey-en.png)

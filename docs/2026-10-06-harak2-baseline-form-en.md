@@ -11,11 +11,11 @@ After the pilot, Harak measures the same two things from its own records (the `p
 
 | Term | Definition |
 |---|---|
-| **First draft** | The day writing the program began: the first file or document of its content, not the day it was assigned. In Harak: the day the program's first version was created |
+| **First draft** | The day the program was opened for work: the day its team was given it and its file was made. In Harak: the day the program was created, which creates its first version before anything is written in it |
 | **Review round** | A submission for review that ended with a decision: **returned for changes** or **approved**. A submission withdrawn before any decision is not a round. A program approved at its first submission had one round |
 | **Approval** | The program's first final approval. A later revision (a periodic review) is another cycle, not counted here |
-| **Days** | From the first draft to approval, in calendar days |
-| **Work days** | The work days after the day of the first draft, up to and including the day of approval. Work days are the organization's (for example Sunday to Thursday), without public holidays, as Harak counts them |
+| **Days** | The time from the first draft to approval, in days. Harak counts it from the hours, divided by 24, to one decimal. On this form: the difference between the two dates in days; the two ways differ by less than a day for one program |
+| **Work days** | The work days after the day of the first draft, up to and including the day of approval. Work days are the organization's weekly work days (for example Sunday to Thursday). **Public holidays are not taken out:** Harak counts a holiday that falls on a work day as a work day, so count it the same way |
 
 ## 2. Which programs
 
@@ -70,4 +70,4 @@ python manage.py pilot_metrics --organization <slug> --since <the pilot's first 
 
 and compares its summary with section 4.
 
-**When comparing:** Harak does not count public holidays. If long holidays fell in either period, say so beside the comparison.
+**When comparing:** Harak does not take public holidays out of the work days. If long holidays fell in either period, say so beside the comparison.

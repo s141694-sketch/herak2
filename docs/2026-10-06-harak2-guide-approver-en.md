@@ -22,7 +22,7 @@ You comment as a reviewer does: **Comment on selection**.
 
 Write a **Decision note**, then choose one of the two:
 
-- **Approve the stage:** at the last stage the version becomes "Approved". No one can change it afterwards, and its Word and PDF files are made within moments.
+- **Approve the stage:** at the last stage the version becomes "Approved". No one can change it afterwards, and its Word and PDF files are made within moments. Approval is refused while the program has an open "Must fix" comment: the author handles it and marks it resolved, or you return the version for changes.
 - **Return for changes:** needs the decision note and at least one open comment. After the author's changes, the new version comes back to the stage the workflow sets.
 
 ![Approving the version](../frontend/e2e/screenshots/95-approved-journey-en.png)

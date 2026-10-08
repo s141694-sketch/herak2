@@ -68,7 +68,7 @@ The **Default** workflow applies to every program that has no other. Reminders g
   - **Allow signing in through the provider**.
   - Then, once both tests have passed, **Enforce single sign-on**, with an **Emergency account**: a manager with a password and two-factor, for when the provider is down.
 
-Your own account: **My account security** turns on two-factor with an authenticator app.
+Your own account: choose your name at the top of the page (it shows "My account security" on hover). It opens **Two-factor authentication**, where you turn it on with an authenticator app. Turn it on for yourself before requiring it of managers or becoming the emergency account.
 
 ## 8. Identity
 
