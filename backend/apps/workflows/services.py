@@ -14,7 +14,7 @@ from apps.accounts.models import Membership, Role
 from apps.audit.services import record
 from apps.core.errors import Conflict
 from apps.programs import lifecycle
-from apps.programs.models import Program, ProgramVersion
+from apps.programs.models import Program, ProgramCollaborator, ProgramVersion
 from apps.programs.services import can_edit
 
 from . import rules
@@ -210,6 +210,16 @@ def _ruled(check, *args):
         raise WorkflowError(str(refused), code=refused.code) from refused
 
 
+def _edits(program_id: int, user) -> bool:
+    """Whether the person edits the program: who edits it does not decide on it (D91)."""
+    return ProgramCollaborator.objects.filter(program_id=program_id, user=user).exists()
+
+
+def _no_editor_decides(program_id: int, user) -> None:
+    if _edits(program_id, user):
+        raise WorkflowError("who edits the program does not decide on it", code="editor_cannot_decide")
+
+
 def submit(version: ProgramVersion, *, actor, role: str, reason: str = "") -> ProgramVersion:
     """Sends a draft for review: it becomes submitted, then enters its first stage, in one transaction (D52).
 
@@ -229,6 +239,9 @@ def submit(version: ProgramVersion, *, actor, role: str, reason: str = "") -> Pr
         if not stages:
             raise WorkflowError("choose an approval workflow first", code="no_workflow")
         start, template_id = 1, template.pk
+    named = {stage.get("assignee_user") for stage in stages[start - 1 :]} - {None}
+    if ProgramCollaborator.objects.filter(program_id=version.program_id, user_id__in=named).exists():
+        raise WorkflowError("a stage of this workflow names one who edits the program", code="stage_names_an_editor")
     kept: dict = {}
     payload: dict = {"start_stage": start}
 
@@ -284,6 +297,7 @@ def claim(task: StageTask, *, actor, role: str) -> StageTask:
     _, _, task = _lock_task(task)
     if not task.assignee_role or role != task.assignee_role:
         raise WorkflowError("this task is not for your role", code="not_your_task")
+    _no_editor_decides(task.instance.version.program_id, actor)
     if task.claimed_by_id is not None:
         if task.claimed_by_id == actor.pk:
             return task
@@ -318,6 +332,7 @@ def decide(task: StageTask, *, actor, role: str, decision: str, note: str = "") 
     # The role is read now: someone whose role changed since taking the task no longer decides on it.
     if task.responsible() != actor or role not in STAGE_ROLES or (task.assignee_role and role != task.assignee_role):
         raise WorkflowError("this task is someone else's", code="not_your_task")
+    _no_editor_decides(version.program_id, actor)
     if decision not in StageDecision.Decision.values:
         raise WorkflowError("approve or return", code="decision_invalid")
     note = (note or "").strip()
