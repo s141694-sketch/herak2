@@ -10,14 +10,15 @@ interface Member {
   id: number
   user: { id: number; email: string; full_name: string }
   role: string
+  /** An invitation shows its email alone until the person accepts it (D90). */
+  status: 'member' | 'invited'
   mfa_enabled?: boolean
 }
 
 const ROLES = ['admin', 'author', 'reviewer', 'approver', 'pending'] as const
 
-/** The organization's members (spec 2.1, D87): an admin adds people by email with a role, and changes roles. A new
- * person gets an invitation to choose a password; someone signing in through the organization's provider is told
- * to sign in there. */
+/** The organization's members (spec 2.1, D87): an admin invites people by email with a role, and changes roles.
+ * Joining takes the person's acceptance (D90): until then the row is an invitation, which the admin may cancel. */
 export function MembersPage() {
   const { t } = useTranslation()
   const { session, refresh } = useAuth()
@@ -51,6 +52,15 @@ export function MembersPage() {
     if (member.user.id === session?.user.id) await refresh()
     else members.reload()
   }
+  const cancel = async (member: Member) => {
+    setAdded(null)
+    // The answer has no body (204): a failure is what returns undefined.
+    const done = await action.run(async () => {
+      await http.del(`/api/organizations/current/members/${member.id}/`)
+      return true
+    })
+    if (done) members.reload()
+  }
 
   return (
     <section className="card" data-testid="members">
@@ -66,12 +76,29 @@ export function MembersPage() {
         </thead>
         <tbody>
           {members.data.map((member) => (
-            <tr key={member.id} data-testid="member" data-email={member.user.email}>
+            <tr key={member.id} data-testid="member" data-email={member.user.email} data-status={member.status}>
               <td>
                 {member.user.full_name || member.user.email}{' '}
                 <span className="muted" dir="ltr">
                   {member.user.email}
                 </span>
+                {member.status === 'invited' && (
+                  <>
+                    {' '}
+                    <span className="badge" data-testid="member-invited">
+                      {t('members.invited')}
+                    </span>{' '}
+                    <button
+                      type="button"
+                      className="link-button"
+                      disabled={action.busy}
+                      data-testid="member-cancel"
+                      onClick={() => void cancel(member)}
+                    >
+                      {t('members.cancel')}
+                    </button>
+                  </>
+                )}
               </td>
               <td>
                 <select
@@ -88,7 +115,7 @@ export function MembersPage() {
                   ))}
                 </select>
               </td>
-              <td>{member.mfa_enabled ? t('members.on') : t('members.off')}</td>
+              <td>{member.status === 'invited' ? '—' : member.mfa_enabled ? t('members.on') : t('members.off')}</td>
             </tr>
           ))}
         </tbody>

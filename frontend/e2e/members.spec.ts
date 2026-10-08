@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { emailTo, passwordLink, signIn } from './helpers'
+import { emailTo, PASSWORD as PASSWORD_E2E, passwordLink, signIn } from './helpers'
 
 // D87 (spec 2.1: the training manager runs the space and its users): the admin adds a new person by email with a
 // role; the invitation's link lets them choose a password and sign in; the admin changes their role; a forgotten
@@ -102,4 +102,48 @@ test('a link opened while signed in leads to the sign-in form, and a role one lo
   await expect(admin.getByTestId('nav-members')).toHaveCount(0)
   await admin.getByRole('link', { name: 'حراك' }).click() // within the app, no reload
   await expect(admin.getByTestId('current-role')).toHaveText('مؤلف')
+})
+
+// D90 (F7 of the phase 8 review): joining takes the person's acceptance. The admin invites an account of another
+// organization and sees its email alone; an invitation not answered can be cancelled; the person joins by accepting.
+test('an existing account is invited, seen by its email alone, and joins only by accepting', async ({ browser }) => {
+  test.setTimeout(120_000)
+  const admin = await signIn(browser, 'multi@example.com')
+  await admin.getByTestId('nav-members').click()
+  const invite = async () => {
+    await admin.getByTestId('member-email').fill('guest@example.com')
+    await admin.getByTestId('member-new-role').selectOption('reviewer')
+    await admin.getByTestId('member-add-submit').click()
+    await expect(admin.getByTestId('member-added')).toContainText('guest@example.com')
+  }
+  const row = admin.locator('[data-testid="member"][data-email="guest@example.com"]')
+  await invite()
+  await expect(row).toHaveAttribute('data-status', 'invited')
+  await expect(row).not.toContainText('ضيف من مؤسسة السلامة')
+  await row.getByTestId('member-cancel').click()
+  await expect(row).toHaveCount(0)
+  await invite()
+  await expect(row.getByTestId('member-invited')).toBeVisible()
+
+  // The guest signs in to their own organization and finds the invitation there.
+  const guest = await (await browser.newContext()).newPage()
+  await guest.goto('/login')
+  await guest.locator('input[name="email"]').fill('guest@example.com')
+  await guest.locator('input[name="password"]').fill(PASSWORD_E2E)
+  await guest.locator('button[type="submit"]').click()
+  await expect(guest.getByTestId('current-organization')).toHaveText('أكاديمية السلامة')
+  const invitation = guest.getByTestId('invitation')
+  await expect(invitation).toContainText('مركز التدريب المهني')
+  await guest.screenshot({ path: 'e2e/screenshots/98-invitation-ar.png', fullPage: true })
+  await invitation.getByTestId('invitation-accept').click()
+  await expect(guest.getByTestId('invitations')).toHaveCount(0)
+  await guest.getByTestId('organization-switcher').selectOption({ label: 'مركز التدريب المهني' })
+  await expect(guest.getByTestId('current-organization')).toHaveText('مركز التدريب المهني')
+  await guest.getByRole('link', { name: 'حراك' }).click()
+  await expect(guest.getByTestId('current-role')).toHaveText('مراجع')
+
+  // Now a member: the admin sees the name the person keeps.
+  await admin.reload()
+  await expect(row).toHaveAttribute('data-status', 'member')
+  await expect(row).toContainText('ضيف من مؤسسة السلامة')
 })

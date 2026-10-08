@@ -217,7 +217,8 @@
     "member_is_emergency": "This is the emergency account for single sign-on, so it stays a training manager. Choose another emergency account on the Security page first.",
     "member_assigned_to_stage": "An approval workflow names this person for one of its stages, so they keep a role that decides (reviewer, approver or manager). Change the stage first.",
     "password_link_invalid": "This link no longer works: it was used or has expired. Ask for a new one from “Forgot your password?”.",
-    "password_invalid": "The password is too weak: at least ten characters, not only digits, not like your email or name, and not a commonly used password."
+    "password_invalid": "The password is too weak: at least ten characters, not only digits, not like your email or name, and not a commonly used password.",
+    "member_not_invited": "Only an invitation not yet answered can be cancelled. A member is not removed."
   },
   "common": {
     "create": "Create",
@@ -804,19 +805,21 @@
   },
   "members": {
     "title": "Members of the organization",
-    "intro": "Add people by email with a role, and change their roles. Someone new gets an invitation to choose a password.",
+    "intro": "Invite people by email with a role, and change their roles. No one joins without accepting: until then their invitation stays \"Awaiting acceptance\", and shows you their email only.",
     "person": "Person",
     "role": "Role",
     "roleOf": "Role of {{name}}",
     "secondFactor": "Two-factor",
     "on": "On",
     "off": "Off",
-    "add": "Add a member",
-    "addHint": "Someone with a Harak account is added and told; anyone else gets an invitation to choose a password. Where the organization requires its own sign-in, they are told to sign in there.",
+    "add": "Invite someone",
+    "addHint": "Someone new gets an invitation to choose a password, and joins. Someone with a Harak account signs in and accepts or declines. Where the organization requires its own sign-in, signing in there accepts.",
     "email": "Email",
     "name": "Name (optional)",
-    "addSubmit": "Add and send the invitation",
-    "added": "{{email}} was added and sent an email."
+    "addSubmit": "Send the invitation",
+    "added": "The invitation was sent to {{email}}.",
+    "invited": "Awaiting acceptance",
+    "cancel": "Cancel the invitation"
   },
   "password": {
     "forgotTitle": "Forgot your password",
@@ -831,5 +834,12 @@
     "save": "Save the password",
     "setDone": "Your password is saved. Sign in with it now.",
     "backToSignIn": "Back to sign-in"
+  },
+  "invitations": {
+    "title": "Invitations awaiting your answer",
+    "hint": "You join an organization only if you accept. Once accepted, it shows among your organizations.",
+    "to": "{{name}}, as {{role}}",
+    "accept": "Accept",
+    "decline": "Decline"
   }
 }

@@ -5,6 +5,7 @@ import { NavLink, useNavigate, useSearchParams } from 'react-router'
 import { useAuth } from '../auth'
 import { entryHint, useEnterOrganization } from '../signIn'
 import { ErrorMessage } from './ErrorMessage'
+import { Invitations } from './Invitations'
 import { LanguageToggle } from './LanguageToggle'
 import { NotificationBell } from './NotificationBell'
 
@@ -109,6 +110,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="content">
         <ErrorMessage code={error} testId="switch-error" />
         <ProviderRefusal />
+        <Invitations />
         {children}
       </main>
     </div>

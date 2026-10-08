@@ -22,6 +22,14 @@ export interface SessionPayload {
   /** What the organization asks of this session first: its provider (D66), a password (a session opened by another
    * organization's provider, D71) or a second factor (D67). */
   memberships: Membership[]
+  /** Invitations the person has not answered (D90): they grant nothing until accepted. */
+  invitations: Invitation[]
+}
+
+export interface Invitation {
+  id: number
+  organization: OrganizationSummary
+  role: Role
 }
 
 export interface Membership {
@@ -141,6 +149,8 @@ export const api = {
   startSso: (target: { email: string } | { organization: number }, language: string) =>
     request<{ redirect: string }>('/api/auth/sso/start/', { method: 'POST', body: { ...target, language } }),
   logout: () => request<void>('/api/auth/logout/', { method: 'POST' }),
+  answerInvitation: (id: number, answer: 'accept' | 'decline') =>
+    request<SessionPayload>(`/api/auth/invitations/${id}/${answer}/`, { method: 'POST' }),
   switchOrganization: (organizationId: number) =>
     request<SessionPayload>('/api/auth/switch-organization/', { method: 'POST', body: { organization_id: organizationId } }),
 }

@@ -25,6 +25,8 @@ USERS = [
     # Single sign-on (phase 6): the institute's admin, and a member of its domain who also had a password.
     ("sso-admin@example.com", "سالم المعمري", [("sso", Role.ADMIN)]),
     ("hamed@vtc.test", "حامد الكندي", [("sso", Role.AUTHOR)]),
+    # An account of another organization, whom the training center invites (D90).
+    ("guest@example.com", "ضيف من مؤسسة السلامة", [("safety", Role.AUTHOR)]),
 ]
 # The institute's email domain, matching the Keycloak test realm vtc (infra/keycloak). Its DNS TXT verification is
 # tested in the backend with a fake resolver; here it is seeded as verified.
@@ -55,7 +57,12 @@ class Command(BaseCommand):
                     user.save()
                 for slug, role in memberships:
                     with organization_context(orgs[slug]):
-                        Membership.objects.update_or_create(user=user, defaults={"role": role})
+                        Membership.with_invitations.update_or_create(
+                            user=user, defaults={"role": role, "accepted_at": timezone.now()}
+                        )
+            with organization_context(orgs["vtc"]):
+                # Each run invites the guest afresh.
+                Membership.with_invitations.filter(user__email="guest@example.com").delete()
             _reset_single_sign_on(orgs["sso"])
             with organization_context(orgs["vtc"]):
                 if not WorkflowTemplate.objects.exists():
@@ -77,7 +84,7 @@ def _reset_single_sign_on(organization) -> None:
         IdentityProviderConfig.objects.all().delete()
         ExternalIdentity.objects.all().delete()
         VerifiedDomain.objects.exclude(domain=SSO_DOMAIN).delete()
-        Membership.objects.exclude(user__email__in=keep).delete()
+        Membership.with_invitations.exclude(user__email__in=keep).delete()
         Membership.objects.filter(user__email="hamed@vtc.test").update(role=Role.AUTHOR)
         admin = User.objects.get(email="sso-admin@example.com")
         TOTPDevice.objects.filter(user=admin).delete()
