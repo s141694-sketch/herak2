@@ -204,6 +204,8 @@ for (const language of ['ar', 'en'] as const) {
     panel = await takeAndOpen(reviewer, names.program)
     await expect(panel.getByTestId('resolved-comment')).toContainText(names.mustFix)
     await panel.getByTestId('decision-approve').click()
+    // The decision is done before the approver's list is read: the stage has left the reviewer.
+    await expect(panel.getByTestId('decision-approve')).toHaveCount(0)
     const approver = await signIn(browser, 'approver@example.com', language)
     panel = await takeAndOpen(approver, names.program)
     await panel.getByTestId('decision-note').fill(ar ? 'معتمد' : 'Approved')

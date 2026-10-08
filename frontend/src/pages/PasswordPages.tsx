@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router'
 
 import { http } from '../api'
+import { useAuth } from '../auth'
 import { LanguageToggle } from '../components/LanguageToggle'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { useAction } from '../hooks/useResource'
@@ -62,6 +63,7 @@ export function ForgotPasswordPage() {
 /** The password a person chooses from an invitation's or a reset's link (D87). */
 export function SetPasswordPage() {
   const { t } = useTranslation()
+  const { session, logout } = useAuth()
   const [params] = useSearchParams()
   const action = useAction()
   const [password, setPassword] = useState('')
@@ -79,7 +81,11 @@ export function SetPasswordPage() {
       await http.post('/api/auth/password/set/', body)
       return true
     })
-    if (saved) setDone(true)
+    if (!saved) return
+    // A session open in this browser, the same person's (which the new password ended) or someone else's, would
+    // keep the sign-in form out of reach (phase 8 review).
+    if (session) await logout().catch(() => undefined)
+    setDone(true)
   }
 
   return (

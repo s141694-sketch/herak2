@@ -20,7 +20,7 @@ const ROLES = ['admin', 'author', 'reviewer', 'approver', 'pending'] as const
  * to sign in there. */
 export function MembersPage() {
   const { t } = useTranslation()
-  const { session } = useAuth()
+  const { session, refresh } = useAuth()
   const members = useResource<Member[]>('/api/organizations/current/members/')
   const action = useAction()
   const [email, setEmail] = useState('')
@@ -46,7 +46,10 @@ export function MembersPage() {
   }
   const change = async (member: Member, next: string) => {
     setAdded(null)
-    if (await action.run(() => http.patch(`/api/organizations/current/members/${member.id}/`, { role: next }))) members.reload()
+    if (!(await action.run(() => http.patch(`/api/organizations/current/members/${member.id}/`, { role: next })))) return
+    // One's own role: the menu and this page follow the session, read again (phase 8 review).
+    if (member.user.id === session?.user.id) await refresh()
+    else members.reload()
   }
 
   return (

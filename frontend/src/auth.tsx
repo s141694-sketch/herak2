@@ -10,6 +10,8 @@ interface AuthState {
   verifyMfa: (code: string) => Promise<SessionPayload>
   /** Takes the session as the server now has it (after setting up a second factor, for instance). */
   setSession: (session: SessionPayload) => void
+  /** Reads the session again from the server: after a change that may have altered or ended it. */
+  refresh: () => Promise<void>
   logout: () => Promise<void>
   switchOrganization: (organizationId: number) => Promise<void>
 }
@@ -39,9 +41,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return payload
   }, [])
 
+  const refresh = useCallback(async () => {
+    try {
+      setSession(await api.me())
+    } catch {
+      setSession(null)
+    }
+  }, [])
+
   const logout = useCallback(async () => {
-    await api.logout()
-    setSession(null)
+    try {
+      await api.logout()
+    } catch (error) {
+      // A session the server already ended (a new password does that) still ends here (phase 8 review).
+      if (!(error instanceof ApiError && (error.status === 401 || error.status === 403))) throw error
+    } finally {
+      setSession(null)
+    }
   }, [])
 
   const switchOrganization = useCallback(async (organizationId: number) => {
@@ -49,8 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ session, login, verifyMfa, setSession, logout, switchOrganization }),
-    [session, login, verifyMfa, logout, switchOrganization],
+    () => ({ session, login, verifyMfa, setSession, refresh, logout, switchOrganization }),
+    [session, login, verifyMfa, refresh, logout, switchOrganization],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -67,3 +67,39 @@ test('an admin invites a new person, who chooses a password, signs in, and later
   await expect(forgetful.getByTestId('password-set')).toBeVisible()
 
 })
+
+// From the review of phase 8: a set-password link opened where someone is already signed in leads to the sign-in
+// form; and an admin who lowers their own role sees the menu follow at once.
+test('a link opened while signed in leads to the sign-in form, and a role one lowers oneself takes effect', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000)
+  const address = `second-admin-${`${Date.now()}`.slice(-7)}@example.com`
+  const admin = await signIn(browser, 'multi@example.com')
+  await admin.getByTestId('nav-members').click()
+  await admin.getByTestId('member-email').fill(address)
+  await admin.getByTestId('member-new-role').selectOption('admin')
+  const sentAfter = Date.now() - 1000
+  await admin.getByTestId('member-add-submit').click()
+  await expect(admin.getByTestId('member-added')).toContainText(address)
+
+  // The admin's own browser, still signed in, opens the new person's invitation.
+  await admin.goto(passwordLink(await emailTo(address, sentAfter)))
+  await admin.getByTestId('password-new').fill(PASSWORD)
+  await admin.getByTestId('password-again').fill(PASSWORD)
+  await admin.getByRole('button', { name: 'حفظ كلمة المرور' }).click()
+  await expect(admin.getByTestId('password-set')).toBeVisible()
+  await admin.getByTestId('password-to-sign-in').click()
+  await expect(admin.locator('input[name="email"]')).toBeVisible()
+
+  // The new admin signs in there, and makes themselves an author: the admin's pages go without a reload.
+  await admin.locator('input[name="email"]').fill(address)
+  await admin.locator('input[name="password"]').fill(PASSWORD)
+  await admin.locator('button[type="submit"]').click()
+  await admin.getByTestId('nav-members').click()
+  const own = admin.locator(`[data-testid="member"][data-email="${address}"]`)
+  await own.getByTestId('member-role').selectOption('author')
+  await expect(admin.getByTestId('nav-members')).toHaveCount(0)
+  await admin.getByRole('link', { name: 'حراك' }).click() // within the app, no reload
+  await expect(admin.getByTestId('current-role')).toHaveText('مؤلف')
+})

@@ -217,7 +217,7 @@
     "member_is_emergency": "This is the emergency account for single sign-on, so it stays a training manager. Choose another emergency account on the Security page first.",
     "member_assigned_to_stage": "An approval workflow names this person for one of its stages, so they keep a role that decides (reviewer, approver or manager). Change the stage first.",
     "password_link_invalid": "This link no longer works: it was used or has expired. Ask for a new one from “Forgot your password?”.",
-    "password_invalid": "The password is too weak: at least ten characters, not only digits, and not like your email or name."
+    "password_invalid": "The password is too weak: at least ten characters, not only digits, not like your email or name, and not a commonly used password."
   },
   "common": {
     "create": "Create",
@@ -824,7 +824,7 @@
     "sendLink": "Send the link",
     "linkSent": "If this email has a Harak account, a link valid for three days was sent to it. Check your email.",
     "setTitle": "Choose your password",
-    "rules": "At least ten characters, not only digits, and not like your email or name.",
+    "rules": "At least ten characters, not only digits, not like your email or name, and not a commonly used password.",
     "new": "Password",
     "again": "Write it again",
     "mismatch": "The two do not match.",
