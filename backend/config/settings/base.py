@@ -48,6 +48,7 @@ env = environ.Env(
     BACKUP_DIR=(str, ""),
     BACKUP_KEEP_DAYS=(int, 14),
     BACKUP_SECONDS=(int, 3600),
+    IMPORT_FILE_RETENTION_DAYS=(int, 30),
     COLLAB_TOKEN_TTL_SECONDS=(int, 120),
     COLLAB_INTERNAL_URL=(str, "http://127.0.0.1:1234"),
     COLLAB_TIMEOUT_SECONDS=(float, 10.0),
@@ -159,6 +160,8 @@ CELERY_BEAT_SCHEDULE: dict = {
     "notification-digest": {"task": "notifications.daily_digest", "schedule": crontab(hour=3, minute=0)},
     # Exports whose task never ran or whose worker was lost (task 7.5, D79).
     "export-sweep": {"task": "exports.sweep", "schedule": crontab(minute="*/10")},
+    # Files uploaded for an import, past their days kept (D93): daily at 02:30 UTC.
+    "prune-uploads": {"task": "files.prune_uploads", "schedule": crontab(hour=2, minute=30)},
 }
 
 # Email (D59): any SMTP provider, from EMAIL_URL (e.g. smtp+tls://user:password@host:587); the console by default.
@@ -304,6 +307,8 @@ if SENTRY_DSN:
 # own; FILES_PUBLIC_ENDPOINT_URL is the address browsers reach when it differs (compose). Keys may be empty where
 # the platform gives the server its own credentials. Links last FILES_LINK_SECONDS.
 FILES_BUCKET = env("FILES_BUCKET")
+# Files uploaded for an import are removed this many days after upload (D93).
+IMPORT_FILE_RETENTION_DAYS = env("IMPORT_FILE_RETENTION_DAYS")
 FILES_ENDPOINT_URL = env("FILES_ENDPOINT_URL")
 FILES_PUBLIC_ENDPOINT_URL = env("FILES_PUBLIC_ENDPOINT_URL")
 FILES_ACCESS_KEY_ID = env("FILES_ACCESS_KEY_ID")
