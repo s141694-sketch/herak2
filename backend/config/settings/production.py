@@ -20,7 +20,11 @@ from cryptography.fernet import Fernet  # noqa: E402
 
 from .public_keys import PUBLIC_FIELD_KEYS  # noqa: E402
 
-for _key in (k.strip() for k in FIELD_ENCRYPTION_KEYS if k and k.strip()):  # noqa: F405
+_field_keys = [k.strip() for k in FIELD_ENCRYPTION_KEYS if k and k.strip()]  # noqa: F405
+if not _field_keys:
+    # Without one, two-factor sign-in and identity providers fail at their first use (phase 8 review).
+    raise ImproperlyConfigured("FIELD_ENCRYPTION_KEYS needs at least one key")
+for _key in _field_keys:
     if _key in PUBLIC_FIELD_KEYS:
         raise ImproperlyConfigured("FIELD_ENCRYPTION_KEYS holds a development or test key from git")
     try:

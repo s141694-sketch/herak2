@@ -124,8 +124,10 @@ def reads(versions: list[int], stop: threading.Event, out: list, errors: list) -
         try:
             session.call("GET", path)
             out.append((kind, (time.monotonic() - started) * 1000))
-        except (urllib.error.URLError, TimeoutError) as exc:
-            errors.append(f"{path}: {exc}")
+        except Exception as exc:  # noqa: BLE001 - every failed read counts, and the reader goes on (phase 8 review)
+            # urllib wraps only the request in URLError: a dropped connection, a cut-off or malformed answer
+            # surfaced as other errors and ended the thread uncounted.
+            errors.append(f"{path}: {type(exc).__name__}: {exc}")
         time.sleep(random.uniform(0.2, 0.6))  # a person reading, not a loop
 
 

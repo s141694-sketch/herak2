@@ -94,9 +94,13 @@ def test_withdrawn_and_cancelled_submissions_are_not_rounds(world, clock):
     withdrawn = services.withdraw(version, actor=world["author"], role=Role.AUTHOR)
     again = submit(world, draft_of(withdrawn))
     approve_both_stages(world, again)
+    # Another program: its submission cancelled by an admin, then a new version approved.
+    cancelled = services.cancel(submit(world, new_program(world, "برنامج ملغى")), actor=world["admin"], role=Role.ADMIN)
+    revision = programs.start_new_version(cancelled.program, actor=world["admin"])
+    approve_both_stages(world, submit(world, revision))
 
-    [measure] = metrics.organization_measures()["programs"]
-    assert measure["rounds"] == 1
+    rounds = {m["title"]: m["rounds"] for m in metrics.organization_measures()["programs"]}
+    assert rounds == {"برنامج": 1, "برنامج ملغى": 1}
 
 
 def test_a_program_still_in_review_counts_its_rounds_so_far(world, clock):

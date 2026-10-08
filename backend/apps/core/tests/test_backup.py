@@ -146,3 +146,38 @@ def test_the_commands_back_up_and_refuse_a_restore_over_data(world, tmp_path):
     assert str(made) in out.getvalue()
     with pytest.raises(CommandError, match="database_not_empty"):
         call_command("restore", str(made))
+
+
+# --- From the independent review of phase 8 ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("days", ["0", "-1"])
+def test_fewer_than_one_day_kept_is_refused_before_anything_is_made(tmp_path, days):
+    # 0 would have removed the backup just made and still said it was made.
+    with pytest.raises(CommandError, match="at least one day"):
+        call_command("backup", "--dest", str(tmp_path), "--keep-days", days, stdout=StringIO())
+    with pytest.raises(ValueError):
+        backup.backup(tmp_path, keep_days=0)
+    assert not list(tmp_path.iterdir())
+
+
+def test_a_failed_dump_says_why(world, tmp_path):
+    tool = tmp_path / "pg_dump"
+    tool.write_text("#!/bin/sh\necho 'pg_dump: error: aborting because of server version mismatch' >&2\nexit 1\n")
+    tool.chmod(0o755)
+    dest = tmp_path / "backups"
+    with override_settings(BACKUP_PG_DUMP=str(tool)), pytest.raises(CommandError, match="server version mismatch"):
+        call_command("backup", "--dest", str(dest), stdout=StringIO())
+    assert not list(dest.iterdir())
+
+
+def test_a_backup_cut_off_before_its_manifest_is_removed_once_a_day_old(tmp_path):
+    def unfinished(hours_ago):
+        folder = tmp_path / (datetime.now(UTC) - timedelta(hours=hours_ago)).strftime(backup.STAMP)
+        folder.mkdir()
+        (folder / "database.dump").write_bytes(b"part of a dump")  # killed before its manifest
+        return folder
+
+    stale, running = unfinished(30), unfinished(1)
+    assert backup.prune(tmp_path, keep_days=14) == [stale]
+    assert not stale.exists() and running.exists()

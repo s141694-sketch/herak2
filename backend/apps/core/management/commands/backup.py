@@ -20,5 +20,10 @@ class Command(BaseCommand):
     def handle(self, *args, dest, keep_days, **options):
         if not dest:
             raise CommandError("no destination: pass --dest or set BACKUP_DIR")
-        folder = backup.backup(dest, keep_days=keep_days)
+        if keep_days < 1:
+            raise CommandError("backups are kept at least one day: --keep-days or BACKUP_KEEP_DAYS of 1 or more")
+        try:
+            folder = backup.backup(dest, keep_days=keep_days)
+        except backup.BackupError as exc:
+            raise CommandError(str(exc)) from exc
         self.stdout.write(f"backed up to {folder}")

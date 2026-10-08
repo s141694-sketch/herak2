@@ -33,6 +33,10 @@ MANIFEST = "manifest.json"
 CHUNK = 1024 * 1024
 
 
+class BackupError(Exception):
+    """A backup that could not be made, with the reason its tool gave."""
+
+
 class RestoreError(Exception):
     def __init__(self, code: str, detail: str = ""):
         super().__init__(f"{code}: {detail}" if detail else code)
@@ -109,6 +113,9 @@ def _copy_files(root: Path) -> list[dict]:
 
 def backup(dest, *, database: dict | None = None, keep_days: int | None = None) -> Path:
     """Backs up the database and the files into a new folder of ``dest``; returns the folder."""
+    if keep_days is not None and keep_days < 1:
+        # 0 would remove the backup just made (phase 8 review).
+        raise ValueError("backups are kept at least one day")
     database = database or connection.settings_dict
     target = Path(dest) / datetime.now(UTC).strftime(STAMP)
     target.mkdir(parents=True)
@@ -121,14 +128,17 @@ def backup(dest, *, database: dict | None = None, keep_days: int | None = None) 
             tables = _counts(conn)
             args, env = _tool_args(database)
             dump = target / "database.dump"
-            subprocess.run(
+            done = subprocess.run(
                 [settings.BACKUP_PG_DUMP, "--format=custom", "--no-owner", "--no-privileges", f"--snapshot={snapshot}"]
                 + ["--file", str(dump), *args],
                 env=env,
-                check=True,
                 capture_output=True,
                 timeout=settings.BACKUP_SECONDS,
             )
+            if done.returncode != 0:
+                # Its own words: a version mismatch after a PostgreSQL upgrade (D83) says so here.
+                reason = done.stderr.decode(errors="replace").strip()[-2000:]
+                raise BackupError(f"pg_dump failed: {reason or f'exit status {done.returncode}'}")
         dumped = time.monotonic()
         files = _copy_files(target / "files")
         manifest = {
@@ -146,20 +156,25 @@ def backup(dest, *, database: dict | None = None, keep_days: int | None = None) 
         shutil.rmtree(target, ignore_errors=True)
         raise
     if keep_days is not None:
-        prune(Path(dest), keep_days=keep_days)
+        prune(Path(dest), keep_days=keep_days, keep=target)
     return target
 
 
-def prune(dest: Path, *, keep_days: int) -> list[Path]:
-    """Removes the backups made more than ``keep_days`` ago; leaves anything that is not a backup alone."""
-    limit = datetime.now(UTC) - timedelta(days=keep_days)
+def prune(dest: Path, *, keep_days: int, keep: Path | None = None) -> list[Path]:
+    """Removes the backups made more than ``keep_days`` ago, and backups cut off before their manifest (a killed
+    container) once a day old; leaves anything that is not a backup alone, and ``keep``."""
+    now = datetime.now(UTC)
+    limit, unfinished_limit = now - timedelta(days=keep_days), now - timedelta(days=1)
     removed = []
     for folder in sorted(Path(dest).iterdir()):
         try:
             made = datetime.strptime(folder.name, STAMP).replace(tzinfo=UTC)
         except ValueError:
             continue
-        if folder.is_dir() and (folder / MANIFEST).exists() and made < limit:
+        if not folder.is_dir() or folder == keep:
+            continue
+        finished = (folder / MANIFEST).exists()
+        if (finished and made < limit) or (not finished and made < unfinished_limit):
             shutil.rmtree(folder)
             removed.append(folder)
     return removed

@@ -70,6 +70,8 @@ def test_rotation_re_encrypts_every_stored_secret_with_the_first_key(settings):
     [
         ({"FIELD_ENCRYPTION_KEYS": "ZGV2LW9ubHktZmllbGQtZW5jcnlwdGlvbi1rZXktMDE="}, "FIELD_ENCRYPTION_KEYS"),
         ({"FIELD_ENCRYPTION_KEYS": "not-a-key"}, "FIELD_ENCRYPTION_KEYS"),
+        # Without a key, two-factor sign-in and identity providers fail at first use (phase 8 review).
+        ({"FIELD_ENCRYPTION_KEYS": ""}, "FIELD_ENCRYPTION_KEYS"),
         ({"SSO_ALLOW_HTTP_ISSUERS": "True"}, "SSO_ALLOW_HTTP_ISSUERS"),
         ({"SSO_ALLOW_PRIVATE_ADDRESSES": "True"}, "SSO_ALLOW_PRIVATE_ADDRESSES"),
     ],
