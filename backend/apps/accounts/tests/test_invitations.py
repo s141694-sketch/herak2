@@ -21,7 +21,7 @@ from apps.tenancy.context import organization_context
 
 pytestmark = pytest.mark.django_db
 PASSWORD = "a-long-enough-password-1"
-LINK = re.compile(r"/set-password\?uid=([\w-]+)&token=([\w-]+)")
+LINK = re.compile(r"/set-password\?uid=([\w-]+)&token=([\w-]+)(?:&org=(\d+))?")
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +73,7 @@ def test_an_existing_account_is_invited_and_the_admin_sees_its_email_alone(world
     assert answer.status_code == 201, answer.content
     data = answer.json()
     assert data["status"] == "invited" and data["role"] == "reviewer"
-    assert data["user"] == {"id": world["person"].pk, "email": "person@b.test", "full_name": ""}
+    assert data["user"] == {"id": None, "email": "person@b.test", "full_name": ""}
     assert "mfa_enabled" not in data
     listed = {
         m["user"]["email"]: m for m in signed_in("admin@a.test").get("/api/organizations/current/members/").json()
@@ -200,9 +200,11 @@ def test_a_new_person_accepts_by_choosing_a_password_from_the_link(world):
     invite(email="new@a.test", role="author")
     with organization_context(world["a"]):
         assert not Membership.objects.filter(user__email="new@a.test").exists()
-    uid, token = LINK.search(mail.outbox[0].body).groups()
+    uid, token, org = LINK.search(mail.outbox[0].body).groups()
     answer = APIClient().post(
-        "/api/auth/password/set/", {"uid": uid, "token": token, "password": PASSWORD}, format="json"
+        "/api/auth/password/set/",
+        {"uid": uid, "token": token, "password": PASSWORD, "organization": org},
+        format="json",
     )
     assert answer.status_code == 204
     session = signed_in("new@a.test").session_data
@@ -212,7 +214,7 @@ def test_a_new_person_accepts_by_choosing_a_password_from_the_link(world):
 def test_a_reset_of_an_account_with_a_password_accepts_nothing(world):
     invite()
     APIClient().post("/api/auth/password/forgot/", {"email": "person@b.test"}, format="json")
-    uid, token = LINK.search(mail.outbox[-1].body).groups()
+    uid, token, org = LINK.search(mail.outbox[-1].body).groups()
     APIClient().post(
         "/api/auth/password/set/", {"uid": uid, "token": token, "password": "another-long-password-2"}, format="json"
     )
@@ -224,8 +226,12 @@ def test_an_account_that_never_had_a_password_accepts_by_choosing_one(world):
     with organization_context(world["b"]):
         Membership.objects.create(user=sso_only, role=Role.AUTHOR)
     invite(email="sso@b.test")
-    uid, token = LINK.search(mail.outbox[0].body).groups()
-    APIClient().post("/api/auth/password/set/", {"uid": uid, "token": token, "password": PASSWORD}, format="json")
+    uid, token, org = LINK.search(mail.outbox[0].body).groups()
+    APIClient().post(
+        "/api/auth/password/set/",
+        {"uid": uid, "token": token, "password": PASSWORD, "organization": org},
+        format="json",
+    )
     assert Membership.including_invitations.get(user=sso_only, organization=world["a"]).accepted_at is not None
 
 
@@ -249,6 +255,10 @@ def test_create_organization_makes_an_accepted_first_admin(world):
     membership = Membership.including_invitations.get(user__email="first@c.test")
     # The first admin has no password yet: the invitation's link accepts, as for anyone new.
     assert membership.role == Role.ADMIN
-    uid, token = LINK.search(mail.outbox[-1].body).groups()
-    APIClient().post("/api/auth/password/set/", {"uid": uid, "token": token, "password": PASSWORD}, format="json")
+    uid, token, org = LINK.search(mail.outbox[-1].body).groups()
+    APIClient().post(
+        "/api/auth/password/set/",
+        {"uid": uid, "token": token, "password": PASSWORD, "organization": org},
+        format="json",
+    )
     assert signed_in("first@c.test").session_data["organization"]["slug"] == "c"

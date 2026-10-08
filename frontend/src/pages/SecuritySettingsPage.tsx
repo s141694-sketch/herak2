@@ -272,7 +272,7 @@ function ProviderPanel({ testResult }: { testResult: string | null }) {
   const [leaving, setLeaving] = useState(false)
   if (!providers.data) return <ErrorMessage code={providers.error} />
   const provider = providers.data[0] ?? null
-  const admins = (members.data ?? []).filter((m) => m.role === 'admin')
+  const admins = (members.data ?? []).filter((m) => m.status === 'member' && m.role === 'admin')
   const busy = action.busy || leaving
 
   const testSignIn = async () => {

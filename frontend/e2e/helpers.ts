@@ -197,7 +197,7 @@ export async function emailTo(address: string, after = 0): Promise<string> {
 
 /** The set-password link in an email, as a path on the web client. */
 export function passwordLink(email: string): string {
-  const match = email.match(/\/set-password\?uid=[\w-]+&token=[\w-]+/)
+  const match = email.match(/\/set-password\?uid=[\w-]+&token=[\w-]+(&org=\d+)?/)
   if (!match) throw new Error('no set-password link in the email')
   return match[0]
 }

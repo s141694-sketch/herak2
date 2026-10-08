@@ -19,7 +19,7 @@ from apps.tenancy.context import organization_context
 
 pytestmark = pytest.mark.django_db
 PASSWORD = "a-long-enough-password-1"
-LINK = re.compile(r"/set-password\?uid=([\w-]+)&token=([\w-]+)")
+LINK = re.compile(r"/set-password\?uid=([\w-]+)&token=([\w-]+)(?:&org=(\d+))?")
 
 
 @pytest.fixture(autouse=True)
@@ -60,16 +60,17 @@ def add(client, email, role="author", full_name=""):
     )
 
 
-def link_in(message) -> tuple[str, str]:
+def link_in(message) -> tuple[str, str, str | None]:
     match = LINK.search(message.body)
     assert match, message.body
-    return match.group(1), match.group(2)
+    return match.group(1), match.group(2), match.group(3)
 
 
-def set_password(uid, token, password=PASSWORD):
-    return APIClient().post(
-        "/api/auth/password/set/", {"uid": uid, "token": token, "password": password}, format="json"
-    )
+def set_password(uid, token, org=None, password=PASSWORD):
+    body = {"uid": uid, "token": token, "password": password}
+    if org:
+        body["organization"] = int(org)
+    return APIClient().post("/api/auth/password/set/", body, format="json")
 
 
 def test_an_admin_adds_a_new_person_who_sets_a_password_from_the_invitation(world):
@@ -80,18 +81,18 @@ def test_an_admin_adds_a_new_person_who_sets_a_password_from_the_invitation(worl
     assert not person.has_usable_password()
     [invitation] = mail.outbox
     assert invitation.to == ["new@a.test"] and "مركز أ" in invitation.body
-    uid, token = link_in(invitation)
-    assert set_password(uid, token).status_code == 204
+    uid, token, org = link_in(invitation)
+    assert set_password(uid, token, org).status_code == 204
     signed = APIClient().post("/api/auth/login/", {"email": "new@a.test", "password": PASSWORD}, format="json")
     assert signed.status_code == 200 and signed.json()["organization"]["slug"] == "a"
-    assert set_password(uid, token, "another-long-password-2").json()["error"]["code"] == "password_link_invalid"
+    assert set_password(uid, token, org, "another-long-password-2").json()["error"]["code"] == "password_link_invalid"
     assert AuditLog.all_organizations.filter(event="membership.added").exists()
 
 
 def test_a_weak_password_is_refused_by_the_same_rules_as_ever(world):
     add(signed_in("admin@a.test"), "new@a.test")
-    uid, token = link_in(mail.outbox[0])
-    refused = set_password(uid, token, "12345678")
+    uid, token, org = link_in(mail.outbox[0])
+    refused = set_password(uid, token, org, "12345678")
     assert refused.status_code == 400 and refused.json()["error"]["code"] == "password_invalid"
 
 
@@ -215,8 +216,8 @@ def test_a_forgotten_password_gets_a_link_and_the_answer_never_says_who_has_an_a
     assert (known.status_code, unknown.status_code) == (202, 202) and known.json() == unknown.json()
     [message] = mail.outbox
     assert message.to == ["author@a.test"]
-    uid, token = link_in(message)
-    assert set_password(uid, token, "a-brand-new-password-3").status_code == 204
+    uid, token, _ = link_in(message)
+    assert set_password(uid, token, password="a-brand-new-password-3").status_code == 204
     old = APIClient().post("/api/auth/login/", {"email": "author@a.test", "password": PASSWORD}, format="json")
     new = APIClient().post(
         "/api/auth/login/", {"email": "author@a.test", "password": "a-brand-new-password-3"}, format="json"

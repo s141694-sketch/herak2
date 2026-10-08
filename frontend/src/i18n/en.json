@@ -219,8 +219,9 @@
     "password_link_invalid": "This link no longer works: it was used or has expired. Ask for a new one from “Forgot your password?”.",
     "password_invalid": "The password is too weak: at least ten characters, not only digits, not like your email or name, and not a commonly used password.",
     "member_not_invited": "Only an invitation not yet answered can be cancelled. A member is not removed.",
-    "editor_cannot_decide": "Whoever edits the program does not decide on it. Someone else with the role takes the task.",
-    "stage_names_an_editor": "A stage of the approval workflow names someone who edits this program, and whoever edits a program does not decide on it. Ask the training manager to change the workflow."
+    "editor_cannot_decide": "Whoever edits the program does not decide on it. Someone else with the role takes the task, or this person is removed from the program's editors.",
+    "stage_names_an_editor": "A remaining approval stage names someone who edits this program, and whoever edits a program does not decide on it. Remove them from the program's editors, or ask the training manager to change the workflow before the first submission.",
+    "stage_only_editors": "Everyone holding the role of an approval stage edits this program, so no one could decide it. Give the role to someone else, or remove one of them from the program's editors."
   },
   "common": {
     "create": "Create",

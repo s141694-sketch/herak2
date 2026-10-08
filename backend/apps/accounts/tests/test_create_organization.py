@@ -8,6 +8,8 @@ from django.core import mail
 from django.core.management import CommandError, call_command
 
 from apps.accounts.models import Membership, Organization, Role, User
+from apps.programs.tests.factories import member
+from apps.tenancy.context import organization_context
 
 pytestmark = pytest.mark.django_db
 
@@ -47,7 +49,9 @@ def test_an_existing_account_is_invited_to_manage_without_a_new_password():
 
 
 def test_a_slug_is_taken_once():
-    Organization.objects.create(name="مركز", slug="vtc")
+    organization = Organization.objects.create(name="مركز", slug="vtc")
+    with organization_context(organization):
+        member("manager@vtc.test", Role.ADMIN)
     with pytest.raises(CommandError, match="vtc"):
         call_command("create_organization", "--name", "آخر", "--slug", "vtc", "--admin-email", "x@vtc.test")
     assert Organization.objects.count() == 1 and not mail.outbox

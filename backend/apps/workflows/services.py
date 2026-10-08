@@ -239,9 +239,15 @@ def submit(version: ProgramVersion, *, actor, role: str, reason: str = "") -> Pr
         if not stages:
             raise WorkflowError("choose an approval workflow first", code="no_workflow")
         start, template_id = 1, template.pk
-    named = {stage.get("assignee_user") for stage in stages[start - 1 :]} - {None}
-    if ProgramCollaborator.objects.filter(program_id=version.program_id, user_id__in=named).exists():
+    remaining = stages[start - 1 :]
+    editors = set(ProgramCollaborator.objects.filter(program_id=version.program_id).values_list("user_id", flat=True))
+    if {stage.get("assignee_user") for stage in remaining} & editors:
         raise WorkflowError("a stage of this workflow names one who edits the program", code="stage_names_an_editor")
+    for stage in remaining:
+        # A role every holder of which edits the program would leave the stage to no one (phase 9 review).
+        holders = set(Membership.objects.filter(role=stage.get("assignee_role")).values_list("user_id", flat=True))
+        if stage.get("assignee_role") and holders and holders <= editors:
+            raise WorkflowError("only editors of the program hold this stage's role", code="stage_only_editors")
     kept: dict = {}
     payload: dict = {"start_stage": start}
 

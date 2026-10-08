@@ -33,7 +33,7 @@ def world():
 
 def reset(email):
     out = io.StringIO()
-    call_command("reset_mfa", "--email", email, stdout=out)
+    call_command("reset_mfa", "--email", email, "--reason", "called their manager", stdout=out)
     return out.getvalue()
 
 
@@ -42,7 +42,10 @@ def test_the_operator_removes_the_factor_and_every_organization_is_told(world):
     assert not TOTPDevice.objects.filter(user=world["person"]).exists()
     logged = AuditLog.all_organizations.filter(event="mfa.reset")
     assert {entry.organization_id for entry in logged} == {world["a"].pk, world["b"].pk}
-    assert all(entry.payload == {"user": world["person"].pk, "by": "operator"} for entry in logged)
+    assert all(
+        entry.payload == {"user": world["person"].pk, "by": "operator", "reason": "called their manager"}
+        for entry in logged
+    )
     assert "person@example.com" in out
 
 

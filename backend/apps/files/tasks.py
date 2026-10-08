@@ -7,6 +7,7 @@ from datetime import timedelta
 import structlog
 from celery import shared_task
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from apps.audit.services import record
@@ -22,13 +23,18 @@ log = structlog.get_logger("harak2.files")
 def prune_uploads() -> None:
     """Removes each expired upload from the store, then its row. One the store could not remove keeps its row, and
     the next day's run tries again."""
-    before = timezone.now() - timedelta(days=settings.IMPORT_FILE_RETENTION_DAYS)
+    days = settings.IMPORT_FILE_RETENTION_DAYS
+    if days < 1:  # a mistake in the settings must not remove every upload as soon as it is made
+        log.error("files.prune_refused", days=days)
+        return
+    before = timezone.now() - timedelta(days=days)
     for file in File.all_organizations.filter(kind=File.Kind.UPLOAD, created_at__lt=before):
         try:
             storage.remove(file.key)
-        except Exception as exc:  # noqa: BLE001 - any failure of the store leaves the row for the next run
+            with organization_context(file.organization_id), transaction.atomic():
+                record(
+                    "file.expired", target=file, payload={"name": file.name, "uploaded_at": file.created_at.isoformat()}
+                )
+                File.objects.filter(pk=file.pk).delete()
+        except Exception as exc:  # noqa: BLE001 - any failure leaves the row for the next run, and the rest go on
             log.warning("files.prune_failed", file=file.pk, error=str(exc))
-            continue
-        with organization_context(file.organization_id):
-            record("file.expired", target=file, payload={"name": file.name, "uploaded_at": file.created_at.isoformat()})
-            File.objects.filter(pk=file.pk).delete()

@@ -57,3 +57,27 @@ def test_a_file_the_store_could_not_remove_keeps_its_row(world, monkeypatch):
     monkeypatch.setattr(storage, "remove", down)
     prune_uploads()
     assert File.all_organizations.filter(pk=old.pk).exists()
+
+
+def test_fewer_than_one_day_kept_removes_nothing(world, settings):
+    settings.IMPORT_FILE_RETENTION_DAYS = 0
+    old = stored(world, File.Kind.UPLOAD, 31)
+    prune_uploads()
+    assert File.all_organizations.filter(pk=old.pk).exists()
+
+
+def test_a_row_that_fails_to_go_does_not_stop_the_others(world, monkeypatch):
+    first, second = stored(world, File.Kind.UPLOAD, 40), stored(world, File.Kind.UPLOAD, 35)
+    from apps.files import tasks
+
+    real = tasks.record
+
+    def failing_once(event, **kwargs):
+        if kwargs["target"].pk == first.pk:
+            raise RuntimeError("the database refused")
+        return real(event, **kwargs)
+
+    monkeypatch.setattr(tasks, "record", failing_once)
+    prune_uploads()
+    assert File.all_organizations.filter(pk=first.pk).exists()
+    assert not File.all_organizations.filter(pk=second.pk).exists()

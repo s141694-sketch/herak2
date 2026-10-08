@@ -273,8 +273,11 @@ class MemberListView(generics.ListAPIView):
     serializer_class = MemberSerializer
 
     def get_queryset(self):
-        # Invitations too: the admin follows them and may cancel them (D90).
-        return Membership.with_invitations.select_related("user").order_by("user__email")
+        # Invitations too, for an admin alone: they follow them and may cancel them (D90). Other members see
+        # members.
+        admin = self.request.membership.role == Role.ADMIN
+        manager = Membership.with_invitations if admin else Membership.objects
+        return manager.select_related("user").order_by("user__email")
 
     def post(self, request):
         if request.membership.role != Role.ADMIN:
@@ -370,7 +373,9 @@ class SetPasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            user = members.set_password(data["uid"], data["token"], data["password"])
+            user = members.set_password(
+                data["uid"], data["token"], data["password"], organization=data.get("organization")
+            )
         except members.PasswordLinkInvalid as exc:
             raise PasswordLinkInvalid("the link is not valid any more: ask for a new one") from exc
         except members.ValidationError as exc:

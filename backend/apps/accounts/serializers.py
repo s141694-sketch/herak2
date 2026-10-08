@@ -38,6 +38,9 @@ class MemberSerializer(serializers.ModelSerializer):
             # Until the person accepts, the organization knows the email it typed and nothing the person keeps
             # elsewhere: not the name, not the second factor (D90).
             data["status"] = "invited"
+            # Not the account's id either: comparing ids would tell whether the account existed before (phase 9
+            # review).
+            data["user"]["id"] = None
             data["user"]["full_name"] = ""
             return data
         data["status"] = "member"
@@ -178,3 +181,5 @@ class SetPasswordSerializer(serializers.Serializer):
     uid = serializers.CharField(max_length=64)
     token = serializers.CharField(max_length=128)
     password = serializers.CharField(max_length=256, trim_whitespace=False)
+    # The organization an invitation's link names (D90): choosing a password from it accepts that invitation.
+    organization = serializers.IntegerField(required=False)

@@ -83,3 +83,10 @@ def test_one_who_took_a_task_and_then_became_an_editor_does_not_decide(world):
     programs.add_collaborator(world["version"].program, world["other_admin"], actor=world["writer"])
     decide = lambda: services.decide(task(world), actor=world["other_admin"], role=Role.ADMIN, decision="approve")  # noqa: E731
     assert refused(decide) == "editor_cannot_decide"
+
+
+def test_a_stage_whose_role_only_editors_hold_is_refused_at_submission(world):
+    """From the review of phase 9: an admin-role stage where every admin edits the program would wait for no one."""
+    workflow(world, [{"name": "اعتماد", "assignee_role": "admin", "due_work_days": 1}])
+    programs.add_collaborator(world["version"].program, world["other_admin"], actor=world["writer"])
+    assert refused(lambda: submit(world)) == "stage_only_editors"

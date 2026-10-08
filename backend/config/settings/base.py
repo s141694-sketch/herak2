@@ -300,6 +300,8 @@ if SENTRY_DSN:
         environment=env("SENTRY_ENVIRONMENT"),
         integrations=[DjangoIntegration(), CeleryIntegration()],
         send_default_pii=False,
+        # Nor the bodies of failing requests, which carry emails, names and program text (phase 9 review).
+        max_request_body_size="never",
         traces_sample_rate=0.0,
     )
 

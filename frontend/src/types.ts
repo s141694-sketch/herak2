@@ -366,6 +366,8 @@ export interface Member {
   user: UserRef
   role: string
   created_at: string
+  /** An invitation not yet accepted is listed for admins, with its email alone (D90). */
+  status: 'member' | 'invited'
   /** Whether the member has a second factor; given to admins only (they reset a lost one, D67). */
   mfa_enabled?: boolean
 }

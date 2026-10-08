@@ -10,7 +10,7 @@ Reviewers read the content and its quality report side by side, leave comments a
 
 A reminder comes one work day before the due time and at it. The manager is told after two work days late.
 
-You cannot take a task on a program you edit: whoever edits a program does not decide on it. A colleague takes it.
+If you were added as an editor of a program before your role changed, you cannot take a task on it: whoever edits a program does not decide on it. A colleague takes it.
 
 If another organization invites you, its invitation shows at the top of every page once you sign in: **Accept** or **Decline**. You join an organization only if you accept.
 

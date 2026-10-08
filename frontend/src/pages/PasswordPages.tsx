@@ -75,7 +75,9 @@ export function SetPasswordPage() {
     event.preventDefault()
     setMismatch(password !== again)
     if (password !== again) return
-    const body = { uid: params.get('uid') ?? '', token: params.get('token') ?? '', password }
+    // An invitation's link names its organization: choosing the password accepts that invitation (D90).
+    const organization = Number(params.get('org')) || undefined
+    const body = { uid: params.get('uid') ?? '', token: params.get('token') ?? '', password, organization }
     // The answer is empty (204): success is told by the run finishing without an error.
     const saved = await action.run(async () => {
       await http.post('/api/auth/password/set/', body)

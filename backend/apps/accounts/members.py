@@ -51,10 +51,13 @@ class PasswordLinkInvalid(Exception):
     pass
 
 
-def _link(user: User) -> str:
+def _link(user: User, organization=None) -> str:
+    """A link to choose a password. An invitation's names its organization: choosing a password from it accepts that
+    invitation, and only that one (D90, phase 9 review)."""
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
-    return f"{settings.APP_URL.rstrip('/')}/set-password?uid={uid}&token={token}"
+    link = f"{settings.APP_URL.rstrip('/')}/set-password?uid={uid}&token={token}"
+    return f"{link}&org={organization.pk}" if organization is not None else link
 
 
 def _signs_in_through_provider(organization) -> bool:
@@ -78,7 +81,7 @@ def _invite(user: User, organization) -> None:
             f"{settings.APP_URL}",
         )
     elif not user.has_usable_password():  # new, or an account that has only ever signed in through a provider
-        link = _link(user)
+        link = _link(user, organization)
         _send(
             user,
             (f"دعوة إلى {name} في حراك", f"An invitation to {name} on Harak"),
@@ -218,7 +221,11 @@ def _accept(membership: Membership, *, how: str) -> None:
 
     membership.accepted_at = timezone.now()
     with organization_context(membership.organization_id):
-        Membership.with_invitations.filter(pk=membership.pk).update(accepted_at=membership.accepted_at)
+        accepted = Membership.with_invitations.filter(pk=membership.pk, accepted_at__isnull=True).update(
+            accepted_at=membership.accepted_at
+        )
+        if not accepted:  # cancelled, declined or accepted meanwhile: nothing to record
+            return
         record(
             "membership.accepted",
             actor=membership.user,
@@ -247,15 +254,17 @@ def decline_invitation(user: User, pk: int) -> None:
 def accept_by_signing_in(user: User) -> None:
     """Signing in through the provider of the organization in context accepts its invitation (D90); a first
     sign-in with none makes a pending member (D65)."""
-    invitation = Membership.with_invitations.filter(user=user).first()
-    if invitation is None:
-        try:
-            with transaction.atomic():
-                Membership.objects.create(user=user, role=Role.PENDING)
-        except IntegrityError:  # a first sign-in of the same person at the same moment made it
-            pass
-    elif invitation.is_invitation:
-        _accept(invitation, how="provider")
+    with transaction.atomic():
+        invitation = Membership.with_invitations.select_for_update().filter(user=user).first()
+        if invitation is None:
+            try:
+                with transaction.atomic():
+                    Membership.objects.create(user=user, role=Role.PENDING)
+                return
+            except IntegrityError:  # made at the same moment: an invitation, or another first sign-in
+                invitation = Membership.with_invitations.select_for_update().get(user=user)
+        if invitation.is_invitation:
+            _accept(invitation, how="provider")
 
 
 def _named_by_a_stage(user: User) -> bool:
@@ -286,7 +295,7 @@ def forgot_password(email: str) -> None:
     _queue(send_reset_email, email)
 
 
-def set_password(uid: str, token: str, password: str) -> User:
+def set_password(uid: str, token: str, password: str, organization: int | None = None) -> User:
     """Sets the password a link's person chose. The link works once: the new password changes what its token signs."""
     try:
         user = User.objects.get(pk=int(force_str(urlsafe_base64_decode(uid))))
@@ -299,11 +308,12 @@ def set_password(uid: str, token: str, password: str) -> User:
     with transaction.atomic():
         user.set_password(password)
         user.save(update_fields=["password"])
-        if proves_the_invitation:
-            # The link went to an account without a password, as an invitation's does: choosing one from it proves
-            # the email, and accepts the person's invitations (D90). A reset of an account with a password does not.
+        if proves_the_invitation and organization is not None:
+            # An invitation's link to an account without a password: choosing one proves the email and accepts that
+            # invitation, and no other (D90, phase 9 review). A reset's link names no organization, and accepts
+            # nothing; nor does any link of an account that has a password.
             for invitation in Membership.including_invitations.select_for_update().filter(
-                user=user, accepted_at__isnull=True
+                user=user, organization_id=organization, accepted_at__isnull=True
             ):
                 _accept(invitation, how="password_link")
     return user

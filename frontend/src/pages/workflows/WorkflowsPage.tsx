@@ -57,7 +57,8 @@ function StagesEditor({
 }) {
   const { t } = useTranslation()
   const set = (index: number, change: Partial<StageDraft>) => onChange(stages.map((stage, i) => (i === index ? { ...stage, ...change } : stage)))
-  const deciders = members.filter((m) => ROLES.includes(m.role as StageRole))
+  // Invitations decide nothing until accepted (D90).
+  const deciders = members.filter((m) => m.status === 'member' && ROLES.includes(m.role as StageRole))
   const named = current
     .map((stage) => stage.assignee_user)
     .filter((user): user is NonNullable<typeof user> => user !== null && !deciders.some((m) => m.user.id === user.id))

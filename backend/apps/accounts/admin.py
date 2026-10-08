@@ -19,11 +19,12 @@ class OrganizationAdmin(admin.ModelAdmin):
 class MembershipAdmin(admin.ModelAdmin):
     """Django admin is the platform operator's tool, so it reads across organizations explicitly."""
 
-    list_display = ("user", "organization", "role", "created_at")
+    list_display = ("user", "organization", "role", "created_at", "accepted_at")
     list_filter = ("role", "organization")
 
     def get_queryset(self, request):
-        return Membership.all_organizations.select_related("user", "organization")
+        # Invitations too (D90): accepted_at is empty until the person accepts.
+        return Membership.including_invitations.select_related("user", "organization")
 
     def has_add_permission(self, request):
         # Writes need an organization context; memberships are created through the API.
