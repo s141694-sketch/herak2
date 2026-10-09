@@ -274,12 +274,15 @@ jobs:
           origin="https://$PUBLIC"
           token="$(curl -s -D - -o /dev/null http://localhost:8000/api/auth/csrf/ | sed -n 's/^[Ss]et-[Cc]ookie: csrftoken=\([^;]*\).*/\1/p' | tr -d '\r')"
           test -n "$token"
+          # GitHub's forwarding rewrites the browser's Origin to https://localhost:8000; the proxy puts the public
+          # one back (D102). A foreign Origin still fails the CSRF check.
           login() {
-            curl -s -H "Content-Type: application/json" -H "Origin: $origin" -H "Referer: $origin/" \
+            curl -s -H "Content-Type: application/json" -H "Origin: ${ORIGIN:-https://localhost:8000}" -H "Referer: $origin/" \
               -H "X-CSRFToken: $token" -H "Cookie: csrftoken=$token" -X POST http://localhost:8000/api/auth/login/ \
               -d "{\"email\":\"$1\",\"password\":\"$2\"}"
           }
           login author@example.com "$password" | grep '"role":"author"'
+          ORIGIN=https://evil.example login author@example.com "$password" | grep -q 'Origin checking failed'
           # The browser tests' other accounts cannot be signed in to here.
           ! login sso-admin@example.com "$password" | grep -q '"user"'
           hc() { docker compose --env-file backend/.env -f infra/docker-compose.yml -f infra/compose.codespaces.yml "$@"; }

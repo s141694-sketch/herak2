@@ -6,6 +6,15 @@ map $http_upgrade $connection_upgrade {
     ""      close;
 }
 
+# GitHub's port forwarding also rewrites the browser's Origin to https://localhost:8000, which Django's CSRF check
+# rejects (D102). That one value goes back to the public address; any other Origin passes on as sent. The CSRF token
+# and the SameSite session cookie still guard every write.
+map $http_origin $public_origin {
+    default                  $http_origin;
+    "https://localhost:8000" "https://${HARAK_DOMAIN}";
+    "http://localhost:8000"  "https://${HARAK_DOMAIN}";
+}
+
 resolver 127.0.0.11 valid=10s ipv6=off;
 resolver_timeout 3s;
 
@@ -34,6 +43,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host ${HARAK_DOMAIN};
         proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Origin $public_origin;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
