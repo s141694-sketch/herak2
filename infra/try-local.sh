@@ -29,7 +29,8 @@ case "${1:-}" in
     exit 0
     ;;
   --emails)
-    compose logs worker
+    # Decoded: the console backend writes the Arabic bodies in base64.
+    compose logs --no-log-prefix worker 2>/dev/null | compose exec -T backend python -c "$(cat infra/print-emails.py)"
     exit 0
     ;;
   --reset)

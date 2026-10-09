@@ -152,8 +152,10 @@ organization() {
   echo
   echo "The manager chooses a password from this link, then signs in at https://$(value HARAK_DOMAIN):"
   echo "  $(link_for "$ADMIN_EMAIL" "$ORG_SLUG")"
+  local self=infra/deploy.sh
+  [ "${HARAK_COMPOSE_EXTRA:-}" = infra/compose.codespaces.yml ] && self=infra/codespace.sh
   echo "They invite colleagues from the Members page. Without email, give each their link:"
-  echo "  infra/deploy.sh link <email> $ORG_SLUG"
+  echo "  $self link <email> $ORG_SLUG"
 }
 
 update() {

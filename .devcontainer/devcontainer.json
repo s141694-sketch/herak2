@@ -12,5 +12,7 @@
   "portsAttributes": {
     "8000": { "label": "Harak", "onAutoForward": "notify" }
   },
+  // 8000 is the only way in; nginx's own 8080 and the rest are not offered.
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
   "postAttachCommand": "echo 'To start Harak: infra/codespace.sh start   (guide: docs/2026-10-09-harak2-codespaces.md)'"
 }
