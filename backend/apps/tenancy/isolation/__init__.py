@@ -22,6 +22,10 @@ EXEMPT_ROUTES: dict[str, str] = {
     ),
     "auth-logout": "ends the caller's session",
     "auth-me": "returns the caller and the caller's own memberships",
+    "file-content": (
+        "serves the one file a signed, expiring link names; file-download signs it after checking the caller's "
+        "organization and access (D98); covered by test_local_store"
+    ),
     "auth-invitation-answer": (
         "the caller answers their own invitation, found by its id and the caller together (D90); covered by "
         "test_invitations"

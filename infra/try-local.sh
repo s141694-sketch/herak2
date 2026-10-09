@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Harak on one's own computer, to try it (the owner's request of 2026-10-08, D96): the pilot's compose stack at
-# https://localhost, with an in-memory file store and emails printed in the worker's log instead of sent.
+# https://localhost, with files kept on this computer (D98) and emails printed in the worker's log instead of sent.
 #
 #   infra/try-local.sh            start, and open an organization whose manager is ADMIN_EMAIL (default
 #                                 manager@example.com): prints the link to choose the manager's password
@@ -10,13 +10,12 @@
 #   infra/try-local.sh --reset    stop and erase everything, the trial's backend/.env included
 #
 # Needs Docker with compose v2, openssl and bash (on Windows: inside WSL). Ports 80 and 443 must be free.
-# Not for a server: the runbook (docs/2026-10-06-harak2-runbook.md) deploys the pilot. Uploaded and exported files
-# live in memory here and are lost when the stack stops.
+# Not for a server: infra/deploy.sh and the runbook (docs/2026-10-06-harak2-runbook.md) deploy Harak there.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ENV_FILE=backend/.env
 MARK="# Harak local trial (infra/try-local.sh): fresh secrets, https://localhost, nothing is sent."
-compose() { docker compose --env-file "$ENV_FILE" -f infra/docker-compose.yml -f infra/compose.ci.yml "$@"; }
+compose() { docker compose --env-file "$ENV_FILE" -f infra/docker-compose.yml "$@"; }
 
 command -v docker >/dev/null || { echo "Docker is not installed: https://docs.docker.com/get-docker/" >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "docker compose (v2) is missing" >&2; exit 1; }
@@ -52,7 +51,7 @@ if [ ! -f "$ENV_FILE" ]; then
   secret() { openssl rand -hex 32; }
   {
     echo "$MARK"
-    grep -v -E '^(HARAK_DOMAIN|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|APP_URL|SECRET_KEY|COLLAB_TOKEN_SECRET|COLLAB_SERVICE_SECRET|POSTGRES_PASSWORD|FIELD_ENCRYPTION_KEYS|EMAIL_URL|FILES_[A-Z_]+)=' infra/pilot.env.example
+    grep -v -E '^(HARAK_DOMAIN|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|APP_URL|SECRET_KEY|COLLAB_TOKEN_SECRET|COLLAB_SERVICE_SECRET|POSTGRES_PASSWORD|FIELD_ENCRYPTION_KEYS|EMAIL_URL|FILES_BACKEND)=' infra/pilot.env.example
     echo "HARAK_DOMAIN=localhost"
     echo "ALLOWED_HOSTS=localhost,backend"
     echo "CSRF_TRUSTED_ORIGINS=https://localhost"
@@ -64,9 +63,8 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "FIELD_ENCRYPTION_KEYS=$(openssl rand 32 | base64 | tr '+/' '-_')"
     # Emails go to the worker's log; this script reads the invitation's link from there.
     echo "EMAIL_URL=consolemail://"
-    # The in-memory store of infra/compose.ci.yml.
-    printf '%s\n' FILES_BUCKET=harak2-trial FILES_ENDPOINT_URL=http://s3:5000 FILES_ACCESS_KEY_ID=trial \
-      FILES_SECRET_ACCESS_KEY=trial FILES_REGION=us-east-1 FILES_CREATE_BUCKET=True
+    # Files in the files-data volume on this computer (D98).
+    echo "FILES_BACKEND=local"
   } > "$ENV_FILE"
   echo "made $ENV_FILE for the trial"
 elif ! trial_env; then

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import environ
 from celery.schedules import crontab
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -23,6 +24,8 @@ env = environ.Env(
     # nearest of them saw, so a client cannot pick its own. 0 when Django is reached directly.
     NUM_PROXIES=(int, 1),
     DB_CONN_MAX_AGE=(int, 60),
+    FILES_BACKEND=(str, "s3"),
+    FILES_LOCAL_DIR=(str, "/data/files"),
     FILES_BUCKET=(str, "harak2-files"),
     FILES_ENDPOINT_URL=(str, ""),
     FILES_PUBLIC_ENDPOINT_URL=(str, ""),
@@ -308,6 +311,11 @@ if SENTRY_DSN:
 # Stored files (spec 3 storage, 7.4; D75): an S3-compatible store. The endpoint is empty for the cloud provider's
 # own; FILES_PUBLIC_ENDPOINT_URL is the address browsers reach when it differs (compose). Keys may be empty where
 # the platform gives the server its own credentials. Links last FILES_LINK_SECONDS.
+# "s3", or "local" for a folder on the server itself (FILES_LOCAL_DIR, a compose volume; D98).
+FILES_BACKEND = env("FILES_BACKEND")
+if FILES_BACKEND not in ("s3", "local"):
+    raise ImproperlyConfigured("FILES_BACKEND is s3 or local")
+FILES_LOCAL_DIR = env("FILES_LOCAL_DIR")
 FILES_BUCKET = env("FILES_BUCKET")
 # Files uploaded for an import are removed this many days after upload (D93).
 IMPORT_FILE_RETENTION_DAYS = env("IMPORT_FILE_RETENTION_DAYS")

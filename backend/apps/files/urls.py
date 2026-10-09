@@ -4,4 +4,5 @@ from . import views
 
 urlpatterns = [
     path("files/<int:pk>/download/", views.FileDownloadView.as_view(), name="file-download"),
+    path("files/content/<str:token>/", views.FileContentView.as_view(), name="file-content"),
 ]

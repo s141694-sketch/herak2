@@ -3,7 +3,8 @@
 # (docs/2026-10-06-harak2-runbook.md) and does not replace it: backups off the server, monitoring and the emergency
 # account are there. Run from the repository's root, on the server:
 #
-#   infra/deploy.sh setup                  asks for the address, the file store and the email, writes backend/.env
+#   infra/deploy.sh setup                  asks for the address, where files go (this server by default, or a
+#                                          bucket) and the email, writes backend/.env
 #                                          with fresh secrets (never over an existing one)
 #   infra/deploy.sh start                  builds, starts, waits for every service, runs the smoke check
 #   infra/deploy.sh organization           opens an organization and prints its manager's link to choose a password
@@ -51,13 +52,19 @@ setup() {
   ask HARAK_DOMAIN "Domain"
   [ -n "$HARAK_DOMAIN" ] || { echo "a domain is required" >&2; exit 1; }
   echo
-  echo "The file store: an S3-compatible bucket at your provider (imports, logos, Word and PDF files)."
-  ask FILES_BUCKET "Bucket name"
-  ask FILES_ENDPOINT_URL "Endpoint URL (empty for AWS itself)" ""
-  ask FILES_REGION "Region" "us-east-1"
-  ask FILES_ACCESS_KEY_ID "Access key id"
-  ask FILES_SECRET_ACCESS_KEY "Secret access key"
-  [ -n "$FILES_BUCKET" ] || { echo "a bucket is required: files are kept there, and backed up from there" >&2; exit 1; }
+  echo "Files (imports, logos, Word and PDF): kept on this server (local), or in an S3-compatible bucket (s3)."
+  ask FILES_BACKEND "local or s3" "local"
+  if [ "$FILES_BACKEND" = "s3" ]; then
+    ask FILES_BUCKET "Bucket name"
+    ask FILES_ENDPOINT_URL "Endpoint URL (empty for AWS itself)" ""
+    ask FILES_REGION "Region" "us-east-1"
+    ask FILES_ACCESS_KEY_ID "Access key id"
+    ask FILES_SECRET_ACCESS_KEY "Secret access key"
+    [ -n "$FILES_BUCKET" ] || { echo "a bucket is required with s3" >&2; exit 1; }
+  elif [ "$FILES_BACKEND" != "local" ]; then
+    echo "answer local or s3" >&2
+    exit 1
+  fi
   echo
   echo "Email for invitations and notifications, as smtp+tls://user:password@host:587 (characters @ : / in the"
   echo "user or password written %40 %3A %2F). Empty: nothing is sent, and you give people their links yourself"
@@ -66,7 +73,7 @@ setup() {
   ask DEFAULT_FROM_EMAIL "Sender" "Harak <no-reply@$HARAK_DOMAIN>"
   umask 077
   {
-    grep -v -E '^(HARAK_DOMAIN|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|APP_URL|SECRET_KEY|COLLAB_TOKEN_SECRET|COLLAB_SERVICE_SECRET|POSTGRES_PASSWORD|FIELD_ENCRYPTION_KEYS|EMAIL_URL|DEFAULT_FROM_EMAIL|FILES_BUCKET|FILES_ENDPOINT_URL|FILES_REGION|FILES_ACCESS_KEY_ID|FILES_SECRET_ACCESS_KEY|FILES_CREATE_BUCKET)=' infra/pilot.env.example
+    grep -v -E '^(HARAK_DOMAIN|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|APP_URL|SECRET_KEY|COLLAB_TOKEN_SECRET|COLLAB_SERVICE_SECRET|POSTGRES_PASSWORD|FIELD_ENCRYPTION_KEYS|EMAIL_URL|DEFAULT_FROM_EMAIL|FILES_BACKEND|FILES_BUCKET|FILES_ENDPOINT_URL|FILES_REGION|FILES_ACCESS_KEY_ID|FILES_SECRET_ACCESS_KEY|FILES_CREATE_BUCKET)=' infra/pilot.env.example
     echo
     echo "# --- Written by infra/deploy.sh setup ---"
     echo "HARAK_DOMAIN=$HARAK_DOMAIN"
@@ -80,11 +87,12 @@ setup() {
     echo "FIELD_ENCRYPTION_KEYS=$(openssl rand 32 | base64 | tr '+/' '-_')"
     echo "EMAIL_URL=${EMAIL_URL:-consolemail://}"
     echo "DEFAULT_FROM_EMAIL=$DEFAULT_FROM_EMAIL"
-    echo "FILES_BUCKET=$FILES_BUCKET"
-    echo "FILES_ENDPOINT_URL=$FILES_ENDPOINT_URL"
-    echo "FILES_REGION=$FILES_REGION"
-    echo "FILES_ACCESS_KEY_ID=$FILES_ACCESS_KEY_ID"
-    echo "FILES_SECRET_ACCESS_KEY=$FILES_SECRET_ACCESS_KEY"
+    echo "FILES_BACKEND=$FILES_BACKEND"
+    echo "FILES_BUCKET=${FILES_BUCKET:-harak2-files}"
+    echo "FILES_ENDPOINT_URL=${FILES_ENDPOINT_URL:-}"
+    echo "FILES_REGION=${FILES_REGION:-us-east-1}"
+    echo "FILES_ACCESS_KEY_ID=${FILES_ACCESS_KEY_ID:-}"
+    echo "FILES_SECRET_ACCESS_KEY=${FILES_SECRET_ACCESS_KEY:-}"
     echo "FILES_CREATE_BUCKET=${FILES_CREATE_BUCKET:-False}"
   } > "$ENV_FILE"
   chmod 600 "$ENV_FILE"

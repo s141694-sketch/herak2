@@ -11,6 +11,9 @@ x-backend: &backend
     context: ..
     dockerfile: infra/backend.Dockerfile
   env_file: ../backend/.env
+  # The files, when kept on this server (FILES_BACKEND=local, D98); unused with a bucket.
+  volumes:
+    - files-data:/data/files
   environment:
     DJANGO_SETTINGS_MODULE: config.settings.production
     DATABASE_URL: postgres://harak:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in backend/.env}@postgres:5432/harak
@@ -106,6 +109,7 @@ services:
     <<: *backend
     command: ["sh", "-c", "while true; do python manage.py backup --dest /backups || echo 'the backup failed'; sleep 86400; done"]
     volumes:
+      - files-data:/data/files
       - backups:/backups
 
   collab:
@@ -173,6 +177,7 @@ services:
 
 volumes:
   postgres-data:
+  files-data:
   redis-data:
   backups:
   caddy-data:

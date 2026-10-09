@@ -89,6 +89,14 @@ def _sha256(path: Path) -> str:
 
 
 def _copy_files(root: Path) -> list[dict]:
+    if storage._local():  # the files are in a folder of this server (D98)
+        copied = []
+        for key in storage.keys():
+            path = _inside(root, key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(storage._path(key), path)
+            copied.append({"key": key, "size": path.stat().st_size, "sha256": _sha256(path)})
+        return copied
     client = storage._server()
     copied = []
     try:
