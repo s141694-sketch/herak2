@@ -1,0 +1,16 @@
+{
+  // Harak in a GitHub Codespace, for trial sessions with colleagues (D99). Inside it: infra/codespace.sh start.
+  // Docker runs the same compose stack as a server; GitHub's port forwarding gives it a public https address.
+  "name": "Harak",
+  "image": "mcr.microsoft.com/devcontainers/base:3.0.9-ubuntu24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4.1.3": {},
+    "ghcr.io/devcontainers/features/github-cli:1.1.3": {}
+  },
+  "hostRequirements": { "cpus": 2, "memory": "8gb", "storage": "32gb" },
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "Harak", "onAutoForward": "notify" }
+  },
+  "postAttachCommand": "echo 'To start Harak: infra/codespace.sh start   (guide: docs/2026-10-09-harak2-codespaces.md)'"
+}

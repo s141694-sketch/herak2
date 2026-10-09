@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ENV_FILE=backend/.env
-# Tests only: an extra compose file (CI adds its in-memory store). Never set it on a server.
+# An extra compose file: a Codespace's (infra/codespace.sh sets it, D99), or CI's. Never on a server.
 EXTRA=()
 [ -n "${HARAK_COMPOSE_EXTRA:-}" ] && EXTRA=(-f "$HARAK_COMPOSE_EXTRA")
 compose() { docker compose --env-file "$ENV_FILE" -f infra/docker-compose.yml "${EXTRA[@]}" "$@"; }

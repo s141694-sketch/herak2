@@ -6,7 +6,11 @@
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 env_file="${HARAK_ENV_FILE:-$here/../backend/.env}"
-compose() { docker compose --env-file "$env_file" -f "$here/docker-compose.yml" "$@"; }
+# HARAK_COMPOSE_EXTRA: one more compose file, relative to the repository's root (a Codespace's, D99; CI's store).
+extra=""
+[ -n "${HARAK_COMPOSE_EXTRA:-}" ] && extra="-f $here/../$HARAK_COMPOSE_EXTRA"
+# shellcheck disable=SC2086
+compose() { docker compose --env-file "$env_file" -f "$here/docker-compose.yml" $extra "$@"; }
 timeout="${1:-180}"
 services="$(compose config --services)"
 elapsed=0

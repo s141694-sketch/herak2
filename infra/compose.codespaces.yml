@@ -1,0 +1,26 @@
+# Added to docker-compose.yml in a GitHub Codespace (D99; infra/codespace.sh): GitHub's port forwarding gives the
+# public https address, so Caddy does not run, and "front" takes its place on port 8000, which the Codespace
+# forwards. Never on a server.
+services:
+  caddy:
+    profiles: ["not-in-a-codespace"]
+
+  front:
+    image: nginx:1.29-alpine
+    restart: unless-stopped
+    environment:
+      HARAK_DOMAIN: ${HARAK_DOMAIN:?set HARAK_DOMAIN in backend/.env}
+      # Only HARAK_DOMAIN is replaced in the template; nginx's own $variables stay as they are.
+      NGINX_ENVSUBST_FILTER: "^HARAK_DOMAIN$$"
+    volumes:
+      - ./codespace/front.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "8000:80"
+    depends_on:
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

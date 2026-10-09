@@ -243,6 +243,48 @@ jobs:
       - if: failure()
         run: docker compose --env-file backend/.env -f infra/docker-compose.yml logs --tail 60
 
+  codespace-script:
+    name: the Codespace script
+    runs-on: ubuntu-latest
+    env:
+      # As in a Codespace, whose name and forwarding domain make this address (D99).
+      HARAK_PUBLIC_HOST: ci-test-8000.app.example.test
+    steps:
+      - uses: actions/checkout@v5
+      - name: start, then requests as GitHub's port forwarding sends them (Host localhost:8000, no scheme)
+        run: |
+          infra/codespace.sh start
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/health/)" = 200
+          curl -s http://localhost:8000/ | grep -q '<div id="root"'
+          code="$(curl -s --http1.1 -o /dev/null -w '%{http_code}' -m 5 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: c21va2UtY2hlY2stMDAwMA==' http://localhost:8000/collab || true)"
+          echo "websocket: $code"; test "$code" = 101
+      - name: the demo accounts, and a sign-in from the public address
+        run: |
+          infra/codespace.sh demo | tee demo.log
+          password="$(sed -n 's/.*with the password  \([^ ]*\) .*/\1/p' demo.log)"
+          test -n "$password"
+          origin="https://$HARAK_PUBLIC_HOST"
+          token="$(curl -s -D - -o /dev/null http://localhost:8000/api/auth/csrf/ | sed -n 's/^[Ss]et-[Cc]ookie: csrftoken=\([^;]*\).*/\1/p' | tr -d '\r')"
+          test -n "$token"
+          curl -s -H "Content-Type: application/json" -H "Origin: $origin" -H "Referer: $origin/" \
+            -H "X-CSRFToken: $token" -H "Cookie: csrftoken=$token" -X POST http://localhost:8000/api/auth/login/ \
+            -d "{\"email\":\"author@example.com\",\"password\":\"$password\"}" | grep '"role":"author"'
+          # The same password again on a second demo run.
+          infra/codespace.sh demo | grep -F "$password"
+      - name: an organization, a link, a file through the public address, stop
+        run: |
+          ORG_NAME="مركز" ORG_SLUG=center ADMIN_EMAIL=manager@example.com infra/codespace.sh organization | tee org.log
+          grep -q "https://$HARAK_PUBLIC_HOST/set-password?uid=.*&org=[0-9]*" org.log
+          hc() { docker compose --env-file backend/.env -f infra/docker-compose.yml -f infra/compose.codespaces.yml "$@"; }
+          hc exec -T backend python manage.py shell -c "from apps.files import storage; storage.write('ci/kept.txt', b'harak', 'text/plain')"
+          link="$(hc exec -T backend python manage.py shell -c "from apps.files import storage; print(storage.signed_link('ci/kept.txt', name='kept.txt', content_type='text/plain'))" | tail -1)"
+          test "$(curl -s "http://localhost:8000$link")" = harak
+          infra/codespace.sh status
+          infra/codespace.sh stop
+      - if: failure()
+        run: docker compose --env-file backend/.env -f infra/docker-compose.yml -f infra/compose.codespaces.yml logs --tail 60
+
   e2e:
     name: browser tests (playwright)
     runs-on: ubuntu-latest
